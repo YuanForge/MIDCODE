@@ -178,7 +178,7 @@ func ListUsers(c *gin.Context) {
 
 	var users []model.User
 	total, err := db.Engine.Cols("id", "username", "email", "role", "group", "balance", "is_active", "created_at").
-		Limit(size, (page-1)*size).FindAndCount(&users)
+		Desc("id").Limit(size, (page-1)*size).FindAndCount(&users)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

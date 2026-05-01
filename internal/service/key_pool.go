@@ -111,9 +111,9 @@ func ListKeyPools(ctx context.Context, channelID int64) ([]model.KeyPool, error)
 	pools := make([]model.KeyPool, 0)
 	var err error
 	if channelID > 0 {
-		err = db.Engine.Where("channel_id = ?", channelID).OrderBy("id ASC").Find(&pools)
+		err = db.Engine.Where("channel_id = ?", channelID).OrderBy("id DESC").Find(&pools)
 	} else {
-		err = db.Engine.OrderBy("id ASC").Find(&pools)
+		err = db.Engine.OrderBy("id DESC").Find(&pools)
 	}
 	return pools, err
 }
@@ -150,7 +150,7 @@ func DeleteKeyPool(ctx context.Context, poolID int64) error {
 // ListPoolKeys 返回号池内所有 Key（含排序，供管理界面展示）。
 func ListPoolKeys(ctx context.Context, poolID int64) ([]model.PoolKey, error) {
 	keys := make([]model.PoolKey, 0)
-	err := db.Engine.Where("pool_id = ?", poolID).OrderBy("priority ASC, id ASC").Find(&keys)
+	err := db.Engine.Where("pool_id = ?", poolID).OrderBy("priority ASC, id DESC").Find(&keys)
 	return keys, err
 }
 

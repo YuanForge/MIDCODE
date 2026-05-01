@@ -827,6 +827,7 @@ export function AdminChannelsPage() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-14">ID</TableHead>
               <TableHead>名称</TableHead>
               <TableHead>模型</TableHead>
               <TableHead>类型</TableHead>
@@ -839,18 +840,19 @@ export function AdminChannelsPage() {
             </TableRow>
           </TableHeader>
           {loading ? (
-            <TableSkeleton cols={9} />
+            <TableSkeleton cols={10} />
           ) : (
             <TableBody>
               {rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">
                     暂无渠道数据
                   </TableCell>
                 </TableRow>
               ) : (
                 rows.map((row, index) => (
                   <TableRow key={row.id ?? index}>
+                    <TableCell className="text-muted-foreground">{row.id ?? '-'}</TableCell>
                     <TableCell className="max-w-56">
                       <div className="font-medium">{row.name ?? '未命名渠道'}</div>
                       {row.description ? (
