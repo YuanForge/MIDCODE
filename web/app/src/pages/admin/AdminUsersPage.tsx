@@ -111,6 +111,19 @@ export function AdminUsersPage() {
     }
   }
 
+  async function toggleFreeze(user: AdminUser) {
+    if (!user.id) return
+    setMutError('')
+    const willFreeze = user.is_active !== false ? true : false
+    try {
+      await adminApi.freezeUser(user.id, willFreeze)
+      reload()
+    } catch (err) {
+      const { getApiErrorMessage } = await import('@/lib/api/http')
+      setMutError(getApiErrorMessage(err))
+    }
+  }
+
   const totalPages = Math.ceil(data.total / pageSize)
 
   return (
@@ -169,8 +182,8 @@ export function AdminUsersPage() {
                     <TableCell className="font-medium">{row.username ?? '-'}</TableCell>
                     <TableCell className="text-muted-foreground">{row.email ?? '-'}</TableCell>
                     <TableCell>
-                      <Badge variant={(row.is_active ?? true) ? 'default' : 'secondary'} className="text-xs">
-                        {(row.is_active ?? true) ? '正常' : '禁用'}
+                      <Badge variant={(row.is_active ?? true) ? 'default' : 'destructive'} className="text-xs">
+                        {(row.is_active ?? true) ? '正常' : '冻结'}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -223,6 +236,13 @@ export function AdminUsersPage() {
                           onClick={() => toggleAgent(row)}
                         >
                           {row.role === 'agent' ? '取消客服' : '设为客服'}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant={(row.is_active ?? true) ? 'outline' : 'default'}
+                          onClick={() => toggleFreeze(row)}
+                        >
+                          {(row.is_active ?? true) ? '冻结' : '解冻'}
                         </Button>
                       </div>
                     </TableCell>

@@ -24,15 +24,19 @@ func Auth(cfg *config.ServerConfig) gin.HandlerFunc {
 				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "API Key 无效"})
 				return
 			}
+			// 检查用户账户是否被冻结
+			user := &model.User{}
+			if found, _ := db.Engine.ID(apiKey.UserID).Cols("group", "is_active").Get(user); found {
+				if !user.IsActive {
+					c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "账户已被冻结，请联系管理员"})
+					return
+				}
+				c.Set("user_group", user.Group)
+			}
 			c.Set("user_id", apiKey.UserID)
 			c.Set("api_key_id", apiKey.ID)
 			c.Set("key_type", apiKey.KeyType)
 			c.Set("auth_type", "apikey")
-			// 加载用户以获取 group（分组定价）
-			user := &model.User{}
-			if found, _ := db.Engine.ID(apiKey.UserID).Cols("group").Get(user); found {
-				c.Set("user_group", user.Group)
-			}
 			c.Next()
 			return
 		}
@@ -44,14 +48,19 @@ func Auth(cfg *config.ServerConfig) gin.HandlerFunc {
 
 			// First try to validate as API Key (supports "Authorization: Bearer sk-xxx")
 			if apiKey, err := service.LookupAPIKey(c.Request.Context(), tokenStr); err == nil {
+				// 检查用户账户是否被冻结
+				user := &model.User{}
+				if found, _ := db.Engine.ID(apiKey.UserID).Cols("group", "is_active").Get(user); found {
+					if !user.IsActive {
+						c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "账户已被冻结，请联系管理员"})
+						return
+					}
+					c.Set("user_group", user.Group)
+				}
 				c.Set("user_id", apiKey.UserID)
 				c.Set("api_key_id", apiKey.ID)
 				c.Set("key_type", apiKey.KeyType)
 				c.Set("auth_type", "apikey")
-				user := &model.User{}
-				if found, _ := db.Engine.ID(apiKey.UserID).Cols("group").Get(user); found {
-					c.Set("user_group", user.Group)
-				}
 				c.Next()
 				return
 			}

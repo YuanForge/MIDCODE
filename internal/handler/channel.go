@@ -207,6 +207,33 @@ func SetUserGroup(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "group updated"})
 }
 
+// PATCH /admin/users/:id/freeze — 冻结或解冻账户
+// 冻结后：用户无法登录，其 API Key 也无法使用。
+func FreezeUser(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID 格式错误"})
+		return
+	}
+	var req struct {
+		Freeze bool `json:"freeze"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	affected, err := db.Engine.ID(id).Cols("is_active").Update(&model.User{IsActive: !req.Freeze})
+	if err != nil || affected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+	msg := "账户已冻结"
+	if !req.Freeze {
+		msg = "账户已解冻"
+	}
+	c.JSON(http.StatusOK, gin.H{"message": msg})
+}
+
 // GET /admin/transactions — 全局账单流水（分页）
 func ListAllTransactions(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))

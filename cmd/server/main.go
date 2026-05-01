@@ -190,6 +190,7 @@ func main() {
 			admin.PUT("/users/:id/group", handler.SetUserGroup)
 			admin.PUT("/users/:id/role", handler.SetUserRole)
 			admin.PUT("/users/:id/rebate-ratio", handler.SetUserRebateRatio)
+			admin.PATCH("/users/:id/freeze", handler.FreezeUser)
 			admin.GET("/transactions", handler.ListAllTransactions)
 			admin.GET("/tasks", handler.ListTasks)
 			admin.GET("/tasks/:id", handler.GetAdminTask)

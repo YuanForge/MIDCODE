@@ -258,6 +258,8 @@ export const adminApi = {
     http.put<Record<string, unknown>>(`/admin/users/${id}/group`, { group }),
   setUserRole: (id: number, role: string) =>
     http.put<Record<string, unknown>>(`/admin/users/${id}/role`, { role }),
+  freezeUser: (id: number, freeze: boolean) =>
+    http.patch<Record<string, unknown>>(`/admin/users/${id}/freeze`, { freeze }),
   listTransactions: (params: Record<string, unknown> = {}) =>
     http.get<{ items?: AdminTransaction[]; transactions?: AdminTransaction[]; total?: number; summary?: AdminTransactionSummary } | AdminTransaction[]>(
       '/admin/transactions',
