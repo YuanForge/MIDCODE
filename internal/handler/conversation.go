@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -39,10 +38,10 @@ func SaveConversation(c *gin.Context) {
 	userID := c.MustGet("user_id").(int64)
 
 	var req struct {
-		ID       int64           `json:"id"`
-		Title    string          `json:"title"`
-		Model    string          `json:"model"`
-		Messages json.RawMessage `json:"messages"`
+		ID       int64         `json:"id"`
+		Title    string        `json:"title"`
+		Model    string        `json:"model"`
+		Messages model.RawJSON `json:"messages"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
@@ -63,7 +62,7 @@ func SaveConversation(c *gin.Context) {
 		}
 		conv.Title = req.Title
 		conv.Model = req.Model
-		conv.Messages = model.JSON(req.Messages)
+		conv.Messages = req.Messages
 		if _, err := db.Engine.ID(conv.ID).
 			Cols("title", "model", "messages", "updated_at").
 			Update(&conv); err != nil {
@@ -79,7 +78,7 @@ func SaveConversation(c *gin.Context) {
 		UserID:   userID,
 		Title:    req.Title,
 		Model:    req.Model,
-		Messages: model.JSON(req.Messages),
+		Messages: req.Messages,
 	}
 	if _, err := db.Engine.Insert(&conv); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存失败"})
