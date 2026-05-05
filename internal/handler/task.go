@@ -191,7 +191,7 @@ func ListUserTasks(c *gin.Context) {
 	var tasks []model.Task
 	total, err := query.Cols("id", "user_id", "channel_id", "api_key_id", "type", "status",
 		"progress", "upstream_task_id",
-		"error_msg", "credits_charged", "corr_id", "created_at", "updated_at").
+		"error_msg", "credits_charged", "corr_id", "request", "result", "created_at", "updated_at").
 		Limit(size, (page-1)*size).FindAndCount(&tasks)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败，请稍后重试"})
@@ -235,8 +235,8 @@ func buildTaskResult(task *model.Task) model.TaskResult {
 		ChannelID:      task.ChannelID,
 		CreditsCharged: task.CreditsCharged,
 		CreatedAt:      task.CreatedAt,
-		Request:        task.Request,  // 原始请求参数
-		Result:         task.Result,   // 映射后的响应结果
+		Request:        task.Request, // 原始请求参数
+		Result:         task.Result,  // 映射后的响应结果
 	}
 	switch task.Status {
 	case "pending":
