@@ -236,7 +236,7 @@ func ListUsers(c *gin.Context) {
 SELECT
   u.id, u.username, u.email, u.role, u."group", u.balance, u.is_active, u.frozen_reason, u.rebate_ratio, u.created_at,
   COALESCE((SELECT COUNT(*) FROM users WHERE inviter_id = u.id), 0) AS invite_count,
-  COALESCE((SELECT SUM(credits) FROM billing_transactions WHERE user_id = u.id AND type = 'charge'), 0) AS total_spent
+  COALESCE((SELECT SUM(CASE WHEN type IN ('charge','hold','settle') THEN credits WHEN type = 'refund' THEN -credits ELSE 0 END) FROM billing_transactions WHERE user_id = u.id), 0) AS total_spent
 FROM users u
 ORDER BY u.id DESC
 LIMIT $1 OFFSET $2
