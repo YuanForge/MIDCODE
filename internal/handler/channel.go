@@ -217,14 +217,68 @@ func ListUsers(c *gin.Context) {
 		page = 1
 	}
 
-	var users []model.User
-	total, err := db.Engine.Cols("id", "username", "email", "role", "group", "balance", "is_active", "frozen_reason", "created_at").
-		Desc("id").Limit(size, (page-1)*size).FindAndCount(&users)
+	type adminUserRow struct {
+		ID           int64    `json:"id"`
+		Username     string   `json:"username"`
+		Email        *string  `json:"email"`
+		Role         string   `json:"role"`
+		Group        string   `json:"group"`
+		Balance      int64    `json:"balance"`
+		IsActive     bool     `json:"is_active"`
+		FrozenReason string   `json:"frozen_reason,omitempty"`
+		RebateRatio  *float64 `json:"rebate_ratio,omitempty"`
+		CreatedAt    string   `json:"created_at"`
+		InviteCount  int64    `json:"invite_count"`
+		TotalSpent   int64    `json:"total_spent"`
+	}
+
+	rows, err := db.Engine.QueryString(`
+SELECT
+  u.id, u.username, u.email, u.role, u."group", u.balance, u.is_active, u.frozen_reason, u.rebate_ratio, u.created_at,
+  COALESCE((SELECT COUNT(*) FROM users WHERE inviter_id = u.id), 0) AS invite_count,
+  COALESCE((SELECT SUM(credits) FROM billing_transactions WHERE user_id = u.id AND type = 'charge'), 0) AS total_spent
+FROM users u
+ORDER BY u.id DESC
+LIMIT $1 OFFSET $2
+`, size, (page-1)*size)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"users": users, "total": total})
+
+	result := make([]adminUserRow, 0, len(rows))
+	for _, r := range rows {
+		id, _ := strconv.ParseInt(r["id"], 10, 64)
+		balance, _ := strconv.ParseInt(r["balance"], 10, 64)
+		inviteCount, _ := strconv.ParseInt(r["invite_count"], 10, 64)
+		totalSpent, _ := strconv.ParseInt(r["total_spent"], 10, 64)
+		isActive := r["is_active"] == "true" || r["is_active"] == "t" || r["is_active"] == "1"
+		row := adminUserRow{
+			ID:           id,
+			Username:     r["username"],
+			Role:         r["role"],
+			Group:        r["group"],
+			Balance:      balance,
+			IsActive:     isActive,
+			FrozenReason: r["frozen_reason"],
+			CreatedAt:    r["created_at"],
+			InviteCount:  inviteCount,
+			TotalSpent:   totalSpent,
+		}
+		if email, ok := r["email"]; ok && email != "" {
+			row.Email = &email
+		}
+		if ratioStr, ok := r["rebate_ratio"]; ok && ratioStr != "" {
+			ratio, err := strconv.ParseFloat(ratioStr, 64)
+			if err == nil {
+				row.RebateRatio = &ratio
+			}
+		}
+		result = append(result, row)
+	}
+
+	total, _ := db.Engine.Count(new(model.User))
+	c.JSON(http.StatusOK, gin.H{"users": result, "total": total})
 }
 
 // PUT /admin/users/:id/group — 设置用户定价分组

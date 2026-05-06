@@ -28,7 +28,7 @@ import {
 import { adminApi, type AdminUser } from '@/lib/api/admin'
 import { useAsync } from '@/hooks/use-async'
 
-type DialogMode = 'recharge' | 'password' | 'group' | 'rebate' | 'model_credit' | 'freeze' | 'create' | 'delete' | null
+type DialogMode = 'recharge' | 'password' | 'group' | 'rebate' | 'model_credit' | 'freeze' | 'create' | 'delete' | 'detail' | null
 
 function fmtBalance(user: AdminUser) {
   const raw = user.balance ?? (user.balance_credits !== undefined ? user.balance_credits * 1e6 : undefined)
@@ -72,6 +72,12 @@ export function AdminUsersPage() {
     } else {
       setRebatePct('')
     }
+    setMutError('')
+  }
+
+  function openDetail(user: AdminUser) {
+    setActiveUser(user)
+    setDialogMode('detail')
     setMutError('')
   }
 
@@ -210,25 +216,22 @@ export function AdminUsersPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-14">ID</TableHead>
-              <TableHead>用户名</TableHead>
-              <TableHead>邮箱</TableHead>
+              <TableHead className="w-20">会员号</TableHead>
+              <TableHead>姓名</TableHead>
+              <TableHead>手机 / 邮箱</TableHead>
               <TableHead className="w-16">状态</TableHead>
-              <TableHead className="w-20">角色</TableHead>
-              <TableHead className="w-28">定价分组</TableHead>
-              <TableHead className="w-28">返佣比例</TableHead>
               <TableHead className="w-32">余额（¥）</TableHead>
               <TableHead className="w-40">注册时间</TableHead>
               <TableHead className="text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           {loading ? (
-            <TableSkeleton cols={8} />
+            <TableSkeleton cols={7} />
           ) : (
             <TableBody>
               {data.users.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="py-12 text-center">
+                  <TableCell colSpan={7} className="py-12 text-center">
                     <div className="flex flex-col items-center gap-2">
                       <UsersIcon className="size-10 text-muted-foreground/40" />
                       <p className="text-sm font-medium">还没有用户</p>
@@ -241,44 +244,11 @@ export function AdminUsersPage() {
                   <TableRow key={row.id ?? index}>
                     <TableCell className="text-muted-foreground">{row.id ?? '-'}</TableCell>
                     <TableCell className="font-medium">{row.username ?? '-'}</TableCell>
-                    <TableCell className="text-muted-foreground">{row.email ?? '-'}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">{row.email ?? '-'}</TableCell>
                     <TableCell>
-                      <div className="flex flex-col gap-0.5">
-                        <Badge variant={(row.is_active ?? true) ? 'default' : 'destructive'} className="text-xs w-fit">
-                          {(row.is_active ?? true) ? '正常' : '冻结'}
-                        </Badge>
-                        {!(row.is_active ?? true) && row.frozen_reason ? (
-                          <span className="text-xs text-muted-foreground max-w-[120px] truncate" title={row.frozen_reason}>
-                            {row.frozen_reason}
-                          </span>
-                        ) : null}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {row.role ? (
-                        <Badge variant={row.role === 'admin' ? 'destructive' : 'secondary'} className="text-xs">
-                          {row.role}
-                        </Badge>
-                      ) : '-'}
-                    </TableCell>
-                    <TableCell>
-                      {row.group ? (
-                        <Badge variant="outline" className="text-xs cursor-pointer" onClick={() => openDialog(row, 'group')}>
-                          {row.group}
-                        </Badge>
-                      ) : (
-                        <button
-                          className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
-                          onClick={() => openDialog(row, 'group')}
-                        >
-                          默认（点击设置）
-                        </button>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {row.rebate_ratio != null
-                        ? `${(row.rebate_ratio * 100).toFixed(2)}%`
-                        : <span className="text-muted-foreground/50">—（全局）</span>}
+                      <Badge variant={(row.is_active ?? true) ? 'default' : 'destructive'} className="text-xs">
+                        {(row.is_active ?? true) ? '正常' : '冻结'}
+                      </Badge>
                     </TableCell>
                     <TableCell className="font-mono text-sm">{fmtBalance(row)}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
@@ -286,41 +256,15 @@ export function AdminUsersPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1.5">
-                        <Button size="sm" variant="outline" onClick={() => openDialog(row, 'recharge')}>
-                          充值
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => openDialog(row, 'model_credit')}>
-                          赠积分
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => openDialog(row, 'password')}>
-                          改密
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => openDialog(row, 'group')}>
-                          分组
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => openDialog(row, 'rebate')}>
-                          返佣
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant={row.role === 'agent' ? 'destructive' : 'secondary'}
-                          onClick={() => toggleAgent(row)}
-                        >
-                          {row.role === 'agent' ? '取消客服' : '设为客服'}
+                        <Button size="sm" variant="outline" onClick={() => openDetail(row)}>
+                          详情
                         </Button>
                         <Button
                           size="sm"
                           variant={(row.is_active ?? true) ? 'outline' : 'default'}
                           onClick={() => (row.is_active ?? true) ? openDialog(row, 'freeze') : unfreeze(row)}
                         >
-                          {(row.is_active ?? true) ? '冻结' : '解冻'}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => openDialog(row, 'delete')}
-                        >
-                          <Trash2Icon className="size-3" />
+                          {(row.is_active ?? true) ? '封禁' : '解封'}
                         </Button>
                       </div>
                     </TableCell>
@@ -352,7 +296,74 @@ export function AdminUsersPage() {
         )}
       </Card>
 
-      <Dialog open={Boolean(dialogMode)} onOpenChange={() => setDialogMode(null)}>
+      {/* 详情弹窗 */}
+      <Dialog open={dialogMode === 'detail'} onOpenChange={() => setDialogMode(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>用户详情</DialogTitle>
+            <DialogDescription>{activeUser?.username ?? activeUser?.email ?? '-'}</DialogDescription>
+          </DialogHeader>
+          {activeUser ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                <div className="text-muted-foreground">会员号</div><div className="font-mono">{activeUser.id ?? '-'}</div>
+                <div className="text-muted-foreground">用户名</div><div>{activeUser.username ?? '-'}</div>
+                <div className="text-muted-foreground">邮箱</div><div className="truncate">{activeUser.email ?? '-'}</div>
+                <div className="text-muted-foreground">角色</div>
+                <div>
+                  <Badge variant={activeUser.role === 'admin' ? 'destructive' : 'secondary'} className="text-xs">{activeUser.role ?? '-'}</Badge>
+                </div>
+                <div className="text-muted-foreground">状态</div>
+                <div className="space-y-0.5">
+                  <Badge variant={(activeUser.is_active ?? true) ? 'default' : 'destructive'} className="text-xs">
+                    {(activeUser.is_active ?? true) ? '正常' : '冻结'}
+                  </Badge>
+                  {!(activeUser.is_active ?? true) && activeUser.frozen_reason ? (
+                    <p className="text-xs text-muted-foreground">{activeUser.frozen_reason}</p>
+                  ) : null}
+                </div>
+                <div className="text-muted-foreground">定价分组</div>
+                <div>{activeUser.group || <span className="text-muted-foreground/60">默认</span>}</div>
+                <div className="text-muted-foreground">返佣比例</div>
+                <div>{activeUser.rebate_ratio != null ? `${(activeUser.rebate_ratio * 100).toFixed(2)}%` : <span className="text-muted-foreground/60">全局默认</span>}</div>
+                <div className="text-muted-foreground">余额</div><div className="font-mono">{fmtBalance(activeUser)}</div>
+                <div className="text-muted-foreground">邀请人数</div><div>{activeUser.invite_count ?? '-'} 人</div>
+                <div className="text-muted-foreground">历史消费</div>
+                <div className="font-mono">{activeUser.total_spent != null ? `¥${(Number(activeUser.total_spent) / 1e6).toFixed(4)}` : '-'}</div>
+                <div className="text-muted-foreground">注册时间</div>
+                <div>{activeUser.created_at ? new Date(activeUser.created_at).toLocaleString('zh-CN') : '-'}</div>
+              </div>
+              <div className="border-t pt-3 flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={() => openDialog(activeUser, 'recharge')}>充值</Button>
+                <Button size="sm" variant="outline" onClick={() => openDialog(activeUser, 'model_credit')}>赠积分</Button>
+                <Button size="sm" variant="outline" onClick={() => openDialog(activeUser, 'password')}>改密</Button>
+                <Button size="sm" variant="outline" onClick={() => openDialog(activeUser, 'group')}>设置分组</Button>
+                <Button size="sm" variant="outline" onClick={() => openDialog(activeUser, 'rebate')}>设置返佣</Button>
+                <Button
+                  size="sm"
+                  variant={activeUser.role === 'agent' ? 'secondary' : 'secondary'}
+                  onClick={() => { setDialogMode(null); setTimeout(() => toggleAgent(activeUser), 0) }}
+                >
+                  {activeUser.role === 'agent' ? '取消客服' : '设为客服'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant={(activeUser.is_active ?? true) ? 'outline' : 'default'}
+                  onClick={() => (activeUser.is_active ?? true) ? openDialog(activeUser, 'freeze') : unfreeze(activeUser)}
+                >
+                  {(activeUser.is_active ?? true) ? '冻结' : '解冻'}
+                </Button>
+                <Button size="sm" variant="destructive" onClick={() => openDialog(activeUser, 'delete')}>
+                  <Trash2Icon className="size-3 mr-1" />删除
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {/* 操作弹窗 */}
+      <Dialog open={Boolean(dialogMode) && dialogMode !== 'detail'} onOpenChange={() => setDialogMode(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>

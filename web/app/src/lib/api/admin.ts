@@ -79,6 +79,8 @@ export type AdminUser = {
   frozen_reason?: string
   rebate_ratio?: number | null
   created_at?: string
+  invite_count?: number
+  total_spent?: number
 }
 
 export type AdminTransaction = {
