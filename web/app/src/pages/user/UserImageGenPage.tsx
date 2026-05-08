@@ -10,6 +10,72 @@ import { NativeSelect } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { userApi, type ApiKeyRecord, type UserChannel, type UserTask } from '@/lib/api/user'
 
+type ImageGenerateResponse = {
+  task_id?: number | string
+  status?: string | number
+  msg?: string
+  error_msg?: string
+  url?: unknown
+  urls?: unknown
+  data?: Array<{ url?: unknown }>
+  result?: Record<string, unknown>
+}
+
+const imageBase64Signatures: Array<[string, string]> = [
+  ['iVBORw0KGgo', 'image/png'],
+  ['/9j/', 'image/jpeg'],
+  ['R0lGOD', 'image/gif'],
+  ['UklGR', 'image/webp'],
+  ['PHN2Zy', 'image/svg+xml'],
+  ['PD94bWw', 'image/svg+xml'],
+]
+
+function detectBase64ImageMime(value: string) {
+  return imageBase64Signatures.find(([signature]) => value.startsWith(signature))?.[1] ?? 'image/png'
+}
+
+function isLikelyBase64Image(value: string) {
+  if (value.length < 64 || value.length % 4 === 1) return false
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value)) return false
+  return imageBase64Signatures.some(([signature]) => value.startsWith(signature))
+}
+
+function normalizeImageSrc(value: unknown) {
+  if (typeof value !== 'string') return ''
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  if (/^[a-z][a-z\d+.-]*:/i.test(trimmed) || trimmed.startsWith('/') || trimmed.startsWith('./') || trimmed.startsWith('../')) {
+    return trimmed
+  }
+
+  const compact = trimmed.replace(/\s/g, '')
+  if (!isLikelyBase64Image(compact)) return trimmed
+  return `data:${detectBase64ImageMime(compact)};base64,${compact}`
+}
+
+function collectImageSources(...values: unknown[]) {
+  const sources: string[] = []
+
+  const append = (value: unknown) => {
+    if (Array.isArray(value)) {
+      value.forEach((item) => {
+        if (typeof item === 'string') {
+          append(item)
+        } else if (item && typeof item === 'object') {
+          append((item as { url?: unknown }).url)
+        }
+      })
+      return
+    }
+
+    const source = normalizeImageSrc(value)
+    if (source) sources.push(source)
+  }
+
+  values.forEach(append)
+  return Array.from(new Set(sources))
+}
+
 export function UserImageGenPage() {
   const [apiKeys, setApiKeys] = useState<ApiKeyRecord[]>([])
   const [channels, setChannels] = useState<UserChannel[]>([])
@@ -82,17 +148,12 @@ export function UserImageGenPage() {
           headers: { Authorization: `Bearer ${apiKey}` },
         })
         if (!resp.ok) return
-        const data = await resp.json() as { status?: string | number; result?: Record<string, unknown>; error_msg?: string; msg?: string }
+        const data = await resp.json() as ImageGenerateResponse
         if (cancelled) return
         const st = data.status
         if (st === 'done' || st === 2) {
           const result = data.result ?? {}
-          const urlList: string[] = []
-          if (Array.isArray(result.urls)) {
-            urlList.push(...(result.urls as string[]).filter(Boolean))
-          } else if (typeof result.url === 'string' && result.url) {
-            urlList.push(result.url)
-          }
+          const urlList = collectImageSources(result.data, result.urls, result.url, data.urls, data.url)
           setImages(urlList)
           setTaskStatus('done')
           setRunning(false)
@@ -196,18 +257,17 @@ export function UserImageGenPage() {
       if (!response.ok) {
         throw new Error((await response.text()) || `请求失败 (${response.status})`)
       }
-      const data = await response.json() as { task_id?: number | string; data?: { url?: string }[] }
-      if (data.task_id) {
-        setTaskId(String(data.task_id))
-        setTaskStatus('polling')
-      }
-      if (Array.isArray(data.data)) {
-        const syncImages = data.data
-          .map((item) => item.url)
-          .filter((u): u is string => Boolean(u))
+      const data = await response.json() as ImageGenerateResponse
+      const syncImages = collectImageSources(data.data, data.urls, data.url, data.result?.data, data.result?.urls, data.result?.url)
+      if (syncImages.length > 0) {
         setImages(syncImages)
         setTaskStatus('done')
         setRunning(false)
+      } else if (data.task_id) {
+        setTaskId(String(data.task_id))
+        setTaskStatus('polling')
+      } else if (data.status === 'failed' || data.status === 3) {
+        throw new Error(data.error_msg ?? data.msg ?? '生成失败')
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : '图片生成失败')
@@ -348,8 +408,8 @@ export function UserImageGenPage() {
             ) : null}
             {images.length > 0 ? (
               <div className="grid gap-4 md:grid-cols-2">
-                {images.map((url) => (
-                  <a key={url} href={url} target="_blank" rel="noopener noreferrer">
+                {images.map((url, index) => (
+                  <a key={`${index}-${url.slice(0, 64)}`} href={url} target="_blank" rel="noopener noreferrer">
                     <img className="rounded-xl border border-border/70 w-full" src={url} alt="generated" />
                   </a>
                 ))}
@@ -370,7 +430,7 @@ export function UserImageGenPage() {
             ) : (
               <div className="grid grid-cols-2 gap-1.5">
                 {historyTasks.map((task) => {
-                  const imgUrl = task.url ?? (task.result?.url as string | undefined) ?? ''
+                  const imgUrl = collectImageSources(task.url, task.result?.data, task.result?.urls, task.result?.url)[0] ?? ''
                   const prompt = (task.request?.prompt as string | undefined) ?? ''
                   const date = task.created_at ? new Date(task.created_at).toLocaleDateString('zh-CN') : ''
                   if (!imgUrl) return null
