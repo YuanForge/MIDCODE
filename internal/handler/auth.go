@@ -316,18 +316,28 @@ func (h *AuthHandler) ListModels(c *gin.Context) {
 	}
 
 	// 按展示键去重：display_name 非空时以 display_name 为分组键，否则以 model 为分组键。
-	// 同一分组键的多个渠道只展示第一个作为代表；卡片标题使用展示键（即 display_name 或 model）。
-	seen := make(map[string]bool)
-	result := make([]channelInfo, 0, len(channels))
+	// 同一分组键的多个渠道只展示售价最低的渠道作为代表；卡片标题使用展示键（即 display_name 或 model）。
+	representatives := make(map[string]model.Channel)
+	groupOrder := make([]string, 0, len(channels))
 	for _, ch := range channels {
 		groupKey := ch.Model
 		if ch.DisplayName != "" {
 			groupKey = ch.DisplayName
 		}
-		if seen[groupKey] {
+		current, exists := representatives[groupKey]
+		if exists {
+			if preferDisplayChannel(ch, current, userGroup) {
+				representatives[groupKey] = ch
+			}
 			continue
 		}
-		seen[groupKey] = true
+		representatives[groupKey] = ch
+		groupOrder = append(groupOrder, groupKey)
+	}
+
+	result := make([]channelInfo, 0, len(groupOrder))
+	for _, groupKey := range groupOrder {
+		ch := representatives[groupKey]
 
 		displayName := groupKey // 展示名 = display_name（若设置），否则 = model
 
@@ -384,6 +394,121 @@ func applyGroupPricingMap(cfg map[string]interface{}, group string) model.JSON {
 	return model.JSON(merged)
 }
 
+func preferDisplayChannel(candidate, current model.Channel, userGroup string) bool {
+	candidatePrice, candidateComparable := channelDisplayPriceRank(candidate, userGroup)
+	currentPrice, currentComparable := channelDisplayPriceRank(current, userGroup)
+	if candidateComparable != currentComparable {
+		return candidateComparable
+	}
+	if candidateComparable && currentComparable && candidatePrice != currentPrice {
+		return candidatePrice < currentPrice
+	}
+	if candidate.Priority != current.Priority {
+		return candidate.Priority > current.Priority
+	}
+	if current.ID == 0 {
+		return candidate.ID != 0
+	}
+	return candidate.ID < current.ID
+}
+
+func channelDisplayPriceRank(ch model.Channel, userGroup string) (float64, bool) {
+	cfg := ch.BillingConfig
+	if userGroup != "" {
+		cfg = applyGroupPricingMap(map[string]interface{}(ch.BillingConfig), userGroup)
+	}
+	return billingConfigPriceRank(ch.BillingType, cfg)
+}
+
+func billingConfigPriceRank(billingType string, cfg model.JSON) (float64, bool) {
+	if cfg == nil {
+		return 0, false
+	}
+	switch billingType {
+	case "token":
+		inputPrice := configNumber(cfg, "input_price_per_1m_tokens")
+		outputPrice := configNumber(cfg, "output_price_per_1m_tokens")
+		totalPrice := inputPrice + outputPrice
+		return totalPrice, totalPrice > 0
+	case "image":
+		if minSizePrice, ok := minNumericMapValue(cfg["size_prices"]); ok && minSizePrice > 0 {
+			return minSizePrice, true
+		}
+		if defaultSizePrice := configNumber(cfg, "default_size_price"); defaultSizePrice > 0 {
+			return defaultSizePrice, true
+		}
+		basePrice := configNumber(cfg, "base_price")
+		return basePrice, basePrice > 0
+	case "video", "audio":
+		pricePerSecond := configNumber(cfg, "price_per_second")
+		return pricePerSecond, pricePerSecond > 0
+	case "count":
+		pricePerCall := configNumber(cfg, "price_per_call")
+		if pricePerCall > 0 {
+			return pricePerCall, true
+		}
+		pricePerCount := configNumber(cfg, "price_per_count")
+		return pricePerCount, pricePerCount > 0
+	}
+	return 0, false
+}
+
+func configNumber(cfg model.JSON, key string) float64 {
+	value, ok := cfg[key]
+	if !ok {
+		return 0
+	}
+	converted, _ := numberToFloat64(value)
+	return converted
+}
+
+func minNumericMapValue(value interface{}) (float64, bool) {
+	var values map[string]interface{}
+	switch typedValue := value.(type) {
+	case map[string]interface{}:
+		values = typedValue
+	case model.JSON:
+		values = map[string]interface{}(typedValue)
+	default:
+		return 0, false
+	}
+	var minValue float64
+	found := false
+	for _, item := range values {
+		converted, ok := numberToFloat64(item)
+		if !ok || converted <= 0 {
+			continue
+		}
+		if !found || converted < minValue {
+			minValue = converted
+			found = true
+		}
+	}
+	return minValue, found
+}
+
+func numberToFloat64(value interface{}) (float64, bool) {
+	switch typedValue := value.(type) {
+	case float64:
+		return typedValue, true
+	case float32:
+		return float64(typedValue), true
+	case int:
+		return float64(typedValue), true
+	case int64:
+		return float64(typedValue), true
+	case int32:
+		return float64(typedValue), true
+	case uint:
+		return float64(typedValue), true
+	case uint64:
+		return float64(typedValue), true
+	case uint32:
+		return float64(typedValue), true
+	}
+	return 0, false
+}
+
 // buildPriceDisplay 根据计费类型和配置生成人类可读的价格描述字符串。
 // credits 换算：1 CNY = 1,000,000 credits。
 func buildPriceDisplay(billingType string, cfg model.JSON) string {
@@ -391,17 +516,12 @@ func buildPriceDisplay(billingType string, cfg model.JSON) string {
 		return ""
 	}
 	toF := func(key string) float64 {
-		v, ok := cfg[key]
+		value, ok := cfg[key]
 		if !ok {
 			return 0
 		}
-		switch n := v.(type) {
-		case float64:
-			return n
-		case int64:
-			return float64(n)
-		}
-		return 0
+		converted, _ := numberToFloat64(value)
+		return converted
 	}
 	switch billingType {
 	case "token":
