@@ -448,7 +448,7 @@ func llmProxy(c *gin.Context) {
 		}
 		if isStable {
 			// 稳定密钥：获取按价格升序排列的渠道列表
-			stableChannels, err = service.SelectChannelStable(c.Request.Context(), routingModel)
+			stableChannels, err = service.SelectChannelStableForUser(c.Request.Context(), routingModel, userGroup)
 			if err != nil {
 				// 兜底：按 name 精确查找（兼容旧行为）
 				ch, err = service.GetChannelByName(c.Request.Context(), routingModel)
@@ -1489,13 +1489,17 @@ func llmRefundCredits(c *gin.Context, userID, amount int64) int64 {
 }
 
 func llmRefundAndAbort(c *gin.Context, corrID string, userID, credits, upstreamCost, poolKeyIDVal int64, upstreamStatus int, errMsg string) {
+	userMsg := service.UserFacingErrorMessage(errMsg)
+	if userMsg != errMsg {
+		log.Printf("[llm] request %s failed: %s", corrID, errMsg)
+	}
 	if credits > 0 {
 		mcRefunded := llmRefundCredits(c, userID, credits)
 		_ = service.WriteTx(c.Request.Context(), userID, 0, 0, poolKeyIDVal, corrID, "refund", credits, upstreamCost, mcRefunded, model.JSON{"reason": "upstream_error"})
 	}
 	if corrID != "" {
 		_, _ = db.Engine.Where("corr_id = ?", corrID).Cols("status", "upstream_status", "error_msg").
-			Update(&model.LLMLog{Status: "error", UpstreamStatus: upstreamStatus, ErrorMsg: errMsg})
+			Update(&model.LLMLog{Status: "error", UpstreamStatus: upstreamStatus, ErrorMsg: userMsg})
 	}
-	c.JSON(http.StatusBadGateway, gin.H{"error": errMsg})
+	c.JSON(http.StatusBadGateway, gin.H{"error": userMsg})
 }

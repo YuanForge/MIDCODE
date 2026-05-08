@@ -67,3 +67,28 @@ func TestPreferDisplayChannelUsesGroupPrice(t *testing.T) {
 		t.Fatalf("expected representative selection to use the logged-in user's group price")
 	}
 }
+
+func TestPreferDisplayChannelUsesHigherPriorityWhenPriceTied(t *testing.T) {
+	current := model.Channel{
+		ID:          22,
+		BillingType: "token",
+		Priority:    98,
+		BillingConfig: model.JSON{
+			"input_price_per_1m_tokens":  2100000,
+			"output_price_per_1m_tokens": 13000000,
+		},
+	}
+	candidate := model.Channel{
+		ID:          24,
+		BillingType: "token",
+		Priority:    99,
+		BillingConfig: model.JSON{
+			"input_price_per_1m_tokens":  2100000,
+			"output_price_per_1m_tokens": 13000000,
+		},
+	}
+
+	if !preferDisplayChannel(candidate, current, "") {
+		t.Fatalf("expected higher-priority channel 24 to beat channel 22 when prices are tied")
+	}
+}

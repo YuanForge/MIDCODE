@@ -52,6 +52,32 @@ func InvalidateChannelCache(ctx context.Context, channelID int64) {
 	cache.Client.Del(ctx, fmt.Sprintf("channel:%d", channelID))
 }
 
+func invalidateChannelRouteCaches(ctx context.Context, channels ...model.Channel) {
+	keys := make(map[string]struct{})
+	for _, ch := range channels {
+		if ch.ID > 0 {
+			keys[fmt.Sprintf("channel:%d", ch.ID)] = struct{}{}
+		}
+		if ch.Name != "" {
+			keys[fmt.Sprintf("channel:name:%s", ch.Name)] = struct{}{}
+		}
+		if ch.Model != "" {
+			keys[fmt.Sprintf("channel:model:%s", ch.Model)] = struct{}{}
+		}
+		if ch.DisplayName != "" {
+			keys[fmt.Sprintf("channel:model:%s", ch.DisplayName)] = struct{}{}
+		}
+	}
+	if len(keys) == 0 {
+		return
+	}
+	args := make([]string, 0, len(keys))
+	for key := range keys {
+		args = append(args, key)
+	}
+	cache.Client.Del(ctx, args...)
+}
+
 // ListChannels 返回所有渠道（管理员接口）。
 func ListChannels(ctx context.Context) ([]model.Channel, error) {
 	var channels []model.Channel
@@ -62,6 +88,9 @@ func ListChannels(ctx context.Context) ([]model.Channel, error) {
 // CreateChannel 插入一个新渠道。
 func CreateChannel(ctx context.Context, ch *model.Channel) error {
 	_, err := db.Engine.Insert(ch)
+	if err == nil {
+		invalidateChannelRouteCaches(ctx, *ch)
+	}
 	return err
 }
 
@@ -96,16 +125,13 @@ func GetChannelByName(ctx context.Context, name string) (*model.Channel, error) 
 
 // PatchChannelActive 仅更新渠道的 is_active 字段，避免覆盖其他字段。
 func PatchChannelActive(ctx context.Context, id int64, isActive bool) error {
-	// 先读取 model，用于删除模型路由列表缓存，避免启停后 30s 内仍命中旧列表。
+	// 先读取路由相关字段，用于删除模型/展示名路由列表缓存，避免启停后仍命中旧列表。
 	var old model.Channel
-	_, _ = db.Engine.ID(id).Cols("model").Get(&old)
+	_, _ = db.Engine.ID(id).Cols("id", "name", "model", "display_name").Get(&old)
 
 	_, err := db.Engine.ID(id).Cols("is_active").Update(&model.Channel{IsActive: isActive})
 	if err == nil {
-		InvalidateChannelCache(ctx, id)
-		if old.Model != "" {
-			cache.Client.Del(ctx, fmt.Sprintf("channel:model:%s", old.Model))
-		}
+		invalidateChannelRouteCaches(ctx, old)
 	}
 	return err
 }
@@ -114,41 +140,28 @@ func PatchChannelActive(ctx context.Context, id int64, isActive bool) error {
 // 改名/改模型场景下，旧 name/model 对应的缓存键也必须失效，否则将残留 stale
 // 数据直至 TTL 过期（最多 channelCacheTTL）。
 func UpdateChannel(ctx context.Context, ch *model.Channel) error {
-	// 先读旧记录，用于失效旧 name/model 缓存键
+	// 先读旧记录，用于失效旧 name/model/display_name 缓存键
 	var old model.Channel
-	_, _ = db.Engine.ID(ch.ID).Cols("name", "model").Get(&old)
+	_, _ = db.Engine.ID(ch.ID).Cols("id", "name", "model", "display_name").Get(&old)
 
 	_, err := db.Engine.Where("id = ?", ch.ID).AllCols().Update(ch)
 	if err == nil {
-		InvalidateChannelCache(ctx, ch.ID)
-		cache.Client.Del(ctx, fmt.Sprintf("channel:name:%s", ch.Name))
-		// 删除模型路由列表缓存
-		cache.Client.Del(ctx, fmt.Sprintf("channel:model:%s", ch.Model))
-		// 改名 / 改模型时，旧键也要失效
-		if old.Name != "" && old.Name != ch.Name {
-			cache.Client.Del(ctx, fmt.Sprintf("channel:name:%s", old.Name))
-		}
-		if old.Model != "" && old.Model != ch.Model {
-			cache.Client.Del(ctx, fmt.Sprintf("channel:model:%s", old.Model))
-		}
+		invalidateChannelRouteCaches(ctx, old, *ch)
 	}
 	return err
 }
 
 // DeleteChannel 永久删除数据库中的渠道。
 func DeleteChannel(ctx context.Context, channelID int64) error {
-	// 先加载渠道的 name/model，以便删除相关缓存条目。
+	// 先加载渠道的 name/model/display_name，以便删除相关缓存条目。
 	var ch model.Channel
-	_, _ = db.Engine.ID(channelID).Cols("name", "model").Get(&ch)
+	_, _ = db.Engine.ID(channelID).Cols("id", "name", "model", "display_name").Get(&ch)
 	_, err := db.Engine.Where("id = ?", channelID).Delete(new(model.Channel))
 	if err == nil {
-		InvalidateChannelCache(ctx, channelID)
-		if ch.Name != "" {
-			cache.Client.Del(ctx, fmt.Sprintf("channel:name:%s", ch.Name))
+		if ch.ID == 0 {
+			ch.ID = channelID
 		}
-		if ch.Model != "" {
-			cache.Client.Del(ctx, fmt.Sprintf("channel:model:%s", ch.Model))
-		}
+		invalidateChannelRouteCaches(ctx, ch)
 	}
 	return err
 }
@@ -168,6 +181,12 @@ const (
 // SelectChannelStable 返回按售价升序排列的可用渠道列表。
 // 稳定密钥使用此函数：先尝试最便宜的渠道，失败后依次尝试更贵的渠道。
 func SelectChannelStable(ctx context.Context, modelName string, excludeIDs ...int64) ([]model.Channel, error) {
+	return SelectChannelStableForUser(ctx, modelName, "", excludeIDs...)
+}
+
+// SelectChannelStableForUser 返回按当前用户可见售价升序排列的可用渠道列表。
+// 同价时优先级高者优先，再按 ID 升序稳定排序。
+func SelectChannelStableForUser(ctx context.Context, modelName, userGroup string, excludeIDs ...int64) ([]model.Channel, error) {
 	channels, err := listChannelsByModel(ctx, modelName)
 	if err != nil {
 		return nil, err
@@ -193,34 +212,39 @@ func SelectChannelStable(ctx context.Context, modelName string, excludeIDs ...in
 
 	// 按售价升序排列（最便宜的优先）；同价时优先级高者优先，再按 ID 升序稳定排序。
 	sort.Slice(candidates, func(i, j int) bool {
-		pi := channelBasePrice(candidates[i])
-		pj := channelBasePrice(candidates[j])
-		if pi != pj {
-			return pi < pj
-		}
-		if candidates[i].Priority != candidates[j].Priority {
-			return candidates[i].Priority > candidates[j].Priority
-		}
-		return candidates[i].ID < candidates[j].ID
+		return stableChannelLess(candidates[i], candidates[j], userGroup)
 	})
 	return candidates, nil
 }
 
+func stableChannelLess(left, right model.Channel, userGroup string) bool {
+	leftPrice := channelBasePriceForGroup(left, userGroup)
+	rightPrice := channelBasePriceForGroup(right, userGroup)
+	if leftPrice != rightPrice {
+		return leftPrice < rightPrice
+	}
+	if left.Priority != right.Priority {
+		return left.Priority > right.Priority
+	}
+	return left.ID < right.ID
+}
+
 // channelBasePrice 提取渠道的基础售价用于排序比较。
 func channelBasePrice(ch model.Channel) float64 {
-	cfg := map[string]interface{}(ch.BillingConfig)
+	return channelBasePriceForGroup(ch, "")
+}
+
+func channelBasePriceForGroup(ch model.Channel, userGroup string) float64 {
+	cfg := applyChannelGroupPricing(map[string]interface{}(ch.BillingConfig), userGroup)
 	switch ch.BillingType {
 	case "token":
 		return mapFloat64(cfg, "input_price_per_1m_tokens") + mapFloat64(cfg, "output_price_per_1m_tokens")
 	case "image":
-		if sp := mapFloat64(cfg, "default_size_price"); sp > 0 {
-			return sp
-		}
 		if raw, ok := cfg["size_prices"]; ok {
 			if sp, ok := raw.(map[string]interface{}); ok {
 				var min float64 = -1
 				for _, v := range sp {
-					if p, ok := toFloat64(v); ok && (min < 0 || p < min) {
+					if p, ok := toFloat64(v); ok && p > 0 && (min < 0 || p < min) {
 						min = p
 					}
 				}
@@ -229,16 +253,44 @@ func channelBasePrice(ch model.Channel) float64 {
 				}
 			}
 		}
+		if sp := mapFloat64(cfg, "default_size_price"); sp > 0 {
+			return sp
+		}
 		return mapFloat64(cfg, "base_price")
 	case "count":
+		if pricePerCall := mapFloat64(cfg, "price_per_call"); pricePerCall > 0 {
+			return pricePerCall
+		}
 		return mapFloat64(cfg, "price_per_count")
 	case "audio":
 		return mapFloat64(cfg, "price_per_second")
 	case "video":
-		return mapFloat64(cfg, "base_price")
+		return mapFloat64(cfg, "price_per_second")
 	default:
 		return 0
 	}
+}
+
+func applyChannelGroupPricing(cfg map[string]interface{}, group string) map[string]interface{} {
+	if group == "" || cfg == nil {
+		return cfg
+	}
+	pricingGroups, ok := cfg["pricing_groups"].(map[string]interface{})
+	if !ok {
+		return cfg
+	}
+	overrides, ok := pricingGroups[group].(map[string]interface{})
+	if !ok {
+		return cfg
+	}
+	merged := make(map[string]interface{}, len(cfg))
+	for key, value := range cfg {
+		merged[key] = value
+	}
+	for key, value := range overrides {
+		merged[key] = value
+	}
+	return merged
 }
 
 func mapFloat64(m map[string]interface{}, key string) float64 {

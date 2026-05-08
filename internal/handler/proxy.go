@@ -102,6 +102,10 @@ func createTask(c *gin.Context, taskType string, reqData map[string]interface{})
 	// 获取密钥类型（稳定密钥使用售价升序路由）
 	keyType, _ := c.Get("key_type")
 	isStable := keyType == "stable"
+	var userGroup string
+	if raw, ok := c.Get("user_group"); ok {
+		userGroup, _ = raw.(string)
+	}
 
 	// 渠道解析：优先 channel_id 查询参数（兼容旧客户端），否则用 reqData["model"] 按渠道名路由。
 	var ch *model.Channel
@@ -127,7 +131,7 @@ func createTask(c *gin.Context, taskType string, reqData map[string]interface{})
 		}
 		if isStable {
 			var chErr error
-			stableChannels, chErr = service.SelectChannelStable(c.Request.Context(), routingModel)
+			stableChannels, chErr = service.SelectChannelStableForUser(c.Request.Context(), routingModel, userGroup)
 			if chErr != nil {
 				// 兜底：按 name 精确查找（稳定密钥优先保证可用性）
 				chSingle, nameErr := service.GetChannelByName(c.Request.Context(), routingModel)
@@ -158,10 +162,6 @@ func createTask(c *gin.Context, taskType string, reqData map[string]interface{})
 	}
 
 	// 精确计费：图片/视频/音频在请求时参数已全部已知，无需两阶段结算
-	var userGroup string
-	if raw, ok := c.Get("user_group"); ok {
-		userGroup, _ = raw.(string)
-	}
 	cost, _, calcErr := billing.CalcForUser(ch, reqData, userGroup)
 	if calcErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "计费计算失败，请稍后重试"})

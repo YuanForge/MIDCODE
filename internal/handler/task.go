@@ -6,6 +6,7 @@ import (
 
 	"fanapi/internal/db"
 	"fanapi/internal/model"
+	"fanapi/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -285,7 +286,7 @@ func buildTaskResult(task *model.Task) model.TaskResult {
 		base.FinishedAt = &t
 		base.Code = 500
 		base.Status = 3
-		base.Msg = task.ErrorMsg
+		base.Msg = service.UserFacingErrorMessage(task.ErrorMsg)
 		return base
 
 	default:

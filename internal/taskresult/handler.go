@@ -295,10 +295,11 @@ func saveAndFail(ctx context.Context, res model.WorkerResult, req, resp model.JS
 // 幂等操作：通过条件更新 (status != 'failed') 保持幂等。
 func failTaskDB(ctx context.Context, taskID, userID, channelID, apiKeyID int64, corrID string, credits int64, errMsg string) {
 	log.Printf("[result-proc] task %d failed: %s", taskID, errMsg)
+	userMsg := service.UserFacingErrorMessage(errMsg)
 	n, _ := db.Engine.
 		Where("id = ? AND status != ?", taskID, "failed").
 		Cols("status", "error_msg").
-		Update(&model.Task{Status: "failed", ErrorMsg: errMsg})
+		Update(&model.Task{Status: "failed", ErrorMsg: userMsg})
 	if n == 0 {
 		return
 	}
@@ -335,7 +336,7 @@ func failTaskDB(ctx context.Context, taskID, userID, channelID, apiKeyID int64, 
 	_ = service.WriteTx(ctx, userID, channelID, apiKeyID, poolKeyID, corrID, "refund", credits, upstreamCost, mcCharged, model.JSON{
 		"task_id":     taskID,
 		"routing_key": routingKey,
-		"reason":      errMsg,
+		"reason":      userMsg,
 	})
 	log.Printf("[result-proc] task %d: refunded %d credits (model_credit=%d) to user %d", taskID, credits, mcCharged, userID)
 }
