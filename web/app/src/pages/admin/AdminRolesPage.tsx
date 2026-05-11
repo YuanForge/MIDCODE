@@ -75,6 +75,39 @@ const ALL_PERMISSIONS = [
   'audit:all',                 // 查看全部审计日志（仅超管分配）
 ]
 
+const PERMISSION_LABELS: Record<string, string> = {
+  'dashboard:users':         '概览 - 用户统计',
+  'dashboard:channels':      '概览 - 渠道健康',
+  'dashboard:revenue':       '概览 - 收入利润',
+  'dashboard:trend':         '概览 - 趋势图表',
+  'channels:read':           '渠道 - 查看',
+  'channels:write':          '渠道 - 管理',
+  'keypools:read':           '号池 - 查看',
+  'keypools:write':          '号池 - 管理',
+  'users:read':              '用户 - 查看',
+  'users:write':             '用户 - 管理',
+  'users:recharge':          '用户 - 充值申请',
+  'users:recharge_approve':  '用户 - 充值审批',
+  'billing:read':            '账单 - 查看',
+  'billing:export':          '账单 - 导出',
+  'billing:adjust':          '账单 - 手动补单',
+  'tasks:read':              '任务 - 查看',
+  'tasks:write':             '任务 - 管理',
+  'logs:read':               '日志 - 查看',
+  'logs:export':             '日志 - 导出',
+  'cards:read':              '卡密 - 查看',
+  'cards:write':             '卡密 - 管理',
+  'withdraw:read':           '提现 - 查看',
+  'withdraw:review':         '提现 - 初审',
+  'withdraw:approve':        '提现 - 复审打款',
+  'settings:write':          '设置 - 基本设置',
+  'settings:payment':        '设置 - 支付套餐',
+  'settings:vendor':         '设置 - 号商管理',
+  'settings:announce':       '设置 - 公告联系',
+  'audit:self':              '审计 - 自己的日志',
+  'audit:all':               '审计 - 全部日志',
+}
+
 export function AdminRolesPage() {
   const { data: roles, loading, error, reload } = useAsync(async () => {
     const res = await adminApi.listRoles()
@@ -323,7 +356,7 @@ export function AdminRolesPage() {
                       onChange={() => togglePermission(p)}
                       className="size-4 rounded border"
                     />
-                    {p}
+                    {PERMISSION_LABELS[p] ?? p}
                   </label>
                 ))}
               </div>

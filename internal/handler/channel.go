@@ -314,7 +314,7 @@ FROM users u
 ORDER BY u.id DESC
 LIMIT $` + strconv.Itoa(limitArg) + ` OFFSET $` + strconv.Itoa(offsetArg)
 
-	rows, err := db.Engine.QueryString(sql)
+	rows, err := db.Engine.QueryString(sql, args...)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

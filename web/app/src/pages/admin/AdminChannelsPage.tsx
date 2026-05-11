@@ -1703,7 +1703,7 @@ function ChannelHealthBadge({ channelId }: { channelId: number }) {
 
   if (!data || data.total === 0) return <Badge variant="secondary" className="text-xs">无数据</Badge>
 
-  const rate = (data.success_rate ?? 0) * 100
+  const rate = data.success_rate ?? 0
   const isHealthy = rate >= 95
   const latency = data.p50_ms != null ? `${data.p50_ms.toFixed(0)}ms` : ''
 
