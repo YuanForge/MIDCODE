@@ -1,13 +1,12 @@
 import { createHttpClient } from '@/lib/api/http'
 
-type Role = 'user' | 'admin' | 'agent' | 'vendor'
+type Role = 'user' | 'admin' | 'vendor'
 
 export type UploadImageCategory = 'reference' | 'channel-icon' | 'site-setting' | 'payment-qr'
 
 const clients: Record<Role, ReturnType<typeof createHttpClient>> = {
   user: createHttpClient('user'),
   admin: createHttpClient('admin'),
-  agent: createHttpClient('agent'),
   vendor: createHttpClient('vendor'),
 }
 

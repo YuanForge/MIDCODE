@@ -3,15 +3,17 @@ import { PlusIcon, SaveIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/shared/PageHeader'
+import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import { adminApi } from '@/lib/api/admin'
+import { adminApi, type AdminAuditLog } from '@/lib/api/admin'
 import { useAsync } from '@/hooks/use-async'
 
 type SettingsMap = Record<string, string>
@@ -54,6 +56,53 @@ function ToggleField({ checked, onChange, children }: { checked: boolean; onChan
         <span className="text-sm">{checked ? '已开启' : '已关闭'}</span>
       </label>
       {children}
+    </div>
+  )
+}
+
+function SettingLogsTab() {
+  const { data, loading } = useAsync(async () => {
+    const res = await adminApi.listSettingLogs()
+    return (res.logs ?? []) as AdminAuditLog[]
+  }, [] as AdminAuditLog[], [])
+
+  return (
+    <div className="mt-4">
+      <p className="mb-3 text-sm text-muted-foreground">系统设置每次变更都会自动记录，只读不可删除。</p>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-40">时间</TableHead>
+            <TableHead>操作人</TableHead>
+            <TableHead className="w-36">变更项</TableHead>
+            <TableHead>前值</TableHead>
+            <TableHead>后值</TableHead>
+          </TableRow>
+        </TableHeader>
+        {loading ? <TableSkeleton cols={5} /> : (
+          <TableBody>
+            {data.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">暂无操作日志</TableCell>
+              </TableRow>
+            ) : data.map((log, i) => (
+              <TableRow key={log.id ?? i}>
+                <TableCell className="text-sm text-muted-foreground">
+                  {log.created_at ? new Date(log.created_at).toLocaleString('zh-CN') : '-'}
+                </TableCell>
+                <TableCell className="text-sm">{log.admin_email || `#${log.admin_id}`}</TableCell>
+                <TableCell className="font-mono text-xs">{log.resource_type || log.action}</TableCell>
+                <TableCell className="max-w-xs truncate font-mono text-xs text-muted-foreground" title={log.summary}>
+                  {(log.detail as Record<string, unknown> | undefined)?.old_val as string ?? log.summary ?? '-'}
+                </TableCell>
+                <TableCell className="max-w-xs truncate font-mono text-xs" title={log.summary}>
+                  {(log.detail as Record<string, unknown> | undefined)?.new_val as string ?? '-'}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        )}
+      </Table>
     </div>
   )
 }
@@ -185,13 +234,13 @@ export function AdminSettingsPage() {
           ) : (
             <Tabs defaultValue="basic">
               <TabsList className="w-full rounded-none border-b bg-transparent justify-start gap-0 p-0">
-                {(['basic', 'appearance', 'payment', 'notice', 'plans', 'rebate', 'vendor'] as const).map((tab) => (
+                  {(['basic', 'appearance', 'payment', 'notice', 'plans', 'rebate', 'vendor', 'withdraw', 'alert', 'logs'] as const).map((tab) => (
                   <TabsTrigger
                     key={tab}
                     value={tab}
                     className="rounded-none border-b-2 border-transparent px-4 py-3 text-sm data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
                   >
-                    {{ basic: '基本设置', appearance: '页眉&页脚', payment: '支付设置', notice: '公告&联系', plans: '充值套餐', rebate: '邀请返佣', vendor: '号商设置' }[tab]}
+                    {{ basic: '基本设置', appearance: '页眉&页脚', payment: '支付设置', notice: '公告&联系', plans: '充值套餐', rebate: '邀请返佣', vendor: '号商设置', withdraw: '提现限额', alert: '告警设置', logs: '操作日志' }[tab]}
                   </TabsTrigger>
                 ))}
               </TabsList>
@@ -519,6 +568,129 @@ export function AdminSettingsPage() {
                       <span className="text-sm text-muted-foreground">%</span>
                     </div>
                     <Tip>被邀请人消费金额的该比例将冻结给邀请人（例：5 表示消费 100 积分返 5 冻结积分）。管理员可为单个用户单独设置比例以覆盖此全局值。</Tip>
+                  </FieldRow>
+                </div>
+              </TabsContent>
+
+              {/* 操作日志 */}
+              <TabsContent value="logs" className="px-6 pb-6">
+                <SettingLogsTab />
+              </TabsContent>
+
+              {/* 告警设置 */}
+              <TabsContent value="alert" className="px-6 pb-6">
+                <Alert className="mb-4 mt-2">
+                  <AlertDescription>
+                    配置任务失败告警阈值和推送渠道。阈值为 0 表示禁用该告警。
+                  </AlertDescription>
+                </Alert>
+                <div className="max-w-2xl divide-y">
+                  <FieldRow label="失败率告警阈值（%）">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={form.alert_task_failure_rate ?? ''}
+                        min={0}
+                        max={100}
+                        step={1}
+                        onChange={(e) => set('alert_task_failure_rate', e.target.value)}
+                        className="w-32"
+                        placeholder="如：30"
+                      />
+                      <span className="text-sm text-muted-foreground">%</span>
+                    </div>
+                    <Tip>统计时间窗口内失败率超过此值时触发告警（0 = 禁用）</Tip>
+                  </FieldRow>
+                  <FieldRow label="统计时间窗口（分钟）">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={form.alert_task_window_minutes ?? ''}
+                        min={1}
+                        step={1}
+                        onChange={(e) => set('alert_task_window_minutes', e.target.value)}
+                        className="w-32"
+                        placeholder="如：5"
+                      />
+                      <span className="text-sm text-muted-foreground">分钟</span>
+                    </div>
+                    <Tip>计算失败率所用的滑动时间窗口长度</Tip>
+                  </FieldRow>
+                  <FieldRow label="企业微信 Webhook URL">
+                    <Input
+                      value={form.alert_webhook_wecom ?? ''}
+                      onChange={(e) => set('alert_webhook_wecom', e.target.value)}
+                      placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=…"
+                    />
+                    <Tip>企业微信群机器人 Webhook 地址，留空不推送</Tip>
+                  </FieldRow>
+                  <FieldRow label="告警邮件地址">
+                    <Input
+                      type="email"
+                      value={form.alert_email ?? ''}
+                      onChange={(e) => set('alert_email', e.target.value)}
+                      placeholder="admin@example.com"
+                    />
+                    <Tip>接收告警邮件的地址，留空不推送</Tip>
+                  </FieldRow>
+                </div>
+              </TabsContent>
+
+              {/* 提现限额 */}
+              <TabsContent value="withdraw" className="px-6 pb-6">
+                <Alert className="mb-4 mt-2">
+                  <AlertDescription>
+                    配置号商提现的额度限制。留空或 0 表示不限制。所有金额单位为元（CNY）。
+                  </AlertDescription>
+                </Alert>
+                <div className="max-w-2xl divide-y">
+                  <FieldRow label="单笔提现上限（元）">
+                    <Input
+                      type="number"
+                      value={form.withdraw_single_limit ?? ''}
+                      min={0}
+                      step={1}
+                      onChange={(e) => set('withdraw_single_limit', e.target.value)}
+                      className="w-40"
+                      placeholder="留空不限"
+                    />
+                    <Tip>单次提现申请金额不得超过此值（例：5000 表示每笔最多 ¥5,000）</Tip>
+                  </FieldRow>
+                  <FieldRow label="单日提现上限（元）">
+                    <Input
+                      type="number"
+                      value={form.withdraw_daily_limit ?? ''}
+                      min={0}
+                      step={1}
+                      onChange={(e) => set('withdraw_daily_limit', e.target.value)}
+                      className="w-40"
+                      placeholder="留空不限"
+                    />
+                    <Tip>同一号商每自然日累计提现不超过此金额</Tip>
+                  </FieldRow>
+                  <FieldRow label="新号商首笔上限（元）">
+                    <Input
+                      type="number"
+                      value={form.withdraw_new_vendor_first_limit ?? ''}
+                      min={0}
+                      step={1}
+                      onChange={(e) => set('withdraw_new_vendor_first_limit', e.target.value)}
+                      className="w-40"
+                      placeholder="留空不限"
+                    />
+                    <Tip>号商注册后首笔提现不超过此金额（高风险控制）</Tip>
+                  </FieldRow>
+                  <FieldRow label="新号商保护期（天）">
+                    <Input
+                      type="number"
+                      value={form.withdraw_new_vendor_days ?? ''}
+                      min={0}
+                      step={1}
+                      onChange={(e) => set('withdraw_new_vendor_days', e.target.value)}
+                      className="w-40"
+                      placeholder="例：30"
+                    />
+                    <Tip>注册后多少天内视为"新号商"，适用首笔上限规则</Tip>
                   </FieldRow>
                 </div>
               </TabsContent>

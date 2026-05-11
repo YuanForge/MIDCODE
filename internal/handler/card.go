@@ -17,12 +17,13 @@ import (
 )
 
 // POST /admin/cards/generate
-// Body: { "count": 10, "credits": 10000000, "note": "批次A" }
+// Body: { "count": 10, "credits": 10000000, "note": "批次A", "vendor_id": 5 }
 func GenerateCards(c *gin.Context) {
 	var req struct {
-		Count   int    `json:"count" binding:"required,min=1,max=500"`
-		Credits int64  `json:"credits" binding:"required,min=1"`
-		Note    string `json:"note"`
+		Count    int    `json:"count" binding:"required,min=1,max=500"`
+		Credits  int64  `json:"credits" binding:"required,min=1"`
+		Note     string `json:"note"`
+		VendorID *int64 `json:"vendor_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -42,6 +43,7 @@ func GenerateCards(c *gin.Context) {
 			Credits:   req.Credits,
 			Status:    "unused",
 			Note:      req.Note,
+			VendorID:  req.VendorID,
 			CreatedBy: adminID,
 		})
 	}

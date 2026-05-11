@@ -26,6 +26,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NativeSelect } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Table,
   TableBody,
@@ -65,6 +66,14 @@ export function AdminKeyPoolsPage() {
   const [keyValue, setKeyValue] = useState('')
   const [priority, setPriority] = useState('0')
   const [pendingDeletePool, setPendingDeletePool] = useState<AdminKeyPool | undefined>()
+  const [importOpen, setImportOpen] = useState(false)
+  const [importText, setImportText] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<{ imported: number; skipped: number } | null>(null)
+  const [bindingOpen, setBindingOpen] = useState(false)
+  const [bindingPool, setBindingPool] = useState<AdminKeyPool | null>(null)
+  const [boundChannels, setBoundChannels] = useState<AdminChannel[]>([])
+  const [bindingLoading, setBindingLoading] = useState(false)
 
   const error = loadError || mutError
 
@@ -140,6 +149,23 @@ export function AdminKeyPoolsPage() {
     }
   }
 
+  async function openBinding(pool: AdminKeyPool) {
+    if (!pool.id) return
+    setBindingPool(pool)
+    setBindingOpen(true)
+    setBindingLoading(true)
+    setMutError('')
+    try {
+      const res = await adminApi.getKeyPoolChannels(pool.id)
+      setBoundChannels(res.channels ?? [])
+    } catch (err) {
+      const { getApiErrorMessage } = await import('@/lib/api/http')
+      setMutError(getApiErrorMessage(err))
+    } finally {
+      setBindingLoading(false)
+    }
+  }
+
   async function addKey() {
     if (!activePool?.id) return
     setMutError('')
@@ -196,6 +222,25 @@ export function AdminKeyPoolsPage() {
   function updateDraftKey(id: number | undefined, patch: Partial<AdminPoolKey>) {
     if (!id) return
     setKeys((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)))
+  }
+
+  async function importKeys() {
+    if (!activePool?.id) return
+    setMutError('')
+    setImporting(true)
+    setImportResult(null)
+    try {
+      const lines = importText.split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
+      const res = await adminApi.importPoolKeys(activePool.id, lines)
+      setImportResult(res)
+      setImportText('')
+      await openKeys(activePool)
+    } catch (err) {
+      const { getApiErrorMessage } = await import('@/lib/api/http')
+      setMutError(getApiErrorMessage(err))
+    } finally {
+      setImporting(false)
+    }
   }
 
   function channelLabel(channel: AdminChannel) {
@@ -265,6 +310,7 @@ export function AdminKeyPoolsPage() {
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
                         <Button size="sm" variant="outline" onClick={() => openKeys(pool)}>管理 Keys</Button>
+                        <Button size="sm" variant="outline" onClick={() => openBinding(pool)}>绑定渠道</Button>
                         <Button size="sm" variant="outline" onClick={() => togglePool(pool)}>
                           {pool.is_active ? '停用' : '启用'}
                         </Button>
@@ -308,25 +354,51 @@ export function AdminKeyPoolsPage() {
             <Input value={keyValue} onChange={(event) => setKeyValue(event.target.value)} placeholder="Key 值" />
             <Input value={priority} onChange={(event) => setPriority(event.target.value)} placeholder="优先级" />
             <Button onClick={addKey}>添加 Key</Button>
+            <Button variant="outline" onClick={() => { setImportOpen(true); setImportResult(null) }}>批量导入</Button>
           </div>
+          {importOpen ? (
+            <div className="space-y-2 rounded-md border p-3">
+              <p className="text-sm text-muted-foreground">每行或逗号分隔填写 Key 值，重复的自动跳过。</p>
+              <Textarea
+                rows={4}
+                value={importText}
+                onChange={e => setImportText(e.target.value)}
+                placeholder="key1&#10;key2&#10;key3"
+              />
+              {importResult ? (
+                <p className="text-xs text-muted-foreground">
+                  已导入 <strong>{importResult.imported}</strong> 条，跳过 <strong>{importResult.skipped}</strong> 条。
+                </p>
+              ) : null}
+              <div className="flex gap-2">
+                <Button size="sm" onClick={importKeys} disabled={importing || !importText.trim()}>
+                  {importing ? '导入中…' : '确认导入'}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => { setImportOpen(false); setImportText('') }}>取消</Button>
+              </div>
+            </div>
+          ) : null}
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>ID</TableHead>
                 <TableHead>Key</TableHead>
                 <TableHead>号商</TableHead>
+                <TableHead>最近使用</TableHead>
+                <TableHead>调用次数</TableHead>
+                <TableHead>失败率</TableHead>
                 <TableHead>优先级</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead className="text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             {keysLoading ? (
-              <TableSkeleton cols={6} rows={3} />
+              <TableSkeleton cols={9} rows={3} />
             ) : (
               <TableBody>
                 {keys.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="py-6 text-center text-muted-foreground">
                       暂无 Key 数据
                     </TableCell>
                   </TableRow>
@@ -349,6 +421,15 @@ export function AdminKeyPoolsPage() {
                             解绑
                           </Button>
                         )}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {row.last_used_at ? new Date(row.last_used_at).toLocaleString('zh-CN') : '从未'}
+                      </TableCell>
+                      <TableCell className="text-right">{row.total_calls ?? 0}</TableCell>
+                      <TableCell>
+                        {row.fail_rate != null
+                          ? <span className={row.fail_rate > 0.1 ? 'text-destructive' : ''}>{(row.fail_rate * 100).toFixed(1)}%</span>
+                          : '-'}
                       </TableCell>
                       <TableCell>
                         <Input
@@ -400,6 +481,45 @@ export function AdminKeyPoolsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={bindingOpen} onOpenChange={setBindingOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader><DialogTitle>{bindingPool?.name ?? ''} - 绑定渠道</DialogTitle></DialogHeader>
+          {bindingLoading ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">加载中…</p>
+          ) : boundChannels.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">暂无渠道使用此号池</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>ID</TableHead>
+                  <TableHead>渠道名称</TableHead>
+                  <TableHead>模型</TableHead>
+                  <TableHead>状态</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {boundChannels.map((ch, i) => (
+                  <TableRow key={ch.id ?? i}>
+                    <TableCell>{ch.id}</TableCell>
+                    <TableCell>{ch.name ?? '-'}</TableCell>
+                    <TableCell>{ch.model ?? '-'}</TableCell>
+                    <TableCell>
+                      <Badge variant={ch.is_active ? 'default' : 'secondary'}>
+                        {ch.is_active ? '启用' : '停用'}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBindingOpen(false)}>关闭</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

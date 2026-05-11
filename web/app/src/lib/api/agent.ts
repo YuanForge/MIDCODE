@@ -1,6 +1,6 @@
 import { createHttpClient } from '@/lib/api/http'
 
-const http = createHttpClient('agent')
+const http = createHttpClient('user')
 
 export type AgentUser = {
   id?: number

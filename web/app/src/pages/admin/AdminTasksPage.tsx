@@ -162,6 +162,60 @@ export function AdminTasksPage() {
         </Alert>
       ) : null}
 
+      {/* 快速统计卡片（根据当前查询结果计算） */}
+      {!loading && data.tasks.length > 0 ? (() => {
+        const total = data.tasks.length
+        const done = data.tasks.filter(t => t.status === 'done').length
+        const failed = data.tasks.filter(t => t.status === 'failed').length
+        const failedTasks = data.tasks.filter(t => t.status === 'failed' && t.error_msg)
+        // 统计前三失败原因
+        const errMap: Record<string, number> = {}
+        failedTasks.forEach(t => {
+          const key = (t.error_msg ?? '').slice(0, 40)
+          errMap[key] = (errMap[key] ?? 0) + 1
+        })
+        const topErrors = Object.entries(errMap).sort((a, b) => b[1] - a[1]).slice(0, 3)
+        return (
+          <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+            <Card>
+              <CardContent className="py-4">
+                <p className="text-xs text-muted-foreground">本页记录数</p>
+                <p className="mt-1 text-2xl font-bold">{total}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="py-4">
+                <p className="text-xs text-muted-foreground">成功</p>
+                <p className="mt-1 text-2xl font-bold text-emerald-600">{done}</p>
+                <p className="text-xs text-muted-foreground">{total > 0 ? ((done / total) * 100).toFixed(1) : '0'}%</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="py-4">
+                <p className="text-xs text-muted-foreground">失败</p>
+                <p className="mt-1 text-2xl font-bold text-destructive">{failed}</p>
+                <p className="text-xs text-muted-foreground">{total > 0 ? ((failed / total) * 100).toFixed(1) : '0'}%</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="py-4">
+                <p className="text-xs text-muted-foreground">高频失败原因</p>
+                {topErrors.length > 0 ? (
+                  <ul className="mt-1 space-y-0.5">
+                    {topErrors.map(([msg, cnt]) => (
+                      <li key={msg} className="flex items-start gap-1 text-xs">
+                        <span className="shrink-0 font-bold text-destructive">×{cnt}</span>
+                        <span className="truncate text-muted-foreground" title={msg}>{msg || '(无详情)'}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p className="mt-1 text-sm text-muted-foreground">-</p>}
+              </CardContent>
+            </Card>
+          </div>
+        )
+      })() : null}
+
       {/* 过滤栏 */}
       <Card>
         <CardContent className="flex flex-wrap items-end gap-3 py-4">
@@ -233,18 +287,19 @@ export function AdminTasksPage() {
               <TableHead className="w-20">渠道</TableHead>
               <TableHead className="w-32 text-right">扣费（cr）</TableHead>
               <TableHead>第三方任务 ID</TableHead>
+              <TableHead className="w-48">错误信息</TableHead>
               <TableHead className="w-40">创建时间</TableHead>
               <TableHead className="w-40">结束时间</TableHead>
               <TableHead className="w-16 text-center">操作</TableHead>
             </TableRow>
           </TableHeader>
           {loading ? (
-            <TableSkeleton cols={10} />
+            <TableSkeleton cols={11} />
           ) : (
             <TableBody>
               {data.tasks.length === 0 ? (
                 <TableEmpty
-                  cols={10}
+                  cols={11}
                   Icon={ListIcon}
                   title="还没有任务记录"
                   description="平台用户发起异步任务后会汇总在此处。"
@@ -262,6 +317,9 @@ export function AdminTasksPage() {
                     </TableCell>
                     <TableCell className="max-w-40 truncate font-mono text-xs text-muted-foreground" title={row.upstream_task_id}>
                       {row.upstream_task_id ?? '-'}
+                    </TableCell>
+                    <TableCell className="max-w-48 truncate text-xs text-destructive/80" title={row.error_msg}>
+                      {row.error_msg ? row.error_msg.slice(0, 60) + (row.error_msg.length > 60 ? '…' : '') : '-'}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {row.created_at ? new Date(row.created_at).toLocaleString('zh-CN') : '-'}

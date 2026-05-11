@@ -80,11 +80,11 @@ type NavGroup = {
 }
 
 type ConsoleLayoutProps = {
-  role: 'user' | 'admin' | 'agent' | 'vendor'
+  role: 'user' | 'admin' | 'vendor'
   // Support flat list (legacy) or grouped navigation
   items?: NavItem[]
   groups?: NavGroup[]
-  // For legacy callers (admin/agent/vendor layouts)
+  // For legacy callers (admin/vendor layouts)
   title?: string
   subtitle?: string
   identity?: {
@@ -114,7 +114,7 @@ function HeaderBalanceChip() {
       title="点击充值"
     >
       <WalletIcon className="size-4 text-muted-foreground" />
-      <span className="font-mono text-xs tabular-nums">¥{(balance / 1e6).toFixed(4)}</span>
+      <span className="font-mono text-xs tabular-nums">¥{(balance / 1e6).toFixed(2)}</span>
     </Button>
   )
 }
@@ -183,7 +183,6 @@ export function ConsoleLayout({
     clearRoleToken(role)
     navigate(
       role === 'admin' ? '/admin/login' :
-      role === 'agent' ? '/agent/login' :
       role === 'vendor' ? '/vendor/login' : '/login'
     )
   }
@@ -291,7 +290,6 @@ export function ConsoleLayout({
                     <span className="hidden max-w-28 truncate text-sm sm:inline">
                       {displayName ??
                         (role === 'admin' ? '管理员' :
-                         role === 'agent' ? 'Agent' :
                          role === 'vendor' ? 'Vendor' : '用户')}
                     </span>
                   </Button>
@@ -382,12 +380,21 @@ export const adminNavItems: NavItem[] = [
   { label: '渠道管理', href: '/admin/channels', icon: NetworkIcon },
   { label: '号池管理', href: '/admin/key-pools', icon: KeySquareIcon },
   { label: '用户管理', href: '/admin/users', icon: UsersIcon },
+  { label: 'API Key', href: '/admin/api-keys', icon: KeySquareIcon },
   { label: '账单流水', href: '/admin/billing', icon: WalletCardsIcon },
+  { label: '充值订单', href: '/admin/payments', icon: CreditCardIcon },
+  { label: '优惠券', href: '/admin/coupons', icon: TicketIcon },
   { label: '任务中心', href: '/admin/tasks', icon: ListIcon },
   { label: '调用日志', href: '/admin/llm-logs', icon: FileClockIcon },
   { label: '卡密管理', href: '/admin/cards', icon: CreditCardIcon },
+  { label: '上游平台', href: '/admin/upstream', icon: NetworkIcon },
   { label: 'OCPC 上报', href: '/admin/ocpc', icon: MegaphoneIcon },
   { label: '号商管理', href: '/admin/vendors', icon: BriefcaseBusinessIcon },
   { label: '提现管理', href: '/admin/withdraw', icon: WalletIcon },
+  { label: '通知中心', href: '/admin/notifications', icon: MessageCircleIcon },
+  { label: '告警中心', href: '/admin/alerts', icon: BlocksIcon },
+  { label: '数据导出', href: '/admin/exports', icon: ShareIcon },
+  { label: '操作审计', href: '/admin/audit', icon: ShoppingCartIcon },
+  { label: '角色权限', href: '/admin/roles', icon: UsersRoundIcon },
   { label: '系统设置', href: '/admin/settings', icon: SettingsIcon },
 ]

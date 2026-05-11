@@ -25,6 +25,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -49,6 +51,13 @@ function statusBadge(s: string | undefined) {
   if (s === 'approved') return <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white">已通过</Badge>
   if (s === 'rejected') return <Badge variant="destructive">已拒绝</Badge>
   return <Badge variant="outline">{s ?? '-'}</Badge>
+}
+
+function stageBadge(stage: string | undefined) {
+  if (stage === 'cs_review') return <Badge variant="outline" className="text-xs border-yellow-400 text-yellow-600">客服初审</Badge>
+  if (stage === 'finance_review') return <Badge variant="outline" className="text-xs border-blue-400 text-blue-600">财务复审</Badge>
+  if (stage === 'completed') return <Badge variant="outline" className="text-xs border-emerald-400 text-emerald-600">已完结</Badge>
+  return null
 }
 
 function payTypeBadge(t: string | undefined) {
@@ -89,7 +98,13 @@ export function AdminWithdrawPage() {
   const [rejecting, setRejecting] = useState<AdminWithdrawal | null>(null)
   const [remark, setRemark] = useState('')
   const [pendingApprove, setPendingApprove] = useState<AdminWithdrawal | null>(null)
+  const [pendingCsApprove, setPendingCsApprove] = useState<AdminWithdrawal | null>(null)
   const [viewRow, setViewRow] = useState<AdminWithdrawal | null>(null)
+  // 凭证上传弹窗
+  const [proofRow, setProofRow] = useState<AdminWithdrawal | null>(null)
+  const [proofUrl, setProofUrl] = useState('')
+  const [proofNote, setProofNote] = useState('')
+  const [proofUploading, setProofUploading] = useState(false)
 
   const error = loadError || mutError
 
@@ -103,6 +118,19 @@ export function AdminWithdrawPage() {
     setQueryParams((prev) => ({ ...prev, page: next }))
   }
 
+  async function executeCsApprove() {
+    if (!pendingCsApprove?.id) return
+    setMutError('')
+    try {
+      await adminApi.csApproveWithdrawal(pendingCsApprove.id)
+      setPendingCsApprove(null)
+      reload()
+    } catch (err) {
+      const { getApiErrorMessage } = await import('@/lib/api/http')
+      setMutError(getApiErrorMessage(err))
+    }
+  }
+
   async function executeApprove(row?: AdminWithdrawal) {
     const target = row ?? pendingApprove
     if (!target?.id) return
@@ -111,10 +139,30 @@ export function AdminWithdrawPage() {
       await adminApi.approveWithdrawal(target.id)
       setViewRow(null)
       setPendingApprove(null)
+      // 审批通过后弹出凭证上传
+      setProofRow(target)
+      setProofUrl('')
+      setProofNote('')
       reload()
     } catch (err) {
       const { getApiErrorMessage } = await import('@/lib/api/http')
       setMutError(getApiErrorMessage(err))
+    }
+  }
+
+  async function submitProof() {
+    if (!proofRow?.id) return
+    setMutError('')
+    setProofUploading(true)
+    try {
+      await adminApi.uploadWithdrawalProof(proofRow.id, proofUrl, proofNote)
+      setProofRow(null)
+      reload()
+    } catch (err) {
+      const { getApiErrorMessage } = await import('@/lib/api/http')
+      setMutError(getApiErrorMessage(err))
+    } finally {
+      setProofUploading(false)
     }
   }
 
@@ -182,17 +230,18 @@ export function AdminWithdrawPage() {
               <TableHead>金额</TableHead>
               <TableHead>收款方式</TableHead>
               <TableHead>状态</TableHead>
+              <TableHead>审批阶段</TableHead>
               <TableHead>备注</TableHead>
               <TableHead className="text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           {loading ? (
-            <TableSkeleton cols={8} />
+            <TableSkeleton cols={9} />
           ) : (
             <TableBody>
               {rows.length === 0 ? (
                 <TableEmpty
-                  cols={8}
+                  cols={9}
                   Icon={WalletIcon}
                   title="还没有提现申请"
                   description="号商提交提现后会在这里出现，请审核后再处理。"
@@ -208,6 +257,7 @@ export function AdminWithdrawPage() {
                     <TableCell>¥{((row.amount ?? 0) / 1_000_000).toFixed(4)}</TableCell>
                     <TableCell>{payTypeBadge(row.payment_type)}</TableCell>
                     <TableCell>{statusBadge(row.status)}</TableCell>
+                    <TableCell>{stageBadge(row.review_stage)}</TableCell>
                     <TableCell className="max-w-40 truncate text-xs text-muted-foreground" title={row.admin_remark}>
                       {row.admin_remark ?? '-'}
                     </TableCell>
@@ -216,13 +266,23 @@ export function AdminWithdrawPage() {
                         <Button size="sm" variant="outline" onClick={() => setViewRow(row)}>
                           查看收款码
                         </Button>
-                        {row.status === 'pending' ? (
+                        {row.status === 'pending' && row.review_stage === 'cs_review' ? (
+                          <>
+                            <Button size="sm" variant="outline" onClick={() => setPendingCsApprove(row)}>
+                              初审通过
+                            </Button>
+                            <Button size="sm" variant="destructive" onClick={() => setRejecting(row)}>
+                              驳回
+                            </Button>
+                          </>
+                        ) : null}
+                        {row.status === 'pending' && row.review_stage === 'finance_review' ? (
                           <>
                             <Button size="sm" variant="outline" onClick={() => setPendingApprove(row)}>
-                              通过
+                              复审通过
                             </Button>
-                            <Button size="sm" onClick={() => setRejecting(row)}>
-                              拒绝
+                            <Button size="sm" variant="destructive" onClick={() => setRejecting(row)}>
+                              驳回
                             </Button>
                           </>
                         ) : null}
@@ -273,8 +333,11 @@ export function AdminWithdrawPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setViewRow(null)}>关闭</Button>
-            {viewRow?.status === 'pending' ? (
-              <Button onClick={() => executeApprove(viewRow)}>通过申请</Button>
+            {viewRow?.status === 'pending' && viewRow?.review_stage === 'cs_review' ? (
+              <Button variant="outline" onClick={() => { setPendingCsApprove(viewRow); setViewRow(null) }}>初审通过</Button>
+            ) : null}
+            {viewRow?.status === 'pending' && viewRow?.review_stage === 'finance_review' ? (
+              <Button onClick={() => executeApprove(viewRow)}>复审通过</Button>
             ) : null}
           </DialogFooter>
         </DialogContent>
@@ -285,10 +348,30 @@ export function AdminWithdrawPage() {
           <DialogHeader>
             <DialogTitle>拒绝提现申请</DialogTitle>
           </DialogHeader>
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              '收款信息有误，请重新提交',
+              '账户存在异常，暂不处理',
+              '未满足提现门槛',
+              '信息不完整，请补充材料',
+              '超出单笔提现限额',
+              '重复提交申请',
+            ].map((reason) => (
+              <Button
+                key={reason}
+                size="sm"
+                variant={remark === reason ? 'default' : 'outline'}
+                className="text-xs h-7"
+                onClick={() => setRemark(reason)}
+              >
+                {reason}
+              </Button>
+            ))}
+          </div>
           <Textarea
             value={remark}
             onChange={(event) => setRemark(event.target.value)}
-            placeholder="填写拒绝原因"
+            placeholder="填写或自定义拒绝原因"
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => setRejecting(null)}>
@@ -313,6 +396,59 @@ export function AdminWithdrawPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog open={pendingCsApprove !== null} onOpenChange={() => setPendingCsApprove(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>客服初审通过</AlertDialogTitle>
+            <AlertDialogDescription>
+              确认初审通过 {pendingCsApprove?.username} 的提现申请？将流转至财务复审阶段。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={executeCsApprove}>确认初审</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 打款凭证上传 */}
+      <Dialog open={proofRow !== null} onOpenChange={() => setProofRow(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>上传打款凭证</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">审批已通过，请填写打款凭证信息（可选）。</p>
+          {mutError ? (
+            <Alert variant="destructive"><AlertDescription>{mutError}</AlertDescription></Alert>
+          ) : null}
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>凭证图片 URL</Label>
+              <Input
+                value={proofUrl}
+                onChange={(e) => setProofUrl(e.target.value)}
+                placeholder="https://example.com/receipt.png"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>备注</Label>
+              <Textarea
+                value={proofNote}
+                onChange={(e) => setProofNote(e.target.value)}
+                placeholder="打款备注信息（可留空）"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setProofRow(null)}>跳过</Button>
+            <Button onClick={submitProof} disabled={proofUploading}>
+              {proofUploading ? '提交中…' : '提交凭证'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

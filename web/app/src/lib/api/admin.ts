@@ -65,6 +65,7 @@ export type AdminChannel = {
   icon_url?: string
   description?: string
   is_active?: boolean
+  groups?: string[]
 }
 
 export type AdminUser = {
@@ -95,6 +96,8 @@ export type AdminTransaction = {
   profit?: number
   channel_id?: number
   corr_id?: string
+  llm_log_id?: number
+  task_id?: number
   remark?: string
   description?: string
 }
@@ -179,7 +182,20 @@ export type AdminCard = {
   credits?: number
   status?: string
   note?: string
+  batch_id?: string
+  vendor_id?: number | null
+  used_by?: number
   used_at?: string
+  created_at?: string
+}
+
+export type AdminCardBatch = {
+  id?: number
+  batch_id?: string
+  note?: string
+  credits?: number
+  count?: number
+  used?: number
   created_at?: string
 }
 
@@ -191,7 +207,14 @@ export type AdminWithdrawal = {
   payment_type?: string
   payment_qr?: string
   status?: string
+  review_stage?: string
+  cs_reviewer_id?: number
+  cs_reviewed_at?: string
+  finance_reviewer_id?: number
+  finance_reviewed_at?: string
   admin_remark?: string
+  proof_url?: string
+  proof_note?: string
 }
 
 export type AdminKeyPool = {
@@ -209,6 +232,10 @@ export type AdminPoolKey = {
   value?: string
   priority?: number
   is_active?: boolean
+  last_used_at?: string | null
+  fail_rate?: number
+  total_calls?: number
+  balance?: number | null
 }
 
 export type AdminOcpcPlatform = {
@@ -228,6 +255,191 @@ export type AdminOcpcPlatform = {
   e360_order_event?: string
 }
 
+export type AdminTrendPoint = {
+  label: string
+  value: number
+}
+
+export type AdminTopEntry = {
+  id: string
+  name: string
+  value: number
+}
+
+export type AdminTopStats = {
+  users: AdminTopEntry[]
+  models: AdminTopEntry[]
+  channels: AdminTopEntry[]
+}
+
+export type AdminChannelHealth = {
+  total: number
+  ok: number
+  success_rate: number
+  p50_ms: number
+  p99_ms: number
+  top_errors: { msg: string; count: number }[]
+}
+
+export type AdminChannelLog = {
+  id?: number
+  channel_id?: number
+  admin_id?: number
+  field?: string
+  old_val?: string
+  new_val?: string
+  created_at?: string
+}
+
+export type AdminAuditLog = {
+  id?: number
+  admin_id?: number
+  admin_email?: string
+  action?: string
+  resource_type?: string
+  resource_id?: number
+  summary?: string
+  detail?: Record<string, unknown>
+  ip?: string
+  ua?: string
+  created_at?: string
+}
+
+export type AdminNotification = {
+  id?: number
+  title?: string
+  content?: string
+  target_type?: string
+  target_value?: string
+  status?: string
+  created_by?: number
+  send_at?: string
+  sent_at?: string
+  created_at?: string
+}
+
+export type AdminAlert = {
+  id?: number
+  type?: string
+  resource_type?: string
+  resource_id?: number
+  message?: string
+  status?: string
+  acked_by?: number
+  acked_at?: string
+  resolved_at?: string
+  detail?: Record<string, unknown>
+  created_at?: string
+}
+
+export type AdminExportTask = {
+  id?: number
+  name?: string
+  type?: string
+  params?: Record<string, unknown>
+  status?: string
+  progress?: number
+  file_url?: string
+  file_size?: number
+  error_msg?: string
+  expires_at?: string
+  created_at?: string
+}
+
+export type AdminUpstreamPlatform = {
+  id?: number
+  name?: string
+  base_url?: string
+  balance?: number
+  balance_synced_at?: string
+  is_active?: boolean
+  note?: string
+  created_at?: string
+}
+
+export type AdminRole = {
+  id?: number
+  name?: string
+  label?: string
+  permissions?: string[]
+  is_builtin?: boolean
+  created_at?: string
+}
+
+export type AdminAdminUser = {
+  id?: number
+  username?: string
+  email?: string | null
+  role_ids?: number[]
+  role_names?: string[]
+}
+
+export type AdminMe = {
+  user_id?: number
+  username?: string
+  email?: string
+  role?: string
+  permissions?: string[]
+}
+
+export type AdminCoupon = {
+  id?: number
+  code?: string
+  type?: string
+  title?: string
+  discount_type?: string
+  discount_value?: number
+  min_amount?: number
+  max_discount?: number
+  total_count?: number
+  used_count?: number
+  per_user_limit?: number
+  valid_from?: string
+  valid_until?: string
+  created_at?: string
+}
+
+export type AdminPaymentOrder = {
+  id?: number
+  user_id?: number
+  user_email?: string
+  out_trade_no?: string
+  amount?: number
+  credits?: number
+  status?: string
+  trade_no?: string
+  pay_flat?: number
+  created_at?: string
+  paid_at?: string
+}
+
+export type AdminRiskLabel = {
+  id?: number
+  user_id?: number
+  label?: string
+  reason?: string
+  created_by?: number
+  created_at?: string
+}
+
+export type AdminAPIKey = {
+  id?: number
+  user_id?: number
+  user_email?: string
+  name?: string
+  key_type?: string
+  is_active?: boolean
+  last_used_at?: string
+  created_at?: string
+}
+
+export type AdminUserPortrait = {
+  daily_spend: { day: string; amount: number }[]
+  top_models: { model: string; calls: number }[]
+  api_keys: AdminAPIKey[]
+  risk_labels: AdminRiskLabel[]
+}
+
 export const adminAuthApi = {
   login: (payload: { username: string; password: string }) =>
     http.post<AdminLoginResponse>('/auth/login', payload),
@@ -235,6 +447,9 @@ export const adminAuthApi = {
 
 export const adminApi = {
   getStats: () => http.get<AdminStatsResponse>('/admin/stats'),
+  getStatsTrend: (days: 7 | 30, dim: 'revenue' | 'cost' | 'profit' | 'calls') =>
+    http.get<{ points: AdminTrendPoint[]; dim: string; days: number }>('/admin/stats/trend', { params: { days, dim } }),
+  getStatsTop: () => http.get<AdminTopStats>('/admin/stats/top'),
   listChannels: () =>
     http.get<{ channels?: AdminChannel[]; items?: AdminChannel[] } | AdminChannel[]>(
       '/admin/channels'
@@ -249,11 +464,13 @@ export const adminApi = {
     }),
   deleteChannel: (id: number) =>
     http.delete<Record<string, unknown>>(`/admin/channels/${id}`),
-  listUsers: (page = 1, size = 20) =>
+  listUsers: (page = 1, size = 20, filters: Record<string, string> = {}) =>
     http.get<{ items?: AdminUser[]; users?: AdminUser[]; total?: number } | AdminUser[]>(
       '/admin/users',
-      { params: { page, size } }
+      { params: { page, size, ...filters } }
     ),
+  batchUpdateUsers: (payload: { action: 'freeze' | 'unfreeze' | 'set_group'; ids: number[]; group?: string; reason?: string }) =>
+    http.post<{ message: string; count: number }>('/admin/users/batch', payload),
   rechargeUser: (id: number, amount: number) =>
     http.post<Record<string, unknown>>(`/admin/users/${id}/recharge`, { amount }),
   grantModelCredit: (id: number, payload: { model_name: string; credits: number }) =>
@@ -294,6 +511,8 @@ export const adminApi = {
     ),
   updateSettings: (payload: Record<string, string>) =>
     http.put<Record<string, unknown>>('/admin/settings', payload),
+  getAdminMe: () =>
+    http.get<AdminMe>('/admin/me'),
   listVendors: (params: Record<string, unknown> = {}) =>
     http.get<{ items?: AdminVendor[]; vendors?: AdminVendor[] } | AdminVendor[]>(
       '/admin/vendors',
@@ -317,6 +536,10 @@ export const adminApi = {
     http.get<{ keys?: AdminPoolKey[] } | AdminPoolKey[]>(`/admin/key-pools/${poolId}/keys`),
   addPoolKey: (poolId: number, payload: { value: string; priority: number }) =>
     http.post<Record<string, unknown>>(`/admin/key-pools/${poolId}/keys`, payload),
+  importPoolKeys: (poolId: number, keys: string[]) =>
+    http.post<{ imported: number; skipped: number }>(`/admin/key-pools/${poolId}/keys/import`, { keys }),
+  getKeyPoolChannels: (id: number) =>
+    http.get<{ channels?: AdminChannel[] }>(`/admin/key-pools/${id}/channels`),
   removePoolKey: (id: number) =>
     http.delete<Record<string, unknown>>(`/admin/pool-keys/${id}`),
   updatePoolKey: (id: number, payload: { priority: number; is_active: boolean }) =>
@@ -341,7 +564,7 @@ export const adminApi = {
     http.delete<Record<string, unknown>>(`/admin/ocpc/platforms/${id}`),
   toggleOcpcPlatform: (id: number) =>
     http.patch<Record<string, unknown>>(`/admin/ocpc/platforms/${id}/toggle`, {}),
-  generateCards: (payload: { count: number; credits: number; note: string }) =>
+  generateCards: (payload: { count: number; credits: number; note: string; vendor_id?: number | null }) =>
     http.post<{ cards?: AdminCard[] }>('/admin/cards/generate', payload),
   listCards: (params: Record<string, unknown> = {}) =>
     http.get<{ cards?: AdminCard[]; total?: number }>('/admin/cards', { params }),
@@ -355,8 +578,113 @@ export const adminApi = {
     http.get<{ count?: number }>('/admin/withdrawals/pending-count'),
   approveWithdrawal: (id: number, remark = '') =>
     http.post<Record<string, unknown>>(`/admin/withdrawals/${id}/approve`, { remark }),
+  csApproveWithdrawal: (id: number) =>
+    http.post<Record<string, unknown>>(`/admin/withdrawals/${id}/cs-approve`, {}),
   rejectWithdrawal: (id: number, remark = '') =>
     http.post<Record<string, unknown>>(`/admin/withdrawals/${id}/reject`, { remark }),
+  uploadWithdrawalProof: (id: number, proof_url: string, proof_note: string) =>
+    http.post<Record<string, unknown>>(`/admin/withdrawals/${id}/proof`, { proof_url, proof_note }),
+  // 渠道扩展
+  batchUpdateChannels: (payload: { action: 'toggle_active' | 'set_rate'; ids: number[]; is_active?: boolean; rate_ratio?: number }) =>
+    http.post<{ ok: boolean; count: number }>('/admin/channels/batch', payload),
+  getChannelHealth: (id: number) =>
+    http.get<AdminChannelHealth>(`/admin/channels/${id}/health`),
+  listChannelLogs: (id: number) =>
+    http.get<{ logs: AdminChannelLog[] }>(`/admin/channels/${id}/logs`),
+  // 用户扩展
+  getUserPortrait: (id: number) =>
+    http.get<AdminUserPortrait>(`/admin/users/${id}/portrait`),
+  getUserOperationLog: (id: number) =>
+    http.get<{ transactions: unknown[]; audits: AdminAuditLog[] }>(`/admin/users/${id}/operation-log`),
+  addRiskLabel: (userId: number, payload: { label: string; reason: string }) =>
+    http.post<AdminRiskLabel>(`/admin/users/${userId}/risk-labels`, payload),
+  deleteRiskLabel: (id: number) =>
+    http.delete<Record<string, unknown>>(`/admin/risk-labels/${id}`),
+  // API Key 总览
+  listApiKeys: (params: Record<string, unknown> = {}) =>
+    http.get<{ keys: AdminAPIKey[]; total: number }>('/admin/api-keys', { params }),
+  revokeApiKey: (id: number) =>
+    http.patch<Record<string, unknown>>(`/admin/api-keys/${id}/revoke`, {}),
+  // 账单扩展
+  getTransactionAggregate: (params: Record<string, unknown> = {}) =>
+    http.get<{ rows: { key: string; revenue: number; cost: number; profit: number; calls: number }[]; dim: string }>('/admin/transactions/aggregate', { params }),
+  adjustTransaction: (payload: { user_id: number; type: string; credits: number; reason: string }) =>
+    http.post<{ ok: boolean; balance_after: number; transaction_id: number }>('/admin/transactions/adjust', payload),
+  // 卡密批次
+  listCardBatches: () =>
+    http.get<{ batches: AdminCardBatch[] }>('/admin/cards/batches'),
+  voidCard: (id: number) =>
+    http.post<Record<string, unknown>>(`/admin/cards/${id}/void`, {}),
+  voidCardBatch: (batchId: string) =>
+    http.post<{ ok: boolean; voided: number }>(`/admin/cards/batches/${batchId}/void`, {}),
+  // 审计日志
+  listAuditLogs: (params: Record<string, unknown> = {}) =>
+    http.get<{ logs: AdminAuditLog[]; total: number }>('/admin/audit', { params }),
+  // 通知中心
+  listNotifications: (params: Record<string, unknown> = {}) =>
+    http.get<{ notifications: AdminNotification[]; total: number }>('/admin/notifications', { params }),
+  createNotification: (payload: Partial<AdminNotification>) =>
+    http.post<AdminNotification>('/admin/notifications', payload),
+  sendNotification: (id: number) =>
+    http.post<Record<string, unknown>>(`/admin/notifications/${id}/send`, {}),
+  deleteNotification: (id: number) =>
+    http.delete<Record<string, unknown>>(`/admin/notifications/${id}`),
+  // 告警中心
+  listAlerts: (params: Record<string, unknown> = {}) =>
+    http.get<{ alerts: AdminAlert[]; total: number }>('/admin/alerts', { params }),
+  ackAlert: (id: number) =>
+    http.patch<Record<string, unknown>>(`/admin/alerts/${id}/ack`, {}),
+  resolveAlert: (id: number) =>
+    http.patch<Record<string, unknown>>(`/admin/alerts/${id}/resolve`, {}),
+  // 数据导出中心
+  listExportTasks: () =>
+    http.get<{ tasks: AdminExportTask[] }>('/admin/exports'),
+  createExportTask: (payload: { name: string; type: string; params: Record<string, unknown> }) =>
+    http.post<AdminExportTask>('/admin/exports', payload),
+  // 上游平台
+  listUpstreamPlatforms: () =>
+    http.get<{ platforms: AdminUpstreamPlatform[] }>('/admin/upstream-platforms'),
+  createUpstreamPlatform: (payload: Partial<AdminUpstreamPlatform> & { api_key?: string }) =>
+    http.post<AdminUpstreamPlatform>('/admin/upstream-platforms', payload),
+  updateUpstreamPlatform: (id: number, payload: Partial<AdminUpstreamPlatform>) =>
+    http.put<Record<string, unknown>>(`/admin/upstream-platforms/${id}`, payload),
+  deleteUpstreamPlatform: (id: number) =>
+    http.delete<Record<string, unknown>>(`/admin/upstream-platforms/${id}`),
+  getUpstreamModels: (id: number) =>
+    http.get<{ models: string[] }>(`/admin/upstream-platforms/${id}/models`),
+  batchCreateChannelsFromUpstream: (platformId: number, models: string[]) =>
+    http.post<{ created: number }>('/admin/channels/batch-from-upstream', { platform_id: platformId, models }),
+  // RBAC
+  listRoles: () =>
+    http.get<{ roles: AdminRole[] }>('/admin/roles'),
+  createRole: (payload: { name: string; label: string; permissions: string[] }) =>
+    http.post<AdminRole>('/admin/roles', payload),
+  updateRole: (id: number, payload: { label?: string; permissions?: string[] }) =>
+    http.put<Record<string, unknown>>(`/admin/roles/${id}`, payload),
+  deleteRole: (id: number) =>
+    http.delete<Record<string, unknown>>(`/admin/roles/${id}`),
+  // 优惠券
+  listCoupons: (params: Record<string, unknown> = {}) =>
+    http.get<{ coupons: AdminCoupon[]; total: number }>('/admin/coupons', { params }),
+  createCoupon: (payload: Partial<AdminCoupon>) =>
+    http.post<AdminCoupon>('/admin/coupons', payload),
+  voidCoupon: (id: number) =>
+    http.delete<Record<string, unknown>>(`/admin/coupons/${id}`),
+  listCouponUses: (id: number) =>
+    http.get<{ uses: { id?: number; coupon_id?: number; user_id?: number; discount?: number; created_at?: string }[] }>(`/admin/coupons/${id}/uses`),
+  // 客户充值明细
+  listPaymentOrders: (params: Record<string, unknown> = {}) =>
+    http.get<{ orders: AdminPaymentOrder[]; total: number }>('/admin/payments', { params }),
+  // 系统设置操作日志
+  listSettingLogs: () =>
+    http.get<{ logs: AdminAuditLog[] }>('/admin/settings/logs'),
+  verifyAdminPassword: (password: string) =>
+    http.post<{ ok: boolean }>('/admin/verify-password', { password }),
+  // 管理员账号 & 角色分配
+  listAdminUsers: () =>
+    http.get<{ admins: AdminAdminUser[] }>('/admin/admins'),
+  setAdminRoles: (id: number, roleIds: number[]) =>
+    http.put<{ ok: boolean }>(`/admin/admins/${id}/roles`, { role_ids: roleIds }),
   uploadImage: (file: File, category: UploadImageCategory) =>
     uploadAuthedImage('admin', file, category),
 }

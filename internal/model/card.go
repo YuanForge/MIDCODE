@@ -9,6 +9,7 @@ type Card struct {
 	Credits   int64      `xorm:"notnull 'credits'" json:"credits"`                 // 面值（微元）
 	Status    string     `xorm:"notnull default('unused') 'status'" json:"status"` // unused / used
 	Note      string     `xorm:"default('') 'note'" json:"note"`                   // 备注
+	VendorID  *int64     `xorm:"'vendor_id'" json:"vendor_id"`                     // 来源分销商 ID
 	CreatedBy int64      `xorm:"default(0) 'created_by'" json:"created_by"`
 	UsedBy    int64      `xorm:"default(0) 'used_by'" json:"used_by"`
 	UsedAt    *time.Time `xorm:"'used_at'" json:"used_at"`

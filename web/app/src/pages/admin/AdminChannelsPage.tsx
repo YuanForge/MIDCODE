@@ -18,6 +18,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -38,7 +39,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
-import { adminApi, type AdminChannel, type AdminKeyPool } from '@/lib/api/admin'
+import { adminApi, type AdminChannel, type AdminChannelLog, type AdminKeyPool } from '@/lib/api/admin'
 import { useAsync } from '@/hooks/use-async'
 
 type ChannelForm = {
@@ -103,6 +104,7 @@ type ChannelForm = {
   icon_url: string
   description: string
   display_name: string
+  groups: string[]
   is_active: boolean
 }
 
@@ -230,6 +232,7 @@ const emptyForm: ChannelForm = {
   icon_url: '',
   description: '',
   display_name: '',
+  groups: [],
   is_active: true,
 }
 
@@ -610,6 +613,7 @@ function buildFormFromChannel(row: AdminChannel, isCopy = false): ChannelForm {
     icon_url: row.icon_url ?? '',
     description: row.description ?? '',
     display_name: row.display_name ?? '',
+    groups: row.groups ?? [],
     is_active: row.is_active ?? true,
   }
 }
@@ -644,6 +648,15 @@ export function AdminChannelsPage() {
   const [pendingDeleteChannel, setPendingDeleteChannel] = useState<AdminChannel | undefined>()
   const [uploadingIcon, setUploadingIcon] = useState(false)
   const iconUploadRef = useRef<HTMLInputElement>(null)
+
+  // 批量选择
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [batchRateOpen, setBatchRateOpen] = useState(false)
+  const [batchRate, setBatchRate] = useState('')
+  const [batchMutating, setBatchMutating] = useState(false)
+
+  // 变更日志侧面板
+  const [logChannel, setLogChannel] = useState<AdminChannel | null>(null)
 
   const error = loadError || mutError
 
@@ -756,6 +769,7 @@ export function AdminChannelsPage() {
         icon_url: form.icon_url.trim(),
         description: form.description.trim(),
         display_name: form.display_name.trim(),
+        groups: form.groups,
         is_active: form.is_active,
       }
       if (form.id) {
@@ -797,6 +811,59 @@ export function AdminChannelsPage() {
     }
   }
 
+  async function batchToggleActive(isActive: boolean) {
+    if (selectedIds.size === 0) return
+    setBatchMutating(true)
+    setMutError('')
+    try {
+      await adminApi.batchUpdateChannels({ action: 'toggle_active', ids: Array.from(selectedIds), is_active: isActive })
+      setSelectedIds(new Set())
+      reload()
+    } catch (err) {
+      const { getApiErrorMessage } = await import('@/lib/api/http')
+      setMutError(getApiErrorMessage(err))
+    } finally {
+      setBatchMutating(false)
+    }
+  }
+
+  async function batchSetRate() {
+    if (selectedIds.size === 0 || !batchRate.trim()) return
+    setBatchMutating(true)
+    setMutError('')
+    try {
+      await adminApi.batchUpdateChannels({ action: 'set_rate', ids: Array.from(selectedIds), rate_ratio: Number(batchRate) })
+      setSelectedIds(new Set())
+      setBatchRateOpen(false)
+      setBatchRate('')
+      reload()
+    } catch (err) {
+      const { getApiErrorMessage } = await import('@/lib/api/http')
+      setMutError(getApiErrorMessage(err))
+    } finally {
+      setBatchMutating(false)
+    }
+  }
+
+  function toggleSelect(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const allOnPageSelected = rows.length > 0 && rows.every((r) => r.id != null && selectedIds.has(r.id))
+
+  function toggleSelectAll() {
+    if (allOnPageSelected) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(rows.filter((r) => r.id != null).map((r) => r.id as number)))
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -822,11 +889,28 @@ export function AdminChannelsPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
+
+      {/* 批量操作工具栏 */}
+      {selectedIds.size > 0 ? (
+        <div className="flex items-center gap-3 rounded-lg border bg-muted/40 px-4 py-2.5">
+          <span className="text-sm font-medium">已选 {selectedIds.size} 个渠道</span>
+          <div className="flex items-center gap-2 ml-2">
+            <Button size="sm" variant="outline" disabled={batchMutating} onClick={() => batchToggleActive(true)}>批量启用</Button>
+            <Button size="sm" variant="outline" disabled={batchMutating} onClick={() => batchToggleActive(false)}>批量停用</Button>
+            <Button size="sm" variant="outline" disabled={batchMutating} onClick={() => { setBatchRate(''); setBatchRateOpen(true) }}>批量设权重</Button>
+          </div>
+          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setSelectedIds(new Set())}>取消</Button>
+        </div>
+      ) : null}
+
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10">
+                <Checkbox checked={allOnPageSelected} onCheckedChange={toggleSelectAll} aria-label="全选" />
+              </TableHead>
               <TableHead className="w-14">ID</TableHead>
               <TableHead>名称</TableHead>
               <TableHead>模型</TableHead>
@@ -835,23 +919,30 @@ export function AdminChannelsPage() {
               <TableHead>价格摘要</TableHead>
               <TableHead>号池</TableHead>
               <TableHead>优先级/权重</TableHead>
+              <TableHead>健康</TableHead>
               <TableHead>状态</TableHead>
               <TableHead className="text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           {loading ? (
-            <TableSkeleton cols={10} />
+            <TableSkeleton cols={12} />
           ) : (
             <TableBody>
               {rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={12} className="py-10 text-center text-muted-foreground">
                     暂无渠道数据
                   </TableCell>
                 </TableRow>
               ) : (
                 rows.map((row, index) => (
-                  <TableRow key={row.id ?? index}>
+                  <TableRow key={row.id ?? index} data-state={row.id != null && selectedIds.has(row.id) ? 'selected' : undefined}>
+                    <TableCell>
+                      <Checkbox
+                        checked={row.id != null && selectedIds.has(row.id)}
+                        onCheckedChange={() => row.id != null && toggleSelect(row.id)}
+                      />
+                    </TableCell>
                     <TableCell className="text-muted-foreground">{row.id ?? '-'}</TableCell>
                     <TableCell className="max-w-56">
                       <div className="font-medium">{row.name ?? '未命名渠道'}</div>
@@ -881,6 +972,9 @@ export function AdminChannelsPage() {
                     <TableCell>{row.key_pool_id ? `#${row.key_pool_id}` : '—'}</TableCell>
                     <TableCell className="text-xs">P{row.priority ?? 0} / W{row.weight ?? 1}</TableCell>
                     <TableCell>
+                      {row.id ? <ChannelHealthBadge channelId={row.id} /> : <Badge variant="secondary">N/A</Badge>}
+                    </TableCell>
+                    <TableCell>
                       <Badge variant={row.is_active === false ? 'secondary' : 'default'}>
                         {row.is_active === false ? '停用' : '启用'}
                       </Badge>
@@ -892,6 +986,7 @@ export function AdminChannelsPage() {
                           <CopyIcon data-icon="inline-start" />
                           复制
                         </Button>
+                        <Button size="sm" variant="outline" onClick={() => setLogChannel(row)}>日志</Button>
                         <Button size="sm" variant="outline" onClick={() => toggleChannel(row)}>
                           {row.is_active === false ? '启用' : '停用'}
                         </Button>
@@ -997,6 +1092,55 @@ export function AdminChannelsPage() {
                 <div className="space-y-2">
                   <label className="text-sm font-medium">描述</label>
                   <Input value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} placeholder="可选，显示在渠道名称下方" />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-sm font-medium">渠道分组标签</label>
+                  <div className="flex flex-wrap gap-2">
+                    {['高质', '低价', '备用'].map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => setForm((current) => ({
+                          ...current,
+                          groups: current.groups.includes(tag)
+                            ? current.groups.filter((g) => g !== tag)
+                            : [...current.groups, tag],
+                        }))}
+                        className={`px-3 py-1 rounded-full text-xs border transition-colors ${
+                          form.groups.includes(tag)
+                            ? 'bg-primary text-primary-foreground border-primary'
+                            : 'border-input hover:bg-accent'
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                    {form.groups.filter((g) => !['高质', '低价', '备用'].includes(g)).map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => setForm((current) => ({ ...current, groups: current.groups.filter((g) => g !== tag) }))}
+                        className="px-3 py-1 rounded-full text-xs border bg-secondary text-secondary-foreground"
+                      >
+                        {tag} ×
+                      </button>
+                    ))}
+                    <div className="flex gap-1">
+                      <Input
+                        placeholder="自定义标签"
+                        className="h-7 w-24 text-xs"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            const val = (e.target as HTMLInputElement).value.trim()
+                            if (val && !form.groups.includes(val)) {
+                              setForm((current) => ({ ...current, groups: [...current.groups, val] }));(e.target as HTMLInputElement).value = ''
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 md:col-span-2 pt-1">
                   <input
@@ -1520,6 +1664,146 @@ export function AdminChannelsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* 批量设权重 Dialog */}
+      <Dialog open={batchRateOpen} onOpenChange={setBatchRateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>批量设置权重</DialogTitle>
+            <DialogDescription>将选中 {selectedIds.size} 个渠道的权重设为同一值。</DialogDescription>
+          </DialogHeader>
+          <Input type="number" min="1" step="1" value={batchRate} onChange={(e) => setBatchRate(e.target.value)} placeholder="权重（正整数）" />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBatchRateOpen(false)}>取消</Button>
+            <Button onClick={batchSetRate} disabled={batchMutating}>确认</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 变更日志 Dialog */}
+      <Dialog open={logChannel !== null} onOpenChange={() => setLogChannel(null)}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>渠道变更日志</DialogTitle>
+            <DialogDescription>{logChannel?.name ?? logChannel?.model ?? `#${logChannel?.id}`}</DialogDescription>
+          </DialogHeader>
+          {logChannel?.id ? <ChannelLogPanel channelId={logChannel.id} /> : null}
+        </DialogContent>
+      </Dialog>
     </>
+  )
+}
+
+function ChannelHealthBadge({ channelId }: { channelId: number }) {
+  const { data } = useAsync(async () => {
+    return adminApi.getChannelHealth(channelId)
+  }, null as import('@/lib/api/admin').AdminChannelHealth | null, [channelId])
+
+  const [open, setOpen] = useState(false)
+
+  if (!data || data.total === 0) return <Badge variant="secondary" className="text-xs">无数据</Badge>
+
+  const rate = (data.success_rate ?? 0) * 100
+  const isHealthy = rate >= 95
+  const latency = data.p50_ms != null ? `${data.p50_ms.toFixed(0)}ms` : ''
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen(true) }}
+        className="focus:outline-none"
+        title="点击查看健康详情"
+      >
+        <Badge variant={isHealthy ? 'default' : 'destructive'} className="cursor-pointer text-xs hover:opacity-80">
+          {rate.toFixed(0)}%{latency ? ` P50 ${latency}` : ''}
+        </Badge>
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>渠道 #{channelId} 健康状态（近 24h）</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <div className="rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground">成功率</p>
+                <p className={`text-lg font-semibold ${isHealthy ? 'text-emerald-600' : 'text-destructive'}`}>
+                  {rate.toFixed(1)}%
+                </p>
+                <p className="text-xs text-muted-foreground">{data.ok}/{data.total}</p>
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground">P50 延迟</p>
+                <p className="text-lg font-semibold">
+                  {data.p50_ms != null ? `${data.p50_ms.toFixed(0)}ms` : '-'}
+                </p>
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground">P99 延迟</p>
+                <p className="text-lg font-semibold">
+                  {data.p99_ms != null ? `${data.p99_ms.toFixed(0)}ms` : '-'}
+                </p>
+              </div>
+            </div>
+            {data.top_errors && data.top_errors.length > 0 ? (
+              <div>
+                <p className="mb-2 text-sm font-medium">失败原因 TOP{data.top_errors.length}</p>
+                <div className="space-y-1.5">
+                  {data.top_errors.map((e, i) => (
+                    <div key={i} className="flex items-start justify-between gap-2 rounded-md bg-muted/40 px-3 py-2 text-xs">
+                      <span className="flex-1 truncate font-mono text-destructive/80" title={e.msg}>{e.msg || '(空)'}</span>
+                      <span className="shrink-0 font-semibold text-muted-foreground">{e.count} 次</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">近 24h 无失败记录</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
+function ChannelLogPanel({ channelId }: { channelId: number }) {
+  const { data: logs, loading } = useAsync(async () => {
+    const res = await adminApi.listChannelLogs(channelId)
+    return (Array.isArray(res) ? res : (res as { logs?: AdminChannelLog[] }).logs ?? []) as AdminChannelLog[]
+  }, [] as AdminChannelLog[], [channelId])
+
+  if (loading) return <div className="py-6 text-sm text-muted-foreground text-center">加载中…</div>
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-40">时间</TableHead>
+          <TableHead>操作人</TableHead>
+          <TableHead>字段</TableHead>
+          <TableHead>前值</TableHead>
+          <TableHead>后值</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {logs.length === 0 ? (
+          <TableRow>
+            <TableCell colSpan={5} className="py-6 text-center text-sm text-muted-foreground">暂无变更记录</TableCell>
+          </TableRow>
+        ) : logs.map((log, i) => (
+          <TableRow key={log.id ?? i}>
+            <TableCell className="text-sm text-muted-foreground">
+              {log.created_at ? new Date(log.created_at).toLocaleString('zh-CN') : '-'}
+            </TableCell>
+            <TableCell className="text-sm">{log.admin_id ? `#${log.admin_id}` : '-'}</TableCell>
+            <TableCell className="font-mono text-xs">{log.field ?? '-'}</TableCell>
+            <TableCell className="font-mono text-xs text-muted-foreground truncate max-w-xs">{log.old_val ?? '-'}</TableCell>
+            <TableCell className="font-mono text-xs truncate max-w-xs">{log.new_val ?? '-'}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   )
 }

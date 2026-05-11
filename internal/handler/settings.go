@@ -7,6 +7,7 @@ import (
 	"fanapi/internal/model"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // publicSettingKeys lists keys that are safe to expose to all visitors.
@@ -90,4 +91,27 @@ func GetPublicSettings(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"settings": result})
+}
+
+// AdminVerifyPassword verifies the current admin's password for sensitive operations.
+func AdminVerifyPassword(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Password == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入密码"})
+		return
+	}
+	var user model.User
+	found, err := db.Engine.ID(userID).Cols("password_hash").Get(&user)
+	if err != nil || !found {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在"})
+		return
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"fanapi/internal/db"
 	"fanapi/internal/model"
@@ -178,12 +179,17 @@ func AdminPendingWithdrawCount(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"count": count})
 }
 
-// AdminApproveWithdrawal POST /admin/withdrawals/:id/approve  审批通过并划扣积分
+// AdminApproveWithdrawal POST /admin/withdrawals/:id/approve  财务复审通过并划扣积分
 func AdminApproveWithdrawal(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
+	}
+
+	adminID := int64(0)
+	if v, ok := c.Get("user_id"); ok {
+		adminID, _ = v.(int64)
 	}
 
 	var req struct {
@@ -217,9 +223,13 @@ func AdminApproveWithdrawal(c *gin.Context) {
 	}
 
 	// 更新申请状态
+	now := time.Now()
 	record.Status = "approved"
+	record.ReviewStage = "completed"
 	record.AdminRemark = req.Remark
-	if _, err := db.Engine.ID(id).Cols("status", "admin_remark").Update(&record); err != nil {
+	record.FinanceReviewerID = adminID
+	record.FinanceReviewedAt = &now
+	if _, err := db.Engine.ID(id).Cols("status", "admin_remark", "review_stage", "finance_reviewer_id", "finance_reviewed_at").Update(&record); err != nil {
 		// 回滚冻结余额
 		db.Engine.Exec("UPDATE users SET frozen_balance = frozen_balance + $1 WHERE id = $2", record.Amount, record.UserID) //nolint:errcheck
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新状态失败"})
@@ -258,4 +268,39 @@ func AdminRejectWithdrawal(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// AdminCsApproveWithdrawal POST /admin/withdrawals/:id/cs-approve
+// 客服初审通过 → 推进至财务复审阶段
+func AdminCsApproveWithdrawal(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	adminID := int64(0)
+	if v, ok := c.Get("user_id"); ok {
+		adminID, _ = v.(int64)
+	}
+
+	var record model.WithdrawRequest
+	if found, err := db.Engine.ID(id).Get(&record); err != nil || !found {
+		c.JSON(http.StatusNotFound, gin.H{"error": "申请不存在"})
+		return
+	}
+	if record.Status != "pending" || record.ReviewStage != "cs_review" {
+		c.JSON(http.StatusConflict, gin.H{"error": "当前状态不可初审"})
+		return
+	}
+
+	now := time.Now()
+	record.ReviewStage = "finance_review"
+	record.CsReviewerID = adminID
+	record.CsReviewedAt = &now
+	if _, err := db.Engine.ID(id).Cols("review_stage", "cs_reviewer_id", "cs_reviewed_at").Update(&record); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "review_stage": "finance_review"})
 }

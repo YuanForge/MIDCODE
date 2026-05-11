@@ -182,11 +182,14 @@ func main() {
 			admin.PATCH("/key-pools/:id/vendor-toggle", handler.ToggleVendorSubmittable)
 			admin.GET("/key-pools/:id/keys", handler.ListPoolKeys)
 			admin.POST("/key-pools/:id/keys", handler.AddPoolKey)
+			admin.POST("/key-pools/:id/keys/import", handler.ImportPoolKeys)
+			admin.GET("/key-pools/:id/channels", handler.GetKeyPoolChannels)
 			admin.DELETE("/pool-keys/:id", handler.RemovePoolKey)
 			admin.PATCH("/pool-keys/:id", handler.UpdatePoolKey)
 			admin.PATCH("/pool-keys/:id/vendor", handler.AdminSetPoolKeyVendor)
 			admin.GET("/users", handler.ListUsers)
 			admin.POST("/users", handler.CreateUser)
+			admin.POST("/users/batch", handler.BatchUpdateUsers)
 			admin.DELETE("/users/:id", handler.DeleteUser)
 			admin.POST("/users/:id/recharge", handler.Recharge)
 			admin.POST("/users/:id/model-credits", handler.GrantModelCredit)
@@ -200,6 +203,8 @@ func main() {
 			admin.GET("/tasks", handler.ListTasks)
 			admin.GET("/tasks/:id", handler.GetAdminTask)
 			admin.GET("/stats", handler.GetAdminStats)
+			admin.GET("/stats/trend", handler.GetAdminStatsTrend)
+			admin.GET("/stats/top", handler.GetAdminStatsTop)
 			// 卡密管理
 			admin.POST("/cards/generate", handler.GenerateCards)
 			admin.GET("/cards", handler.ListCards)
@@ -210,6 +215,9 @@ func main() {
 			// 系统设置
 			admin.GET("/settings", handler.GetSettings)
 			admin.PUT("/settings", handler.UpdateSettings)
+			admin.POST("/verify-password", handler.AdminVerifyPassword)
+			// 管理员个人信息 & 权限
+			admin.GET("/me", handler.GetAdminMe)
 			// OCPC 转化上报 + 平台账户管理
 			admin.POST("/ocpc/upload", handler.TriggerOcpcUpload)
 			admin.GET("/ocpc/schedule", handler.GetOcpcSchedule)
@@ -227,6 +235,79 @@ func main() {
 			admin.GET("/withdrawals/pending-count", handler.AdminPendingWithdrawCount)
 			admin.POST("/withdrawals/:id/approve", handler.AdminApproveWithdrawal)
 			admin.POST("/withdrawals/:id/reject", handler.AdminRejectWithdrawal)
+			admin.POST("/withdrawals/:id/cs-approve", handler.AdminCsApproveWithdrawal)
+			admin.POST("/withdrawals/:id/proof", handler.AdminUploadWithdrawalProof)
+
+			// ── Superpower 扩展路由 ──────────────────────────────────
+			// 渠道批量 + 健康 + 变更日志
+			admin.POST("/channels/batch", handler.BatchUpdateChannels)
+			admin.GET("/channels/:id/health", handler.GetChannelHealth)
+			admin.GET("/channels/:id/logs", handler.ListChannelLogs)
+
+			// 用户画像 + 风控标签 + API Key 总览
+			admin.GET("/users/:id/portrait", handler.GetUserPortrait)
+			admin.GET("/users/:id/operation-log", handler.GetUserOperationLog)
+			admin.POST("/users/:id/risk-labels", handler.AddRiskLabel)
+			admin.DELETE("/risk-labels/:id", handler.DeleteRiskLabel)
+			admin.GET("/api-keys", handler.AdminListAPIKeys)
+			admin.PATCH("/api-keys/:id/revoke", handler.RevokeAPIKey)
+
+			// 账单聚合 + 手动调账
+			admin.GET("/transactions/aggregate", handler.GetTransactionAggregate)
+			admin.POST("/transactions/adjust", handler.AdjustTransaction)
+
+			// 卡密批次
+			admin.GET("/cards/batches", handler.ListCardBatches)
+			admin.POST("/cards/:id/void", handler.VoidCard)
+			admin.POST("/cards/batches/:batch_id/void", handler.VoidCardBatch)
+
+			// 审计日志
+			admin.GET("/audit", handler.ListAuditLogs)
+
+			// 通知中心
+			admin.GET("/notifications", handler.ListNotifications)
+			admin.POST("/notifications", handler.CreateNotification)
+			admin.POST("/notifications/:id/send", handler.SendNotification)
+			admin.DELETE("/notifications/:id", handler.DeleteNotification)
+
+			// 告警中心
+			admin.GET("/alerts", handler.ListAlerts)
+			admin.PATCH("/alerts/:id/ack", handler.AckAlert)
+			admin.PATCH("/alerts/:id/resolve", handler.ResolveAlert)
+
+			// 数据导出中心
+			admin.GET("/exports", handler.ListExportTasks)
+			admin.POST("/exports", handler.CreateExportTask)
+
+			// 上游平台管理
+			admin.GET("/upstream-platforms", handler.ListUpstreamPlatforms)
+			admin.POST("/upstream-platforms", handler.CreateUpstreamPlatform)
+			admin.PUT("/upstream-platforms/:id", handler.UpdateUpstreamPlatform)
+			admin.DELETE("/upstream-platforms/:id", handler.DeleteUpstreamPlatform)
+			admin.GET("/upstream-platforms/:id/models", handler.GetUpstreamModels)
+			admin.POST("/channels/batch-from-upstream", handler.BatchCreateChannelsFromUpstream)
+
+			// RBAC 角色管理
+			admin.GET("/roles", handler.ListRoles)
+			admin.POST("/roles", handler.CreateRole)
+			admin.PUT("/roles/:id", handler.UpdateRole)
+			admin.DELETE("/roles/:id", handler.DeleteRole)
+
+			// 管理员账号 & 角色分配
+			admin.GET("/admins", handler.ListAdminUsers)
+			admin.PUT("/admins/:id/roles", handler.SetAdminRoles)
+
+			// 优惠券管理
+			admin.GET("/coupons", handler.ListCoupons)
+			admin.POST("/coupons", handler.CreateCoupon)
+			admin.DELETE("/coupons/:id", handler.VoidCoupon)
+			admin.GET("/coupons/:id/uses", handler.ListCouponUses)
+
+			// 客户充值明细
+			admin.GET("/payments", handler.AdminListPaymentOrders)
+
+			// 系统设置操作日志
+			admin.GET("/settings/logs", handler.ListSettingLogs)
 		}
 
 		// Epay 充值（需要 JWT 认证）

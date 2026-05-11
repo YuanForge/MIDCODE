@@ -8,7 +8,17 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Table,
   TableBody,
@@ -17,6 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { Textarea } from '@/components/ui/textarea'
 import { adminApi, type AdminTransaction, type AdminTransactionSummary } from '@/lib/api/admin'
 import { useAsync } from '@/hooks/use-async'
 
@@ -44,10 +55,22 @@ function profitOf(row: AdminTransaction) {
 }
 
 export function AdminBillingPage() {
+  const [activeTab, setActiveTab] = useState('detail')
   const [page, setPage] = useState(1)
   const [startAt, setStartAt] = useState('')
   const [endAt, setEndAt] = useState('')
+  const [txType, setTxType] = useState('')
+  const [userId, setUserId] = useState('')
   const [searchParams, setSearchParams] = useState<Record<string, unknown>>({ page: 1 })
+
+  // 手动调账 dialog
+  const [adjustOpen, setAdjustOpen] = useState(false)
+  const [adjustForm, setAdjustForm] = useState({ user_id: '', type: 'recharge', credits: '', reason: '' })
+  const [adjustError, setAdjustError] = useState('')
+  const [adjusting, setAdjusting] = useState(false)
+  // 按月导出
+  const [exportMonth, setExportMonth] = useState(() => new Date().toISOString().slice(0, 7))
+  const [exporting, setExporting] = useState(false)
 
   const { data, loading, error, reload } = useAsync(async () => {
     const res = await adminApi.listTransactions(searchParams)
@@ -64,13 +87,78 @@ export function AdminBillingPage() {
     const params: Record<string, unknown> = { page: 1, size: pageSize }
     if (startAt) params.start_at = startAt.replace('T', ' ') + ':00'
     if (endAt) params.end_at = endAt.replace('T', ' ') + ':00'
+    if (txType) params.type = txType
+    if (userId) params.user_id = userId
     setPage(1)
     setSearchParams(params)
+  }
+
+  function resetSearch() {
+    setStartAt('')
+    setEndAt('')
+    setTxType('')
+    setUserId('')
+    setPage(1)
+    setSearchParams({ page: 1 })
   }
 
   function changePage(next: number) {
     setPage(next)
     setSearchParams((prev) => ({ ...prev, page: next }))
+  }
+
+  // 聚合视图数据
+  const aggDim = activeTab === 'detail' ? '' : activeTab
+  const { data: aggData, loading: aggLoading } = useAsync(async () => {
+    if (!aggDim) return { rows: [] as { key: string; revenue: number; cost: number; profit: number; calls: number }[] }
+    return adminApi.getTransactionAggregate({ dim: aggDim })
+  }, { rows: [] as { key: string; revenue: number; cost: number; profit: number; calls: number }[] }, [aggDim])
+
+  async function submitAdjust() {
+    if (!adjustForm.user_id || !adjustForm.credits || !adjustForm.reason) {
+      setAdjustError('请填写所有必填字段')
+      return
+    }
+    if (adjustForm.reason.length < 10) {
+      setAdjustError('调账原因至少 10 个字符')
+      return
+    }
+    setAdjustError('')
+    setAdjusting(true)
+    try {
+      await adminApi.adjustTransaction({
+        user_id: Number(adjustForm.user_id),
+        type: adjustForm.type,
+        credits: Number(adjustForm.credits),
+        reason: adjustForm.reason,
+      })
+      setAdjustOpen(false)
+      setAdjustForm({ user_id: '', type: 'recharge', credits: '', reason: '' })
+      reload()
+    } catch (err) {
+      const { getApiErrorMessage } = await import('@/lib/api/http')
+      setAdjustError(getApiErrorMessage(err))
+    } finally {
+      setAdjusting(false)
+    }
+  }
+
+  async function submitExport() {
+    setExporting(true)
+    try {
+      await adminApi.createExportTask({
+        name: `账单对账单 ${exportMonth}`,
+        type: 'billing',
+        params: { month: exportMonth },
+      })
+      // 导出任务已创建，提示用户前往数据导出页查看
+      alert(`导出任务已提交（${exportMonth}），请前往「数据导出」页面下载。`)
+    } catch (err) {
+      const { getApiErrorMessage } = await import('@/lib/api/http')
+      alert(getApiErrorMessage(err))
+    } finally {
+      setExporting(false)
+    }
   }
 
   return (
@@ -80,11 +168,25 @@ export function AdminBillingPage() {
         title="账单流水与利润统计"
         description="按时间范围查看平台收入、成本和利润，支持运营复盘与对账。"
         actions={
-          error ? (
-            <Button size="sm" variant="outline" onClick={reload}>
-              重试
+          <div className="flex items-center gap-2">
+            {error ? (
+              <Button size="sm" variant="outline" onClick={reload}>
+                重试
+              </Button>
+            ) : null}
+            <input
+              type="month"
+              value={exportMonth}
+              onChange={e => setExportMonth(e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm"
+            />
+            <Button size="sm" variant="outline" onClick={submitExport} disabled={exporting}>
+              {exporting ? '提交中…' : '导出对账单'}
             </Button>
-          ) : null
+            <Button size="sm" onClick={() => { setAdjustForm({ user_id: '', type: 'recharge', credits: '', reason: '' }); setAdjustError(''); setAdjustOpen(true) }}>
+              手动调账
+            </Button>
+          </div>
         }
       />
       {error ? (
@@ -93,6 +195,16 @@ export function AdminBillingPage() {
         </Alert>
       ) : null}
 
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          <TabsTrigger value="detail">明细</TabsTrigger>
+          <TabsTrigger value="user">按用户</TabsTrigger>
+          <TabsTrigger value="channel">按渠道</TabsTrigger>
+          <TabsTrigger value="model">按模型</TabsTrigger>
+          <TabsTrigger value="day">按日</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="detail">
       {/* 过滤栏 */}
       <Card>
         <CardContent className="flex flex-wrap items-end gap-3 py-4">
@@ -104,7 +216,29 @@ export function AdminBillingPage() {
             <label className="text-xs text-muted-foreground">结束时间</label>
             <Input type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} className="w-52" />
           </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">类型</label>
+            <Select value={txType || '_all'} onValueChange={(v) => setTxType(v === '_all' ? '' : v)}>
+              <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_all">全部</SelectItem>
+                <SelectItem value="settle">结算</SelectItem>
+                <SelectItem value="hold">预扣</SelectItem>
+                <SelectItem value="refund">退款</SelectItem>
+                <SelectItem value="recharge">充值</SelectItem>
+                <SelectItem value="withdraw">提现</SelectItem>
+                <SelectItem value="adjust">调整</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">用户 ID</label>
+            <Input className="w-28" placeholder="精确" value={userId}
+              onChange={(e) => setUserId(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && doSearch()} />
+          </div>
           <Button onClick={doSearch}>查询</Button>
+          <Button variant="outline" onClick={resetSearch}>重置</Button>
         </CardContent>
       </Card>
 
@@ -185,7 +319,11 @@ export function AdminBillingPage() {
                       </TableCell>
                       <TableCell className="text-muted-foreground">{row.channel_id ?? '-'}</TableCell>
                       <TableCell className="max-w-32 truncate text-xs text-muted-foreground" title={row.corr_id}>
-                        {row.corr_id ?? '-'}
+                        {row.llm_log_id ? (
+                          <a href={`/admin/llm-logs?id=${row.llm_log_id}`} className="text-blue-600 hover:underline">{row.corr_id}</a>
+                        ) : row.task_id ? (
+                          <a href={`/admin/tasks?id=${row.task_id}`} className="text-blue-600 hover:underline">{row.corr_id}</a>
+                        ) : (row.corr_id ?? '-')}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {row.created_at ? new Date(row.created_at).toLocaleString('zh-CN') : '-'}
@@ -208,6 +346,83 @@ export function AdminBillingPage() {
           </CardContent>
         ) : null}
       </Card>
+        </TabsContent>
+
+        {/* 聚合视图 */}
+        {(['user', 'channel', 'model', 'day'] as const).map((dim) => (
+          <TabsContent key={dim} value={dim}>
+            <Card>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{{ user: '用户 ID', channel: '渠道 ID', model: '模型', day: '日期' }[dim]}</TableHead>
+                    <TableHead className="text-right">收入（CNY）</TableHead>
+                    <TableHead className="text-right">成本（CNY）</TableHead>
+                    <TableHead className="text-right">利润（CNY）</TableHead>
+                    <TableHead className="text-right">调用次数</TableHead>
+                  </TableRow>
+                </TableHeader>
+                {aggLoading ? <TableSkeleton cols={5} /> : (
+                  <TableBody>
+                    {aggData.rows.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">暂无数据</TableCell>
+                      </TableRow>
+                    ) : aggData.rows.map((row, i) => (
+                      <TableRow key={row.key ?? i}>
+                        <TableCell className="font-mono text-sm">{row.key}</TableCell>
+                        <TableCell className="text-right font-mono text-sm">{toMoney(row.revenue)}</TableCell>
+                        <TableCell className="text-right font-mono text-sm text-muted-foreground">{toMoney(row.cost)}</TableCell>
+                        <TableCell className={`text-right font-mono text-sm ${(row.profit ?? 0) >= 0 ? 'text-blue-600' : 'text-red-500'}`}>{toMoney(row.profit)}</TableCell>
+                        <TableCell className="text-right text-sm">{row.calls?.toLocaleString('zh-CN') ?? '-'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                )}
+              </Table>
+            </Card>
+          </TabsContent>
+        ))}
+      </Tabs>
+
+      {/* 手动调账 Dialog */}
+      <Dialog open={adjustOpen} onOpenChange={setAdjustOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>手动调账</DialogTitle>
+          </DialogHeader>
+          {adjustError ? <Alert variant="destructive"><AlertDescription>{adjustError}</AlertDescription></Alert> : null}
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>用户 ID</Label>
+              <Input value={adjustForm.user_id} onChange={(e) => setAdjustForm(f => ({ ...f, user_id: e.target.value }))} placeholder="精确用户 ID" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>操作类型</Label>
+              <Select value={adjustForm.type} onValueChange={(v) => setAdjustForm(f => ({ ...f, type: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="recharge">补单（增加余额）</SelectItem>
+                  <SelectItem value="adjust">冲销（减少余额）</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>金额（CNY，正数）</Label>
+              <Input type="number" min="0" step="0.01" value={adjustForm.credits} onChange={(e) => setAdjustForm(f => ({ ...f, credits: e.target.value }))} placeholder="0.00" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>调账原因（至少 10 字符）</Label>
+              <Textarea value={adjustForm.reason} onChange={(e) => setAdjustForm(f => ({ ...f, reason: e.target.value }))} placeholder="请详细填写调账原因，便于日后审计" rows={3} />
+              <p className="text-xs text-muted-foreground">{adjustForm.reason.length} / 10</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAdjustOpen(false)}>取消</Button>
+            <Button onClick={submitAdjust} disabled={adjusting}>{adjusting ? '提交中…' : '确认调账'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

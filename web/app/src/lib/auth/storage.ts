@@ -1,9 +1,8 @@
-type Role = 'user' | 'admin' | 'agent' | 'vendor'
+type Role = 'user' | 'admin' | 'vendor'
 
 const TOKEN_KEYS: Record<Role, string> = {
   user: 'token',
   admin: 'admin_token',
-  agent: 'agent_token',
   vendor: 'vendor_token',
 }
 

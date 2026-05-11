@@ -34,6 +34,33 @@ func (j *JSON) Scan(src interface{}) error {
 	return json.Unmarshal(data, j)
 }
 
+// JSONStrings 是存储 JSON 字符串数组的辅助类型。
+type JSONStrings []string
+
+func (j JSONStrings) Value() (driver.Value, error) {
+	if j == nil {
+		return "[]", nil
+	}
+	b, err := json.Marshal(j)
+	return string(b), err
+}
+
+func (j *JSONStrings) Scan(src interface{}) error {
+	var data []byte
+	switch v := src.(type) {
+	case []byte:
+		data = v
+	case string:
+		data = []byte(v)
+	case nil:
+		*j = JSONStrings{}
+		return nil
+	default:
+		return fmt.Errorf("unsupported type: %T", src)
+	}
+	return json.Unmarshal(data, j)
+}
+
 // Channel 渠道表：每条记录代表一个可调用的第三方 API 渠道。
 // 同一个模型（Model 字段相同）可以有多个渠道，各自有不同的计费方式和脚本。
 type Channel struct {
@@ -79,6 +106,8 @@ type Channel struct {
 	Weight   int  `xorm:"notnull default(1) 'weight'" json:"weight"`     // 加权随机权重，越大被选中概率越高
 	Priority int  `xorm:"notnull default(0) 'priority'" json:"priority"` // 优先级，越大越优先（同模型多渠道时）
 	IsActive bool `xorm:"notnull default(true) 'is_active'" json:"is_active"`
+	// 分组标签（如"高质"/"低价"/"备用"）— 存储为 JSON 字符串数组
+	Groups JSONStrings `xorm:"jsonb default('[]') 'groups'" json:"groups"`
 	// 展示字段
 	DisplayName string    `xorm:"notnull default('') 'display_name'" json:"display_name"` // 用户端展示名称（自定义模型名），留空时以 Model 字段作为展示名和分组依据
 	IconURL     string    `xorm:"notnull default('') 'icon_url'" json:"icon_url"`         // 模型图标 URL

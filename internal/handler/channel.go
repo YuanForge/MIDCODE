@@ -209,12 +209,18 @@ func AdminListModelCredits(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"model_credits": records})
 }
 
-// GET /admin/users — 用户列表（分页）
+// GET /admin/users — 用户列表（分页 + 复合筛选）
+// 支持参数: email(模糊), uid, status(active/frozen), group, balance_min, balance_max,
+//
+//	created_after, created_before (YYYY-MM-DD 或 RFC3339)
 func ListUsers(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	size, _ := strconv.Atoi(c.DefaultQuery("size", "20"))
 	if page < 1 {
 		page = 1
+	}
+	if size <= 0 || size > 100 {
+		size = 20
 	}
 
 	type adminUserRow struct {
@@ -232,15 +238,83 @@ func ListUsers(c *gin.Context) {
 		TotalSpent   int64    `json:"total_spent"`
 	}
 
-	rows, err := db.Engine.QueryString(`
+	// 构建 WHERE 条件
+	whereClauses := []string{"1=1"}
+	args := []interface{}{}
+	argIdx := 1
+
+	if email := c.Query("email"); email != "" {
+		whereClauses = append(whereClauses, "u.email ILIKE $"+strconv.Itoa(argIdx))
+		args = append(args, "%"+email+"%")
+		argIdx++
+	}
+	if uid := c.Query("uid"); uid != "" {
+		whereClauses = append(whereClauses, "u.id = $"+strconv.Itoa(argIdx))
+		args = append(args, uid)
+		argIdx++
+	}
+	if status := c.Query("status"); status != "" {
+		switch status {
+		case "active":
+			whereClauses = append(whereClauses, "u.is_active = true")
+		case "frozen":
+			whereClauses = append(whereClauses, "u.is_active = false")
+		}
+	}
+	if group := c.Query("group"); group != "" {
+		whereClauses = append(whereClauses, `u."group" = $`+strconv.Itoa(argIdx))
+		args = append(args, group)
+		argIdx++
+	}
+	if balMin := c.Query("balance_min"); balMin != "" {
+		if v, err := strconv.ParseInt(balMin, 10, 64); err == nil {
+			whereClauses = append(whereClauses, "u.balance >= $"+strconv.Itoa(argIdx))
+			args = append(args, v*1_000_000)
+			argIdx++
+		}
+	}
+	if balMax := c.Query("balance_max"); balMax != "" {
+		if v, err := strconv.ParseInt(balMax, 10, 64); err == nil {
+			whereClauses = append(whereClauses, "u.balance <= $"+strconv.Itoa(argIdx))
+			args = append(args, v*1_000_000)
+			argIdx++
+		}
+	}
+	if createdAfter, err := parseDateTime(c.Query("created_after"), false); err == nil && !createdAfter.IsZero() {
+		whereClauses = append(whereClauses, "u.created_at >= $"+strconv.Itoa(argIdx))
+		args = append(args, createdAfter)
+		argIdx++
+	}
+	if createdBefore, err := parseDateTime(c.Query("created_before"), true); err == nil && !createdBefore.IsZero() {
+		whereClauses = append(whereClauses, "u.created_at <= $"+strconv.Itoa(argIdx))
+		args = append(args, createdBefore)
+		argIdx++
+	}
+
+	where := ""
+	for i, clause := range whereClauses {
+		if i == 0 {
+			where = "WHERE " + clause
+		} else {
+			where += " AND " + clause
+		}
+	}
+
+	limitArg := argIdx
+	offsetArg := argIdx + 1
+	args = append(args, size, (page-1)*size)
+
+	sql := `
 SELECT
   u.id, u.username, u.email, u.role, u."group", u.balance, u.is_active, u.frozen_reason, u.rebate_ratio, u.created_at,
   COALESCE((SELECT COUNT(*) FROM users WHERE inviter_id = u.id), 0) AS invite_count,
   COALESCE((SELECT SUM(CASE WHEN type IN ('charge','hold','settle') THEN credits WHEN type = 'refund' THEN -credits ELSE 0 END) FROM billing_transactions WHERE user_id = u.id), 0) AS total_spent
 FROM users u
+` + where + `
 ORDER BY u.id DESC
-LIMIT $1 OFFSET $2
-`, size, (page-1)*size)
+LIMIT $` + strconv.Itoa(limitArg) + ` OFFSET $` + strconv.Itoa(offsetArg)
+
+	rows, err := db.Engine.QueryString(sql)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -277,7 +351,10 @@ LIMIT $1 OFFSET $2
 		result = append(result, row)
 	}
 
-	total, _ := db.Engine.Count(new(model.User))
+	// 计算过滤后的总数
+	countSQL := "SELECT COUNT(*) FROM users u " + where
+	countArgs := args[:len(args)-2]
+	total, _ := db.Engine.SQL(countSQL, countArgs...).Count()
 	c.JSON(http.StatusOK, gin.H{"users": result, "total": total})
 }
 
@@ -462,6 +539,71 @@ func FreezeUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": msg})
 }
 
+// POST /admin/users/batch — 批量操作用户
+// body: { "action": "freeze"|"unfreeze"|"set_group", "ids": [1,2,3], "group": "vip", "reason": "..." }
+func BatchUpdateUsers(c *gin.Context) {
+	var req struct {
+		Action string  `json:"action" binding:"required"`
+		IDs    []int64 `json:"ids" binding:"required,min=1"`
+		Group  string  `json:"group"`
+		Reason string  `json:"reason"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if len(req.IDs) > 200 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "单次批量不超过 200 个"})
+		return
+	}
+
+	sess := db.Engine.NewSession()
+	defer sess.Close()
+	if err := sess.Begin(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "事务开启失败"})
+		return
+	}
+
+	switch req.Action {
+	case "freeze":
+		if _, err := sess.In("id", req.IDs).Cols("is_active", "frozen_reason").
+			Update(&model.User{IsActive: false, FrozenReason: req.Reason}); err != nil {
+			sess.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	case "unfreeze":
+		if _, err := sess.In("id", req.IDs).Cols("is_active", "frozen_reason").
+			Update(&model.User{IsActive: true, FrozenReason: ""}); err != nil {
+			sess.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	case "set_group":
+		if req.Group == "" {
+			sess.Rollback()
+			c.JSON(http.StatusBadRequest, gin.H{"error": "set_group 操作需要提供 group 值"})
+			return
+		}
+		if _, err := sess.In("id", req.IDs).Cols("group").
+			Update(&model.User{Group: req.Group}); err != nil {
+			sess.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	default:
+		sess.Rollback()
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的 action: " + req.Action})
+		return
+	}
+
+	if err := sess.Commit(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "事务提交失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "批量操作成功", "count": len(req.IDs)})
+}
+
 // GET /admin/transactions — 全局账单流水（分页）
 func ListAllTransactions(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -488,6 +630,12 @@ func ListAllTransactions(c *gin.Context) {
 	if !endAt.IsZero() {
 		query = query.And("created_at <= ?", endAt)
 	}
+	if txType := c.Query("type"); txType != "" {
+		query = query.And("type = ?", txType)
+	}
+	if userID := c.Query("user_id"); userID != "" {
+		query = query.And("user_id = ?", userID)
+	}
 	total, err := query.Limit(size, (page-1)*size).FindAndCount(&txs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -501,7 +649,7 @@ func ListAllTransactions(c *gin.Context) {
 		Count   int64 `xorm:"'count'"`
 	}
 	where := "WHERE 1=1"
-	args := make([]interface{}, 0, 2)
+	args := make([]interface{}, 0, 4)
 	if !startAt.IsZero() {
 		where += " AND created_at >= ?"
 		args = append(args, startAt)
@@ -509,6 +657,14 @@ func ListAllTransactions(c *gin.Context) {
 	if !endAt.IsZero() {
 		where += " AND created_at <= ?"
 		args = append(args, endAt)
+	}
+	if txType := c.Query("type"); txType != "" {
+		where += " AND type = ?"
+		args = append(args, txType)
+	}
+	if userID := c.Query("user_id"); userID != "" {
+		where += " AND user_id = ?"
+		args = append(args, userID)
 	}
 	summary := summaryRow{}
 	sql := `SELECT
@@ -645,5 +801,120 @@ func GetAdminStats(c *gin.Context) {
 			"profit":  totalRow.Revenue - totalRow.Cost,
 			"count":   totalRow.Count,
 		},
+	})
+}
+
+// GET /admin/stats/trend?days=7|30&dim=revenue|cost|profit|calls
+// 返回近 N 天每日的指定维度数据
+func GetAdminStatsTrend(c *gin.Context) {
+	days := 7
+	if d := c.Query("days"); d == "30" {
+		days = 30
+	}
+	dim := c.DefaultQuery("dim", "revenue") // revenue / cost / profit / calls
+
+	type dayRow struct {
+		Day     string `xorm:"day"`
+		Revenue int64  `xorm:"revenue"`
+		Cost    int64  `xorm:"cost"`
+		Calls   int64  `xorm:"calls"`
+	}
+
+	var rows []dayRow
+	db.Engine.SQL(`
+SELECT
+  to_char(created_at AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM-DD') AS day,
+  COALESCE(SUM(CASE WHEN type IN ('charge','settle','hold') THEN credits WHEN type='refund' THEN -credits ELSE 0 END),0) AS revenue,
+  COALESCE(SUM(CASE WHEN type IN ('charge','settle','hold') THEN cost WHEN type='refund' THEN -cost ELSE 0 END),0) AS cost,
+  COUNT(*) AS calls
+FROM billing_transactions
+WHERE type IN ('charge','settle','hold','refund')
+  AND created_at >= NOW() - INTERVAL '` + strconv.Itoa(days) + ` days'
+GROUP BY day
+ORDER BY day ASC
+`).Find(&rows)
+
+	type point struct {
+		Label string  `json:"label"`
+		Value float64 `json:"value"`
+	}
+
+	// 补全缺失的天（让曲线连续）
+	now := time.Now().In(time.FixedZone("CST", 8*3600))
+	dayMap := map[string]dayRow{}
+	for _, r := range rows {
+		dayMap[r.Day] = r
+	}
+	result := make([]point, 0, days)
+	for i := days - 1; i >= 0; i-- {
+		t := now.AddDate(0, 0, -i)
+		label := t.Format("01-02")
+		key := t.Format("2006-01-02")
+		r := dayMap[key]
+		var val float64
+		switch dim {
+		case "cost":
+			val = creditsToCNY(r.Cost)
+		case "profit":
+			val = creditsToCNY(r.Revenue - r.Cost)
+		case "calls":
+			val = float64(r.Calls)
+		default: // revenue
+			val = creditsToCNY(r.Revenue)
+		}
+		result = append(result, point{Label: label, Value: val})
+	}
+	c.JSON(http.StatusOK, gin.H{"points": result, "dim": dim, "days": days})
+}
+
+// GET /admin/stats/top — 今日 TOP10 消耗用户、TOP 模型、TOP 渠道
+func GetAdminStatsTop(c *gin.Context) {
+	today := time.Now().Truncate(24 * time.Hour)
+
+	type topRow struct {
+		ID    string  `xorm:"id"`
+		Name  string  `xorm:"name"`
+		Value float64 `xorm:"value"`
+	}
+
+	var topUsers, topModels, topChannels []topRow
+
+	db.Engine.SQL(`
+SELECT u.id::text AS id, COALESCE(u.username, u.email::text, u.id::text) AS name,
+       SUM(bt.credits)::float8 / 1000000 AS value
+FROM billing_transactions bt
+JOIN users u ON u.id = bt.user_id
+WHERE bt.type IN ('charge','settle','hold') AND bt.created_at >= ?
+GROUP BY u.id, u.username, u.email
+ORDER BY value DESC LIMIT 10`, today).Find(&topUsers)
+
+	db.Engine.SQL(`
+SELECT COALESCE(ll.model,'(unknown)') AS id, COALESCE(ll.model,'(unknown)') AS name,
+       COUNT(*)::float8 AS value
+FROM llm_logs ll
+WHERE ll.created_at >= ?
+GROUP BY ll.model
+ORDER BY value DESC LIMIT 10`, today).Find(&topModels)
+
+	db.Engine.SQL(`
+SELECT c.id::text AS id, COALESCE(c.display_name, c.name, c.id::text) AS name,
+       COUNT(bt.id)::float8 AS value
+FROM billing_transactions bt
+JOIN channels c ON c.id = bt.channel_id
+WHERE bt.type IN ('charge','settle','hold') AND bt.created_at >= ?
+GROUP BY c.id, c.display_name, c.name
+ORDER BY value DESC LIMIT 10`, today).Find(&topChannels)
+
+	toList := func(rows []topRow) []gin.H {
+		out := make([]gin.H, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, gin.H{"id": r.ID, "name": r.Name, "value": r.Value})
+		}
+		return out
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"users":    toList(topUsers),
+		"models":   toList(topModels),
+		"channels": toList(topChannels),
 	})
 }

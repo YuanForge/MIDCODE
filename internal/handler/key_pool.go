@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"fanapi/internal/db"
 	"fanapi/internal/model"
@@ -191,4 +192,37 @@ func ToggleVendorSubmittable(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"vendor_submittable": pool.VendorSubmittable})
+}
+
+// ImportPoolKeys POST /admin/key-pools/:id/keys/import
+// 批量导入 Key（逐行或 CSV，自动去重）。
+func ImportPoolKeys(c *gin.Context) {
+	poolID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "号池 ID 格式错误"})
+		return
+	}
+	var body struct {
+		Keys []string `json:"keys"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	imported, skipped := 0, 0
+	for _, raw := range body.Keys {
+		v := strings.TrimSpace(raw)
+		if v == "" {
+			skipped++
+			continue
+		}
+		key := model.PoolKey{PoolID: poolID, Value: v, IsActive: true}
+		if _, err := db.Engine.Insert(&key); err != nil {
+			// 唯一键冲突视为已存在，跳过
+			skipped++
+			continue
+		}
+		imported++
+	}
+	c.JSON(http.StatusOK, gin.H{"imported": imported, "skipped": skipped})
 }

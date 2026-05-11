@@ -7,7 +7,6 @@ import { getRoleToken, getSiteModePreference } from '@/lib/auth/storage'
 const AuthLayout = lazy(() => import('@/layouts/AuthLayout').then((m) => ({ default: m.AuthLayout })))
 const UserLayout = lazy(() => import('@/layouts/UserLayout').then((m) => ({ default: m.UserLayout })))
 const AdminLayout = lazy(() => import('@/layouts/AdminLayout').then((m) => ({ default: m.AdminLayout })))
-const AgentLayout = lazy(() => import('@/layouts/AgentLayout').then((m) => ({ default: m.AgentLayout })))
 const VendorLayout = lazy(() => import('@/layouts/VendorLayout').then((m) => ({ default: m.VendorLayout })))
 
 const UserLoginPage = lazy(() => import('@/pages/public/UserLoginPage').then((m) => ({ default: m.UserLoginPage })))
@@ -45,9 +44,15 @@ const AdminLogsPage = lazy(() => import('@/pages/admin/AdminLogsPage').then((m) 
 const AdminSettingsPage = lazy(() => import('@/pages/admin/AdminSettingsPage').then((m) => ({ default: m.AdminSettingsPage })))
 const AdminVendorsPage = lazy(() => import('@/pages/admin/AdminVendorsPage').then((m) => ({ default: m.AdminVendorsPage })))
 const AdminWithdrawPage = lazy(() => import('@/pages/admin/AdminWithdrawPage').then((m) => ({ default: m.AdminWithdrawPage })))
-
-const AgentLoginPage = lazy(() => import('@/pages/agent/AgentLoginPage').then((m) => ({ default: m.AgentLoginPage })))
-const AgentDashboardPage = lazy(() => import('@/pages/agent/AgentDashboardPage').then((m) => ({ default: m.AgentDashboardPage })))
+const AdminPaymentsPage = lazy(() => import('@/pages/admin/AdminPaymentsPage').then((m) => ({ default: m.AdminPaymentsPage })))
+const AdminUpstreamPage = lazy(() => import('@/pages/admin/AdminUpstreamPage').then((m) => ({ default: m.AdminUpstreamPage })))
+const AdminExportsPage = lazy(() => import('@/pages/admin/AdminExportsPage').then((m) => ({ default: m.AdminExportsPage })))
+const AdminAuditPage = lazy(() => import('@/pages/admin/AdminAuditPage').then((m) => ({ default: m.AdminAuditPage })))
+const AdminAlertsPage = lazy(() => import('@/pages/admin/AdminAlertsPage').then((m) => ({ default: m.AdminAlertsPage })))
+const AdminNotificationsPage = lazy(() => import('@/pages/admin/AdminNotificationsPage').then((m) => ({ default: m.AdminNotificationsPage })))
+const AdminApiKeysPage = lazy(() => import('@/pages/admin/AdminApiKeysPage').then((m) => ({ default: m.AdminApiKeysPage })))
+const AdminRolesPage = lazy(() => import('@/pages/admin/AdminRolesPage').then((m) => ({ default: m.AdminRolesPage })))
+const AdminCouponsPage = lazy(() => import('@/pages/admin/AdminCouponsPage').then((m) => ({ default: m.AdminCouponsPage })))
 
 const VendorLoginPage = lazy(() => import('@/pages/vendor/VendorLoginPage').then((m) => ({ default: m.VendorLoginPage })))
 const VendorRegisterPage = lazy(() => import('@/pages/vendor/VendorRegisterPage').then((m) => ({ default: m.VendorRegisterPage })))
@@ -66,7 +71,7 @@ function RequireRole({
   role,
   redirectTo,
 }: {
-  role: 'user' | 'admin' | 'agent' | 'vendor'
+  role: 'user' | 'admin' | 'vendor'
   redirectTo: string
 }) {
   const token = getRoleToken(role)
@@ -81,7 +86,7 @@ function PublicOnly({
   role,
   redirectTo,
 }: {
-  role: 'user' | 'admin' | 'agent' | 'vendor'
+  role: 'user' | 'admin' | 'vendor'
   redirectTo: string
 }) {
   const token = getRoleToken(role)
@@ -95,11 +100,9 @@ function PublicOnly({
 function RootRedirect() {
   const mode = getSiteModePreference()
   const adminToken = getRoleToken('admin')
-  const agentToken = getRoleToken('agent')
   const vendorToken = getRoleToken('vendor')
 
   if (mode === 'admin' && adminToken) return <Navigate replace to="/admin/dashboard" />
-  if (mode === 'agent' && agentToken) return <Navigate replace to="/agent/dashboard" />
   if (mode === 'vendor' && vendorToken) return <Navigate replace to="/vendor/dashboard" />
   // Always go to /dashboard — public pages are visible without login
   return <Navigate replace to="/dashboard" />
@@ -186,30 +189,15 @@ export const router = createBrowserRouter([
           { path: 'settings', element: renderLazy(<AdminSettingsPage />) },
           { path: 'vendors', element: renderLazy(<AdminVendorsPage />) },
           { path: 'withdraw', element: renderLazy(<AdminWithdrawPage />) },
-        ],
-      },
-    ],
-  },
-  {
-    element: <PublicOnly role="agent" redirectTo="/agent/dashboard" />,
-    errorElement: renderLazy(<AppErrorPage />),
-    children: [
-      {
-        element: renderLazy(<AuthLayout />),
-        children: [{ path: '/agent/login', element: renderLazy(<AgentLoginPage />) }],
-      },
-    ],
-  },
-  {
-    element: <RequireRole role="agent" redirectTo="/agent/login" />,
-    errorElement: renderLazy(<AppErrorPage />),
-    children: [
-      {
-        path: '/agent',
-        element: renderLazy(<AgentLayout />),
-        children: [
-          { path: 'dashboard', element: renderLazy(<AgentDashboardPage />) },
-          { path: 'users', element: renderLazy(<AgentDashboardPage />) },
+          { path: 'payments', element: renderLazy(<AdminPaymentsPage />) },
+          { path: 'upstream', element: renderLazy(<AdminUpstreamPage />) },
+          { path: 'exports', element: renderLazy(<AdminExportsPage />) },
+          { path: 'audit', element: renderLazy(<AdminAuditPage />) },
+          { path: 'alerts', element: renderLazy(<AdminAlertsPage />) },
+          { path: 'notifications', element: renderLazy(<AdminNotificationsPage />) },
+          { path: 'api-keys', element: renderLazy(<AdminApiKeysPage />) },
+          { path: 'roles', element: renderLazy(<AdminRolesPage />) },
+          { path: 'coupons', element: renderLazy(<AdminCouponsPage />) },
         ],
       },
     ],
