@@ -104,6 +104,7 @@ func SubmitWithdraw(c *gin.Context) {
 		UserID:      userID,
 		Amount:      req.Amount,
 		Status:      "pending",
+		ReviewStage: "cs_review",
 		PaymentType: req.PaymentType,
 		PaymentQR:   qr,
 	}

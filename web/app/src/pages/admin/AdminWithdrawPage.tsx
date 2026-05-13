@@ -266,7 +266,7 @@ export function AdminWithdrawPage() {
                         <Button size="sm" variant="outline" onClick={() => setViewRow(row)}>
                           查看收款码
                         </Button>
-                        {row.status === 'pending' && row.review_stage === 'cs_review' ? (
+                        {row.status === 'pending' && (row.review_stage === 'cs_review' || !row.review_stage) ? (
                           <>
                             <Button size="sm" variant="outline" onClick={() => setPendingCsApprove(row)}>
                               初审通过

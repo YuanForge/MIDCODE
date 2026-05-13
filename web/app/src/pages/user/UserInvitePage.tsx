@@ -162,7 +162,7 @@ export function UserInvitePage() {
   async function submitWithdraw() {
     const amountValue = Number(withdrawAmount)
     const currentQr = paymentType === 'wechat' ? wechatQrEdit.trim() : alipayQrEdit.trim()
-    if (!amountValue || amountValue < 0) {
+    if (!amountValue || amountValue <= 0) {
       setMutError('请输入有效的提现积分数量')
       return
     }
@@ -170,8 +170,10 @@ export function UserInvitePage() {
       setMutError(`请先保存${paymentType === 'wechat' ? '微信' : '支付宝'}收款码`)
       return
     }
+    // 用户输入的是积分显示单位，后端存储单位为微积分（1积分 = 1,000,000微积分）
+    const microCredits = Math.round(amountValue * 1_000_000)
     await withMut(async () => {
-      await userApi.submitWithdraw(amountValue, paymentType)
+      await userApi.submitWithdraw(microCredits, paymentType)
       setWithdrawOpen(false)
       setWithdrawAmount('0')
       setHistoryPage(1)
@@ -468,9 +470,12 @@ export function UserInvitePage() {
           </DialogHeader>
           <div className="flex flex-col gap-4">
             <Input
+              type="number"
+              min="0"
+              step="0.01"
               value={withdrawAmount}
               onChange={(event) => setWithdrawAmount(event.target.value)}
-              placeholder="提现积分数量"
+              placeholder="提现积分数量（如 0.1）"
             />
             <NativeSelect
               value={paymentType}

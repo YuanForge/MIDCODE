@@ -251,6 +251,11 @@ export function UserModelsPage() {
     [channels],
   )
 
+  const availableTypeOptions = useMemo(() => {
+    const presentTypes = new Set(channels.map((c) => c.type ?? ''))
+    return typeOptions.filter((opt) => opt.value === '' || presentTypes.has(opt.value))
+  }, [channels])
+
   const filteredChannels = useMemo(() => {
     return channels.filter((channel) => {
       if (filterType && channel.type !== filterType) return false
@@ -311,7 +316,7 @@ export function UserModelsPage() {
 
       <div className="mb-6 flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-2">
-          {typeOptions.map((option) => (
+          {availableTypeOptions.map((option) => (
             <Badge
               key={option.value}
               variant={filterType === option.value ? 'default' : 'secondary'}
