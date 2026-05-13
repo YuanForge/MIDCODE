@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -769,8 +772,201 @@ func CreateExportTask(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	// TODO: 触发异步 worker 处理导出任务
+	// 在后台 goroutine 中执行导出
+	go runExportTask(task.ID, c.Request.Host)
 	c.JSON(http.StatusCreated, task)
+}
+
+// runExportTask 在后台执行导出任务，生成 CSV 文件。
+func runExportTask(taskID int64, host string) {
+	fail := func(msg string) {
+		db.Engine.ID(taskID).Cols("status", "error_msg").Update(&model.ExportTask{
+			Status:   "failed",
+			ErrorMsg: msg,
+		})
+	}
+
+	var task model.ExportTask
+	if found, _ := db.Engine.ID(taskID).Get(&task); !found {
+		return
+	}
+
+	// 标记为处理中
+	db.Engine.ID(taskID).Cols("status").Update(&model.ExportTask{Status: "processing"})
+
+	// 根据类型执行查询并构建 CSV 行
+	var headers []string
+	var rows [][]string
+
+	switch task.Type {
+	case "transactions":
+		type row struct {
+			ID        int64     `xorm:"id"`
+			UserID    int64     `xorm:"user_id"`
+			Type      string    `xorm:"type"`
+			Credits   int64     `xorm:"credits"`
+			Cost      int64     `xorm:"cost"`
+			CorrID    string    `xorm:"corr_id"`
+			CreatedAt time.Time `xorm:"created_at"`
+		}
+		var records []row
+		db.Engine.Table("billing_transactions").OrderBy("id DESC").Limit(100000).Find(&records)
+		headers = []string{"ID", "UserID", "Type", "Credits", "Cost", "CorrID", "CreatedAt"}
+		for _, r := range records {
+			rows = append(rows, []string{
+				fmt.Sprintf("%d", r.ID),
+				fmt.Sprintf("%d", r.UserID),
+				r.Type,
+				fmt.Sprintf("%d", r.Credits),
+				fmt.Sprintf("%d", r.Cost),
+				r.CorrID,
+				r.CreatedAt.Format("2006-01-02 15:04:05"),
+			})
+		}
+	case "billing":
+		type row struct {
+			ID        int64     `xorm:"id"`
+			UserID    int64     `xorm:"user_id"`
+			Type      string    `xorm:"type"`
+			Credits   int64     `xorm:"credits"`
+			Cost      int64     `xorm:"cost"`
+			CorrID    string    `xorm:"corr_id"`
+			CreatedAt time.Time `xorm:"created_at"`
+		}
+		var records []row
+		db.Engine.Table("billing_transactions").OrderBy("id DESC").Limit(100000).Find(&records)
+		headers = []string{"ID", "用户ID", "类型", "积分", "成本", "关联ID", "时间"}
+		for _, r := range records {
+			rows = append(rows, []string{
+				fmt.Sprintf("%d", r.ID),
+				fmt.Sprintf("%d", r.UserID),
+				r.Type,
+				fmt.Sprintf("%d", r.Credits),
+				fmt.Sprintf("%d", r.Cost),
+				r.CorrID,
+				r.CreatedAt.Format("2006-01-02 15:04:05"),
+			})
+		}
+	case "users":
+		type row struct {
+			ID        int64     `xorm:"id"`
+			Username  string    `xorm:"username"`
+			Email     string    `xorm:"email"`
+			Balance   int64     `xorm:"balance"`
+			Role      string    `xorm:"role"`
+			Status    string    `xorm:"status"`
+			CreatedAt time.Time `xorm:"created_at"`
+		}
+		var records []row
+		db.Engine.Table("users").OrderBy("id ASC").Limit(100000).Find(&records)
+		headers = []string{"ID", "用户名", "邮箱", "余额", "角色", "状态", "注册时间"}
+		for _, r := range records {
+			rows = append(rows, []string{
+				fmt.Sprintf("%d", r.ID),
+				r.Username,
+				r.Email,
+				fmt.Sprintf("%d", r.Balance),
+				r.Role,
+				r.Status,
+				r.CreatedAt.Format("2006-01-02 15:04:05"),
+			})
+		}
+	case "payments":
+		type row struct {
+			ID         int64     `xorm:"id"`
+			UserID     int64     `xorm:"user_id"`
+			OutTradeNo string    `xorm:"out_trade_no"`
+			Amount     float64   `xorm:"amount"`
+			Credits    int64     `xorm:"credits"`
+			Status     string    `xorm:"status"`
+			PayChannel string    `xorm:"pay_channel"`
+			CreatedAt  time.Time `xorm:"created_at"`
+		}
+		var records []row
+		db.Engine.Table("payment_orders").OrderBy("id DESC").Limit(100000).Find(&records)
+		headers = []string{"ID", "用户ID", "订单号", "金额(元)", "积分", "状态", "支付渠道", "时间"}
+		for _, r := range records {
+			rows = append(rows, []string{
+				fmt.Sprintf("%d", r.ID),
+				fmt.Sprintf("%d", r.UserID),
+				r.OutTradeNo,
+				fmt.Sprintf("%.2f", r.Amount),
+				fmt.Sprintf("%d", r.Credits),
+				r.Status,
+				r.PayChannel,
+				r.CreatedAt.Format("2006-01-02 15:04:05"),
+			})
+		}
+	case "llm_logs":
+		type row struct {
+			ID        int64     `xorm:"id"`
+			UserID    int64     `xorm:"user_id"`
+			ChannelID int64     `xorm:"channel_id"`
+			Model     string    `xorm:"model"`
+			Status    string    `xorm:"status"`
+			CorrID    string    `xorm:"corr_id"`
+			ErrorMsg  string    `xorm:"error_msg"`
+			CreatedAt time.Time `xorm:"created_at"`
+		}
+		var records []row
+		db.Engine.Table("llm_logs").OrderBy("id DESC").Limit(100000).Find(&records)
+		headers = []string{"ID", "用户ID", "渠道ID", "模型", "状态", "CorrID", "错误信息", "时间"}
+		for _, r := range records {
+			rows = append(rows, []string{
+				fmt.Sprintf("%d", r.ID),
+				fmt.Sprintf("%d", r.UserID),
+				fmt.Sprintf("%d", r.ChannelID),
+				r.Model,
+				r.Status,
+				r.CorrID,
+				r.ErrorMsg,
+				r.CreatedAt.Format("2006-01-02 15:04:05"),
+			})
+		}
+	default:
+		fail("不支持的导出类型: " + task.Type)
+		return
+	}
+
+	// 写入 CSV 文件
+	exportDir := filepath.Join("uploads", "exports")
+	if err := os.MkdirAll(exportDir, 0o755); err != nil {
+		fail("创建导出目录失败: " + err.Error())
+		return
+	}
+	filename := fmt.Sprintf("export_%d_%d.csv", taskID, time.Now().Unix())
+	fullPath := filepath.Join(exportDir, filename)
+	f, err := os.Create(fullPath)
+	if err != nil {
+		fail("创建文件失败: " + err.Error())
+		return
+	}
+	// UTF-8 BOM 让 Excel 正常显示中文
+	f.WriteString("\xEF\xBB\xBF")
+	w := csv.NewWriter(f)
+	w.Write(headers)
+	w.WriteAll(rows)
+	w.Flush()
+	f.Close()
+
+	if err := w.Error(); err != nil {
+		fail("写入 CSV 失败: " + err.Error())
+		return
+	}
+
+	info, _ := os.Stat(fullPath)
+	fileSize := int64(0)
+	if info != nil {
+		fileSize = info.Size()
+	}
+	fileURL := fmt.Sprintf("/uploads/exports/%s", filename)
+
+	db.Engine.ID(taskID).Cols("status", "progress", "file_url", "file_size").Update(&model.ExportTask{
+		Status:   "done",
+		Progress: 100,
+		FileURL:  fileURL,
+		FileSize: fileSize,
+	})
 }
 
 // ─────────────────────────────────────────────
@@ -966,23 +1162,16 @@ func GetAdminMe(c *gin.Context) {
 		roleIDs = append(roleIDs, ur.RoleID)
 	}
 
-	// Use raw query to avoid JSON type mismatch for array permissions
-	type rawRole struct {
-		Permissions string `xorm:"permissions"`
-	}
-	var rawRoles []rawRole
-	db.Engine.Table("admin_roles").In("id", roleIDs...).Cols("permissions").Find(&rawRoles)
+	var roles []model.AdminRole
+	db.Engine.Table("admin_roles").In("id", roleIDs...).Cols("permissions").Find(&roles)
 
 	seen := map[string]bool{}
 	perms := []string{}
-	for _, r := range rawRoles {
-		var ps []string
-		if err := json.Unmarshal([]byte(r.Permissions), &ps); err == nil {
-			for _, p := range ps {
-				if !seen[p] {
-					seen[p] = true
-					perms = append(perms, p)
-				}
+	for _, r := range roles {
+		for _, p := range r.Permissions {
+			if !seen[p] {
+				seen[p] = true
+				perms = append(perms, p)
 			}
 		}
 	}

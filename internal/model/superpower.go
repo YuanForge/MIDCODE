@@ -159,12 +159,12 @@ func (*ExportTask) TableName() string { return "export_tasks" }
 
 // AdminRole RBAC 角色
 type AdminRole struct {
-	ID          int64     `xorm:"pk autoincr 'id'" json:"id"`
-	Name        string    `xorm:"notnull unique 'name'" json:"name"`
-	Label       string    `xorm:"'label'" json:"label"`
-	Permissions JSON      `xorm:"jsonb 'permissions'" json:"permissions"` // ["channel:read", ...]
-	IsBuiltin   bool      `xorm:"default(false) 'is_builtin'" json:"is_builtin"`
-	CreatedAt   time.Time `xorm:"created 'created_at'" json:"created_at"`
+	ID          int64       `xorm:"pk autoincr 'id'" json:"id"`
+	Name        string      `xorm:"notnull unique 'name'" json:"name"`
+	Label       string      `xorm:"'label'" json:"label"`
+	Permissions JSONStrings `xorm:"jsonb 'permissions'" json:"permissions"` // ["channel:read", ...]
+	IsBuiltin   bool        `xorm:"default(false) 'is_builtin'" json:"is_builtin"`
+	CreatedAt   time.Time   `xorm:"created 'created_at'" json:"created_at"`
 }
 
 func (*AdminRole) TableName() string { return "admin_roles" }
