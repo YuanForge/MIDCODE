@@ -67,7 +67,6 @@ ENV TZ=Asia/Shanghai
 
 COPY --from=go-builder /out/fanapi-server /app/fanapi-server
 COPY --from=node-builder /web/dist /app/web/dist
-COPY config.yaml /app/config.yaml
 COPY docker/nginx.conf /etc/nginx/nginx.conf
 COPY docker/supervisord-api.conf /etc/supervisor/conf.d/fanapi.conf
 
@@ -91,7 +90,6 @@ RUN apt-get update && \
 ENV TZ=Asia/Shanghai
 
 COPY --from=go-builder /out/fanapi-script /app/fanapi-script
-COPY config.yaml /app/config.yaml
 
 WORKDIR /app
 CMD ["/app/fanapi-script"]
