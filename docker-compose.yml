@@ -38,6 +38,7 @@ services:
       - ./config.yaml:/app/config.yaml:ro
     extra_hosts:
       - "host-gateway:host-gateway"
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost/health"]
       interval: 30s
@@ -59,3 +60,4 @@ services:
       - ./config.yaml:/app/config.yaml:ro
     extra_hosts:
       - "host-gateway:host-gateway"
+      - "host.docker.internal:host-gateway"

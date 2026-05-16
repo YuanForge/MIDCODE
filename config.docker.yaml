@@ -4,7 +4,7 @@ server:
   jwt_expire_hours: 24
 
 db:
-  host: "host.docker.internal"  # 宿主机 PostgreSQL 地址（容器内通过 host-gateway 访问宿主机）
+  host: "host-gateway"  # 宿主机 PostgreSQL 地址（docker-compose extra_hosts 将 host-gateway 映射到宿主机 IP，兼容 Linux/Mac/Windows）
   port: 5432
   user: postgres
   password: "change-me"
@@ -15,12 +15,12 @@ db:
   conn_max_idle_sec: 300
 
 redis:
-  addr: "host.docker.internal:6379"  # 宿主机 Redis 地址
+  addr: "host-gateway:6379"  # 宿主机 Redis 地址
   password: ""
   db: 0
 
 nats:
-  url: "nats://host.docker.internal:4222"  # 宿主机 NATS 地址
+  url: "nats://host-gateway:4222"  # 宿主机 NATS 地址
 
 smtp:
   host: smtp.example.com

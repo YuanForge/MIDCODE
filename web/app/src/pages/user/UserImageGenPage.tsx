@@ -119,7 +119,7 @@ export function UserImageGenPage() {
         ])
         const nextKeys = Array.isArray(keysRes) ? keysRes : keysRes.api_keys ?? keysRes.keys ?? []
         const nextChannels = (Array.isArray(channelsRes) ? channelsRes : channelsRes.channels ?? []).filter(
-          (item) => item.type === 'image'
+          (item) => item.type === 'image' || item.billing_type === 'image'
         )
         setApiKeys(nextKeys)
         setChannels(nextChannels)
@@ -325,6 +325,7 @@ export function UserImageGenPage() {
                   <option key={key.id} value={key.id}>{key.name || key.masked_key || key.key}</option>
                 ))}
               </NativeSelect>
+              <p className="text-xs text-muted-foreground">仅新创建的密钥含明文，旧密钥因安全原因不可直接用于此页面。</p>
             </div>
             <div className="grid gap-1.5">
               <Label>模型 <span className="text-muted-foreground font-normal">(选填)</span></Label>
