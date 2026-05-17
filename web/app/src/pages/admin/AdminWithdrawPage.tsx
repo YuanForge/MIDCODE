@@ -100,6 +100,7 @@ export function AdminWithdrawPage() {
   const [pendingApprove, setPendingApprove] = useState<AdminWithdrawal | null>(null)
   const [pendingCsApprove, setPendingCsApprove] = useState<AdminWithdrawal | null>(null)
   const [viewRow, setViewRow] = useState<AdminWithdrawal | null>(null)
+  const [viewProofRow, setViewProofRow] = useState<AdminWithdrawal | null>(null)
   // 凭证上传弹窗
   const [proofRow, setProofRow] = useState<AdminWithdrawal | null>(null)
   const [proofUrl, setProofUrl] = useState('')
@@ -267,6 +268,11 @@ export function AdminWithdrawPage() {
                         <Button size="sm" variant="outline" onClick={() => setViewRow(row)}>
                           查看收款码
                         </Button>
+                        {row.proof_url ? (
+                          <Button size="sm" variant="outline" onClick={() => setViewProofRow(row)}>
+                            查看打款证明
+                          </Button>
+                        ) : null}
                         {row.status === 'pending' && (row.review_stage === 'cs_review' || !row.review_stage) ? (
                           <>
                             <Button size="sm" variant="outline" onClick={() => setPendingCsApprove(row)}>
@@ -334,12 +340,58 @@ export function AdminWithdrawPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setViewRow(null)}>关闭</Button>
+            {viewRow?.proof_url ? (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setViewProofRow(viewRow)
+                  setViewRow(null)
+                }}
+              >
+                查看打款证明
+              </Button>
+            ) : null}
             {viewRow?.status === 'pending' && viewRow?.review_stage === 'cs_review' ? (
               <Button variant="outline" onClick={() => { setPendingCsApprove(viewRow); setViewRow(null) }}>初审通过</Button>
             ) : null}
             {viewRow?.status === 'pending' && viewRow?.review_stage === 'finance_review' ? (
               <Button onClick={() => executeApprove(viewRow)}>复审通过</Button>
             ) : null}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(viewProofRow)} onOpenChange={() => setViewProofRow(null)}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>打款证明 — {viewProofRow?.username}</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4">
+            {viewProofRow?.proof_url ? (
+              <img
+                src={viewProofRow.proof_url}
+                alt="打款证明"
+                className="max-h-[70vh] w-full rounded-md border object-contain"
+              />
+            ) : (
+              <div className="flex h-60 items-center justify-center rounded-md border text-muted-foreground text-sm">
+                无打款证明
+              </div>
+            )}
+            <div className="grid gap-2 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2">
+                {payTypeBadge(viewProofRow?.payment_type)}
+                <span>
+                  提现金额：<strong>¥{((viewProofRow?.amount ?? 0) / 1_000_000).toFixed(4)}</strong>
+                </span>
+              </div>
+              <div>
+                备注：{viewProofRow?.proof_note?.trim() ? viewProofRow.proof_note : '-'}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewProofRow(null)}>关闭</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
