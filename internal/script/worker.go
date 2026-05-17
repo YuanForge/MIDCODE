@@ -14,6 +14,8 @@ import (
 	"fanapi/internal/config"
 	"fanapi/internal/model"
 	"fanapi/internal/mq"
+	"fanapi/internal/notify"
+	"fanapi/internal/service"
 
 	"github.com/nats-io/nats.go"
 )
@@ -140,6 +142,10 @@ func execJob(ctx context.Context, job *model.TaskJob) *model.WorkerResult {
 	for k, v := range payload {
 		upstreamReq[k] = v
 	}
+	initialReq := make(map[string]interface{})
+	for k, v := range payload {
+		initialReq[k] = v
+	}
 	// 计算实际 URL（含 {model} 和 {{pool_key}} 替换），方便管理端排障
 	targetURLForLog := job.BaseURL
 	if modelVal, ok := job.Payload["model"].(string); ok && modelVal != "" {
@@ -148,6 +154,8 @@ func execJob(ctx context.Context, job *model.TaskJob) *model.WorkerResult {
 	// URL 里也做 {{}} / {{pool_key}} 替换（实际请求 URL 记录）
 	targetURLForLog = ResolveHeaderValue(targetURLForLog, job.PoolKeyValue)
 	upstreamReq["_url"] = targetURLForLog
+	upstreamReq["_method"] = job.Method
+	upstreamReq["_initial_request"] = initialReq
 	// 合并渠道配置的请求头（完整替换后记录，含完整 Key）
 	headersForLog := make(map[string]interface{})
 	for k, v := range job.Headers {
@@ -206,15 +214,29 @@ func execJob(ctx context.Context, job *model.TaskJob) *model.WorkerResult {
 
 	// 错误检测（error_script 或内置识别逻辑）
 	errMsg, isErr := "", false
+	fatalErr := false
 	if job.ErrorScript != "" {
 		var scriptErr error
-		errMsg, _, scriptErr = RunCheckError(job.ErrorScript, respData)
+		errMsg, fatalErr, scriptErr = RunCheckError(job.ErrorScript, respData)
 		if scriptErr != nil {
 			log.Printf("[worker] task %d: error_script failed: %v", job.TaskID, scriptErr)
 		}
 		isErr = errMsg != ""
 	} else {
 		errMsg, isErr = DetectUpstreamError(respData)
+	}
+	if fatalErr {
+		if err := service.PatchChannelActive(context.Background(), job.ChannelID, false); err != nil {
+			log.Printf("[worker] task %d: disable channel %d failed: %v", job.TaskID, job.ChannelID, err)
+		} else {
+			channelName := fmt.Sprintf("channel-%d", job.ChannelID)
+			go func(name string, id int64, reason string) {
+				defer func() { recover() }()
+				if err := notify.SendLarkChannelDisabled(name, id, reason); err != nil {
+					log.Printf("[lark notify] failed: %v", err)
+				}
+			}(channelName, job.ChannelID, errMsg)
+		}
 	}
 	if isErr {
 		return fail(errMsg)

@@ -138,8 +138,27 @@ export function AdminTasksPage() {
   }
   const upstreamBody = (req?: Record<string, unknown>) => {
     if (!req) return undefined
-    const { _url, _headers, ...rest } = req
-    return Object.keys(rest).length ? rest : undefined
+    const initial = req._initial_request
+    if (initial && typeof initial === 'object') {
+      return initial as Record<string, unknown>
+    }
+    const { _url, _headers, _poll_request, _method, method, query, ...rest } = req
+    if (Object.keys(rest).length > 0) {
+      return rest
+    }
+    return undefined
+  }
+
+  const pollBody = (req?: Record<string, unknown>) => {
+    if (!req) return undefined
+    if (req._poll_request && typeof req._poll_request === 'object') {
+      return req._poll_request as Record<string, unknown>
+    }
+    const { method, query } = req
+    if (method || query) {
+      return { method, query }
+    }
+    return undefined
   }
 
   return (
@@ -395,7 +414,8 @@ export function AdminTasksPage() {
                   </div>
                 ) : null}
                 <JsonBlock title="上游请求头" value={upstreamHeaders(detail.upstream_request)} />
-                <JsonBlock title="发送给第三方的请求体" value={upstreamBody(detail.upstream_request)} />
+                <JsonBlock title="首次发送给第三方的请求体" value={upstreamBody(detail.upstream_request)} />
+                <JsonBlock title="轮询第三方任务请求体" value={pollBody(detail.upstream_request)} />
                 <JsonBlock title="第三方原始响应体" value={detail.upstream_response} />
                 <JsonBlock title="平台标准结果" value={detail.result} />
               </div>

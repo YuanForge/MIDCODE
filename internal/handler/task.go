@@ -1,11 +1,14 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"fanapi/internal/db"
 	"fanapi/internal/model"
+	"fanapi/internal/script"
 	"fanapi/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -242,7 +245,109 @@ func GetAdminTask(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 		return
 	}
+	enrichAdminUpstreamRequest(task)
 	c.JSON(http.StatusOK, gin.H{"task": task})
+}
+
+// enrichAdminUpstreamRequest 在历史数据未记录首发请求时，按当前渠道配置兜底重建，
+// 以便管理端同时看到“首次POST请求体”和“轮询GET请求体”。
+func enrichAdminUpstreamRequest(task *model.Task) {
+	if task == nil {
+		return
+	}
+	req := task.UpstreamRequest
+	if len(req) == 0 {
+		return
+	}
+	if _, ok := req["_initial_request"]; ok {
+		return
+	}
+
+	pollOnly := false
+	if m, ok := req["method"].(string); ok && strings.EqualFold(m, "GET") {
+		pollOnly = true
+	}
+	if m, ok := req["_method"].(string); ok && strings.EqualFold(m, "GET") {
+		pollOnly = true
+	}
+	if _, ok := req["_poll_request"]; ok {
+		pollOnly = true
+	}
+	if !pollOnly {
+		return
+	}
+
+	// 保存当前轮询信息，避免被后续覆盖。
+	if _, ok := req["_poll_request"]; !ok {
+		poll := model.JSON{}
+		if v, ok := req["_url"]; ok {
+			poll["_url"] = v
+		}
+		if v, ok := req["_headers"]; ok {
+			poll["_headers"] = v
+		}
+		if v, ok := req["method"]; ok {
+			poll["method"] = v
+		}
+		if v, ok := req["_method"]; ok {
+			poll["_method"] = v
+		}
+		if v, ok := req["query"]; ok {
+			poll["query"] = v
+		}
+		if len(poll) > 0 {
+			req["_poll_request"] = poll
+		}
+	}
+
+	ch, err := service.GetChannel(context.Background(), task.ChannelID)
+	if err != nil || ch == nil {
+		// 至少把用户原始请求回填，避免首发请求体区域为空。
+		req["_initial_request"] = task.Request
+		task.UpstreamRequest = req
+		return
+	}
+
+	payload := map[string]interface{}{}
+	for k, v := range task.Request {
+		payload[k] = v
+	}
+	initialPayload := payload
+	if ch.RequestScript != "" {
+		if mapped, mapErr := script.RunMapRequest(ch.RequestScript, payload, ""); mapErr == nil {
+			initialPayload = mapped
+		}
+	}
+
+	initialReq := model.JSON{}
+	for k, v := range initialPayload {
+		initialReq[k] = v
+	}
+	req["_initial_request"] = initialReq
+
+	method := ch.Method
+	if method == "" {
+		method = "POST"
+	}
+	req["_method"] = method
+
+	if ch.BaseURL != "" {
+		targetURL := ch.BaseURL
+		if modelVal, ok := task.Request["model"].(string); ok && modelVal != "" {
+			targetURL = strings.ReplaceAll(targetURL, "{model}", modelVal)
+		}
+		targetURL = script.ResolveHeaderValue(targetURL, "")
+		req["_url"] = targetURL
+	}
+
+	headers := model.JSON{}
+	for k, v := range ch.Headers {
+		headers[k] = v
+	}
+	headers["Content-Type"] = "application/json"
+	req["_headers"] = headers
+
+	task.UpstreamRequest = req
 }
 
 // buildTaskResult 根据 task 状态组装标准 TaskResult。
