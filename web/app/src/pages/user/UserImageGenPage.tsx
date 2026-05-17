@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { NativeSelect } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { buildUserInvokeHeaders, canInvokeWithSelectedKey } from '@/lib/api/request-auth'
 import { userApi, type ApiKeyRecord, type UserChannel, type UserTask } from '@/lib/api/user'
 
 type ImageGenerateResponse = {
@@ -156,23 +157,21 @@ export function UserImageGenPage() {
 
   useEffect(() => { void loadHistory() }, [])
 
-  function currentApiKey() {
-    const key = apiKeys.find((item) => item.id === selectedKeyId)
-    return key?.raw_key || key?.key || ''
+  function canInvoke() {
+    return canInvokeWithSelectedKey(apiKeys, selectedKeyId)
   }
 
   // 异步任务轮询：task_id 存在且处于 polling 状态时每 3s 查询一次
   useEffect(() => {
     if (!taskId || taskStatus !== 'polling') return
-    const key = apiKeys.find((item) => item.id === selectedKeyId)
-    const apiKey = key?.raw_key || key?.key || ''
-    if (!apiKey) return
+    const authHeaders = buildUserInvokeHeaders(apiKeys, selectedKeyId)
+    if (!authHeaders) return
     let cancelled = false
 
     const tick = async () => {
       try {
         const resp = await fetch(`/v1/tasks/${taskId}`, {
-          headers: { Authorization: `Bearer ${apiKey}` },
+          headers: authHeaders,
         })
         if (!resp.ok) return
         const data = await resp.json() as ImageGenerateResponse
@@ -246,9 +245,9 @@ export function UserImageGenPage() {
 
   async function generate() {
     if (!prompt.trim()) return
-    const apiKey = currentApiKey()
-    if (!apiKey) {
-      setError('请选择可直接调用的 API 密钥')
+    const authHeaders = buildUserInvokeHeaders(apiKeys, selectedKeyId)
+    if (!authHeaders) {
+      setError('请选择可用的 API 密钥')
       return
     }
     if (!selectedChannelId && channels.length === 0) {
@@ -277,7 +276,7 @@ export function UserImageGenPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
+          ...authHeaders,
         },
         body: JSON.stringify(body),
       })
@@ -325,7 +324,7 @@ export function UserImageGenPage() {
                   <option key={key.id} value={key.id}>{key.name || key.masked_key || key.key}</option>
                 ))}
               </NativeSelect>
-              <p className="text-xs text-muted-foreground">仅新创建的密钥含明文，旧密钥因安全原因不可直接用于此页面。</p>
+              <p className="text-xs text-muted-foreground">已登录用户可直接使用已创建的密钥进行调用。</p>
             </div>
             <div className="grid gap-1.5">
               <Label>模型 <span className="text-muted-foreground font-normal">(选填)</span></Label>
@@ -412,7 +411,7 @@ export function UserImageGenPage() {
                 </div>
               ) : null}
             </div>
-            <Button onClick={generate} disabled={running || !prompt.trim() || !currentApiKey() || channels.length === 0}>
+            <Button onClick={generate} disabled={running || !prompt.trim() || !canInvoke() || channels.length === 0}>
               {running ? '生成中...' : '生成图片'}
             </Button>
           </CardContent>

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NativeSelect } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { buildUserInvokeHeaders, canInvokeWithSelectedKey } from '@/lib/api/request-auth'
 import { userApi, type ApiKeyRecord, type UserChannel, type UserTask } from '@/lib/api/user'
 
 type MusicMode = '10' | '20'
@@ -63,9 +64,8 @@ export function UserMusicGenPage() {
     void load()
   }, [])
 
-  function currentApiKey() {
-    const key = apiKeys.find((item) => item.id === selectedKeyId)
-    return key?.raw_key || key?.key || ''
+  function canInvoke() {
+    return canInvokeWithSelectedKey(apiKeys, selectedKeyId)
   }
 
   const [historyTasks, setHistoryTasks] = useState<UserTask[]>([])
@@ -86,15 +86,14 @@ export function UserMusicGenPage() {
 
   useEffect(() => {
     if (!taskId || taskStatus !== 'polling') return
-    const key = apiKeys.find((item) => item.id === selectedKeyId)
-    const apiKey = key?.raw_key || key?.key || ''
-    if (!apiKey) return
+    const authHeaders = buildUserInvokeHeaders(apiKeys, selectedKeyId)
+    if (!authHeaders) return
     let cancelled = false
 
     const tick = async () => {
       try {
         const resp = await fetch(`/v1/tasks/${taskId}`, {
-          headers: { Authorization: `Bearer ${apiKey}` },
+          headers: authHeaders,
         })
         if (!resp.ok) return
         const data = await resp.json()
@@ -127,9 +126,9 @@ export function UserMusicGenPage() {
   }, [taskId, taskStatus, apiKeys, selectedKeyId])
 
   async function generate() {
-    const apiKey = currentApiKey()
-    if (!apiKey) {
-      setError('请选择可直接调用的 API 密钥')
+    const authHeaders = buildUserInvokeHeaders(apiKeys, selectedKeyId)
+    if (!authHeaders) {
+      setError('请选择可用的 API 密钥')
       return
     }
     if (!selectedChannelId && channels.length === 0) {
@@ -169,7 +168,7 @@ export function UserMusicGenPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
+          ...authHeaders,
         },
         body: JSON.stringify(body),
       })
@@ -301,7 +300,7 @@ export function UserMusicGenPage() {
 
             <Button
               onClick={generate}
-              disabled={running || !currentApiKey() || channels.length === 0}
+              disabled={running || !canInvoke() || channels.length === 0}
               className="w-full"
             >
               {running ? '生成中...' : '生成音乐'}

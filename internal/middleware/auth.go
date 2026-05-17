@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"fanapi/internal/config"
@@ -101,6 +102,25 @@ func Auth(cfg *config.ServerConfig) gin.HandlerFunc {
 			c.Set("role", role)
 			c.Set("user_group", group)
 			c.Set("auth_type", "jwt")
+
+			// 兼容用户端旧 API Key（无 raw_key）：允许 JWT 携带选中的 key_id 调用 /v1 受限接口。
+			selectedKeyIDRaw := strings.TrimSpace(c.GetHeader("X-API-Key-Id"))
+			if selectedKeyIDRaw != "" {
+				if selectedKeyID, parseErr := strconv.ParseInt(selectedKeyIDRaw, 10, 64); parseErr == nil && selectedKeyID > 0 {
+					var selectedKey model.APIKey
+					if found, _ := db.Engine.Where("id = ? AND user_id = ? AND is_active = true", selectedKeyID, userID).
+						Cols("id", "key_type").
+						Get(&selectedKey); found {
+						keyType := selectedKey.KeyType
+						if keyType == "" {
+							keyType = "low_price"
+						}
+						c.Set("api_key_id", selectedKey.ID)
+						c.Set("key_type", keyType)
+						c.Set("auth_type", "jwt_with_key")
+					}
+				}
+			}
 			c.Next()
 			return
 		}
@@ -112,7 +132,8 @@ func Auth(cfg *config.ServerConfig) gin.HandlerFunc {
 // APIKeyOnly rejects requests that are not authenticated via API Key.
 func APIKeyOnly() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if authType, _ := c.Get("auth_type"); authType != "apikey" {
+		authType, _ := c.Get("auth_type")
+		if authType != "apikey" && authType != "jwt_with_key" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "此接口仅支持 API Key 认证"})
 			return
 		}

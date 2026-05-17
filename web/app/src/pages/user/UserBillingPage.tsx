@@ -140,6 +140,17 @@ export function UserBillingPage() {
     reloadBalance()
   }
 
+  const isMobileBrowser = () => /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent)
+  const isWeChatBrowser = () => /micromessenger/i.test(navigator.userAgent)
+
+  const openPaymentPage = (url: string) => {
+    if (isMobileBrowser()) {
+      window.location.href = url
+      return
+    }
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
   // Payment logic
   const handlePay = async () => {
     if (!selectedAmount || Number(selectedAmount) < 0.01) {
@@ -152,12 +163,16 @@ export function UserBillingPage() {
     try {
       if (settings.payApplyEnabled) {
         const payFlat = payMethod === 'wechat' ? 1 : 2
-        const res = await payApi.createPayApplyOrder({ amount, pay_flat: payFlat, pay_from: 'pc' })
+        const payFrom = isMobileBrowser()
+          ? (payMethod === 'wechat' && isWeChatBrowser() ? 'wapwx' : 'wap')
+          : 'pc'
+        const res = await payApi.createPayApplyOrder({ amount, pay_flat: payFlat, pay_from: payFrom })
         if (res.pay_url) {
           setPayUrl(res.pay_url)
           setCurrentOutTradeNo(res.out_trade_no || "")
-          setShowPayFrame(true)
+          setShowPayFrame(!isMobileBrowser())
           startPolling(res.out_trade_no || "")
+          openPaymentPage(res.pay_url)
         }
       } else if (settings.epayEnabled) {
         const type = payMethod === 'wechat' ? 'wxpay' : 'alipay'
@@ -165,8 +180,8 @@ export function UserBillingPage() {
         if (res.pay_url) {
           setPayUrl(res.pay_url)
           setCurrentOutTradeNo(res.out_trade_no || "")
-          setShowPayFrame(true)
-          window.open(res.pay_url, '_blank', 'noopener,noreferrer')
+          setShowPayFrame(!isMobileBrowser())
+          openPaymentPage(res.pay_url)
         }
       }
     } catch (e: any) {

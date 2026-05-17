@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"fanapi/internal/billing"
 	"fanapi/internal/db"
@@ -25,6 +26,7 @@ func bindImageRequest(bodyBytes []byte) (*model.ImageRequest, error) {
 	if err := json.Unmarshal(bodyBytes, &req); err != nil {
 		return nil, err
 	}
+	req.Size = strings.ToLower(strings.TrimSpace(req.Size))
 	if req.Model == "" {
 		return nil, fmt.Errorf("model is required")
 	}
@@ -49,6 +51,7 @@ func bindVideoRequest(bodyBytes []byte) (*model.VideoRequest, error) {
 	if err := json.Unmarshal(bodyBytes, &req); err != nil {
 		return nil, err
 	}
+	req.Size = strings.ToLower(strings.TrimSpace(req.Size))
 	if req.Model == "" {
 		return nil, fmt.Errorf("model is required")
 	}
@@ -105,6 +108,12 @@ func createTask(c *gin.Context, taskType string, reqData map[string]interface{})
 	var userGroup string
 	if raw, ok := c.Get("user_group"); ok {
 		userGroup, _ = raw.(string)
+	}
+
+	// 余额前置检查：通用余额 <= 0 时直接拒绝，无论模型定价是否为 0。
+	if bal, balErr := billing.GetBalance(c.Request.Context(), userID); balErr == nil && bal <= 0 {
+		c.JSON(http.StatusPaymentRequired, gin.H{"error": "余额不足，请充值后继续使用"})
+		return
 	}
 
 	// 渠道解析：优先 channel_id 查询参数（兼容旧客户端），否则用 reqData["model"] 按渠道名路由。

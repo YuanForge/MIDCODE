@@ -299,7 +299,7 @@ func failTaskDB(ctx context.Context, taskID, userID, channelID, apiKeyID int64, 
 	n, _ := db.Engine.
 		Where("id = ? AND status != ?", taskID, "failed").
 		Cols("status", "error_msg").
-		Update(&model.Task{Status: "failed", ErrorMsg: userMsg})
+		Update(&model.Task{Status: "failed", ErrorMsg: errMsg})
 	if n == 0 {
 		return
 	}

@@ -767,8 +767,6 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 		if fatal {
 			_ = service.PatchChannelActive(c.Request.Context(), channelID, false)
 			log.Printf("[llm] disable channel id=%d fatal_err=%q status=%d", channelID, bizErr, resp.StatusCode)
-			_ = service.PatchChannelActive(c.Request.Context(), channelID, false)
-			log.Printf("[llm] disable channel id=%d fatal_err=%q status=%d", channelID, bizErr, resp.StatusCode)
 			go func(name string, id int64, reason string) {
 				// 防止通知失败阻塞主流程
 				defer func() { recover() }()
@@ -1505,7 +1503,7 @@ func llmRefundAndAbort(c *gin.Context, corrID string, userID, credits, upstreamC
 	}
 	if corrID != "" {
 		_, _ = db.Engine.Where("corr_id = ?", corrID).Cols("status", "upstream_status", "error_msg").
-			Update(&model.LLMLog{Status: "error", UpstreamStatus: upstreamStatus, ErrorMsg: userMsg})
+			Update(&model.LLMLog{Status: "error", UpstreamStatus: upstreamStatus, ErrorMsg: errMsg})
 	}
 	c.JSON(http.StatusBadGateway, gin.H{"error": userMsg})
 }

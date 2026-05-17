@@ -8,6 +8,7 @@ import (
 
 	"fanapi/internal/db"
 	"fanapi/internal/model"
+	"fanapi/internal/service"
 
 	"github.com/gin-gonic/gin"
 	"xorm.io/xorm"
@@ -320,6 +321,7 @@ func UserListLLMLogs(c *gin.Context) {
 	}
 	result := make([]logWithCredits, len(logs))
 	for i, l := range logs {
+		l.ErrorMsg = service.UserFacingErrorMessage(l.ErrorMsg)
 		result[i] = logWithCredits{LLMLog: l, CreditsCharged: creditsMap[l.CorrID]}
 	}
 
@@ -372,7 +374,7 @@ func UserGetLLMLog(c *gin.Context) {
 		ClientResponse: log.ClientResponse,
 		Usage:          log.Usage,
 		Status:         log.Status,
-		ErrorMsg:       log.ErrorMsg,
+		ErrorMsg:       service.UserFacingErrorMessage(log.ErrorMsg),
 		CreatedAt:      log.CreatedAt.Format("2006-01-02 15:04:05"),
 		UpdatedAt:      log.UpdatedAt.Format("2006-01-02 15:04:05"),
 	})

@@ -73,7 +73,7 @@ func (h *AuthHandler) SendCode(c *gin.Context) {
 		Email string `json:"email" binding:"required,email"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": formatBindError(err)})
 		return
 	}
 	if err := service.SendVerifyCode(c.Request.Context(), req.Email, h.mailer); err != nil {

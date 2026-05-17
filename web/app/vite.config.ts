@@ -19,6 +19,18 @@ export default defineConfig({
         target: 'http://localhost:8080',
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
+      '/v1': {
+        target: 'http://localhost:8080',
+      },
+      '/v1beta': {
+        target: 'http://localhost:8080',
+      },
+      '/auth': {
+        target: 'http://localhost:8080',
+      },
+      '/pay': {
+        target: 'http://localhost:8080',
+      },
       '/uploads': {
         target: 'http://localhost:8080',
       },

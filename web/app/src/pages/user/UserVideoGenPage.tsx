@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { NativeSelect } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { buildUserInvokeHeaders, canInvokeWithSelectedKey } from '@/lib/api/request-auth'
 import { userApi, type ApiKeyRecord, type UserChannel, type UserTask } from '@/lib/api/user'
 
 export function UserVideoGenPage() {
@@ -59,9 +60,8 @@ export function UserVideoGenPage() {
 
   useEffect(() => { void loadHistory() }, [])
 
-  function currentApiKey() {
-    const key = apiKeys.find((item) => item.id === selectedKeyId)
-    return key?.raw_key || key?.key || ''
+  function canInvoke() {
+    return canInvokeWithSelectedKey(apiKeys, selectedKeyId)
   }
 
   function currentChannel() {
@@ -71,15 +71,14 @@ export function UserVideoGenPage() {
   // 异步任务轮询
   useEffect(() => {
     if (!taskId || taskStatus !== 'polling') return
-    const key = apiKeys.find((item) => item.id === selectedKeyId)
-    const apiKey = key?.raw_key || key?.key || ''
-    if (!apiKey) return
+    const authHeaders = buildUserInvokeHeaders(apiKeys, selectedKeyId)
+    if (!authHeaders) return
     let cancelled = false
 
     const tick = async () => {
       try {
         const resp = await fetch(`/v1/tasks/${taskId}`, {
-          headers: { Authorization: `Bearer ${apiKey}` },
+          headers: authHeaders,
         })
         if (!resp.ok) return
         const data = await resp.json() as { status?: string | number; result?: Record<string, unknown>; error_msg?: string; msg?: string }
@@ -109,9 +108,9 @@ export function UserVideoGenPage() {
 
   async function generate() {
     if (!prompt.trim()) return
-    const apiKey = currentApiKey()
-    if (!apiKey) {
-      setError('请选择可直接调用的 API 密钥')
+    const authHeaders = buildUserInvokeHeaders(apiKeys, selectedKeyId)
+    if (!authHeaders) {
+      setError('请选择可用的 API 密钥')
       return
     }
     if (!selectedChannelId && channels.length === 0) {
@@ -132,7 +131,7 @@ export function UserVideoGenPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
+          ...authHeaders,
         },
         body: JSON.stringify({
           model: currentChannel()?.routing_model || currentChannel()?.name,
@@ -198,7 +197,7 @@ export function UserVideoGenPage() {
               <option value="10">10 秒</option>
               <option value="15">15 秒</option>
             </NativeSelect>
-            <Button onClick={generate} disabled={running || !prompt.trim() || !currentApiKey() || channels.length === 0}>
+            <Button onClick={generate} disabled={running || !prompt.trim() || !canInvoke() || channels.length === 0}>
               {running ? '生成中...' : '生成视频'}
             </Button>
           </CardContent>

@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NativeSelect } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { buildUserInvokeHeaders, canInvokeWithSelectedKey } from '@/lib/api/request-auth'
 import { userApi, type ApiKeyRecord, type UserChannel, type ChatConversation, type ConversationMessage } from '@/lib/api/user'
 
 type Message = {
@@ -71,9 +72,8 @@ export function UserPlaygroundPage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, streamingText])
 
-  function currentApiKey() {
-    const key = apiKeys.find((item) => item.id === selectedKeyId)
-    return key?.raw_key || key?.key || ''
+  function canInvoke() {
+    return canInvokeWithSelectedKey(apiKeys, selectedKeyId)
   }
 
   function currentChannel() {
@@ -109,9 +109,9 @@ export function UserPlaygroundPage() {
 
   async function sendMessage() {
     if (!inputText.trim() || streaming) return
-    const apiKey = currentApiKey()
-    if (!apiKey || apiKey.includes('...')) {
-      setError('请选择可直接调用的 API 密钥')
+    const authHeaders = buildUserInvokeHeaders(apiKeys, selectedKeyId)
+    if (!authHeaders) {
+      setError('请选择可用的 API 密钥')
       return
     }
     if (!selectedChannelId && channels.length === 0) {
@@ -156,7 +156,7 @@ export function UserPlaygroundPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
+          ...authHeaders,
         },
         body: JSON.stringify(body),
       })
@@ -231,7 +231,7 @@ export function UserPlaygroundPage() {
                 ))}
               </NativeSelect>
               <p className="text-xs text-muted-foreground">
-                仅新创建的密钥含明文，旧密钥因安全原因不可直接用于此页面。
+                已登录用户可直接使用已创建的密钥进行调用。
               </p>
             </div>
             <div className="flex flex-col gap-2">
@@ -360,12 +360,17 @@ export function UserPlaygroundPage() {
                   onChange={(event) => setInputText(event.target.value)}
                   placeholder="输入消息，Enter 发送"
                 />
-                <Button
-                  onClick={sendMessage}
-                  disabled={streaming || !inputText.trim() || !currentApiKey() || channels.length === 0}
-                >
-                  {streaming ? '生成中...' : '发送'}
-                </Button>
+                <div className="flex flex-col gap-1 items-end">
+                  <Button
+                    onClick={sendMessage}
+                    disabled={streaming || !inputText.trim() || !canInvoke() || channels.length === 0}
+                  >
+                    {streaming ? '生成中...' : '发送'}
+                  </Button>
+                  {apiKeys.length > 0 && !canInvoke() && (
+                    <p className="text-xs text-destructive">所选密钥不可用，请重新选择</p>
+                  )}
+                </div>
               </div>
             </div>
           </CardContent>

@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"fanapi/internal/db"
 	"fanapi/internal/model"
 	"fanapi/internal/mq"
+	"fanapi/internal/notify"
 	"fanapi/internal/script"
 	"fanapi/internal/service"
 )
@@ -185,9 +187,43 @@ func pollOneTask(ctx context.Context, task *model.Task, ch *model.Channel) {
 		pollHeaders[k] = v
 	}
 	pollHeaders["Content-Type"] = "application/json"
+	pollQuery := model.JSON{}
+	if parsedURL, parseErr := url.Parse(queryURL); parseErr == nil {
+		for k, vals := range parsedURL.Query() {
+			if len(vals) == 1 {
+				pollQuery[k] = vals[0]
+			} else if len(vals) > 1 {
+				arr := make([]interface{}, 0, len(vals))
+				for _, v := range vals {
+					arr = append(arr, v)
+				}
+				pollQuery[k] = arr
+			}
+		}
+	}
 	upstreamReqInfo := model.JSON{"_url": queryURL, "_headers": pollHeaders, "method": method}
+	if len(pollQuery) > 0 {
+		upstreamReqInfo["query"] = pollQuery
+	}
+	mergedUpstreamReq := model.JSON{}
+	latestTask := &model.Task{}
+	if found, _ := db.Engine.ID(task.ID).Cols("upstream_request").Get(latestTask); found {
+		for k, v := range latestTask.UpstreamRequest {
+			mergedUpstreamReq[k] = v
+		}
+	}
+	if len(mergedUpstreamReq) == 0 {
+		for k, v := range task.UpstreamRequest {
+			mergedUpstreamReq[k] = v
+		}
+	}
+	if len(mergedUpstreamReq) == 0 {
+		mergedUpstreamReq = upstreamReqInfo
+	} else {
+		mergedUpstreamReq["_poll_request"] = upstreamReqInfo
+	}
 	db.Engine.Where("id = ?", task.ID).Cols("upstream_request").
-		Update(&model.Task{UpstreamRequest: upstreamReqInfo})
+		Update(&model.Task{UpstreamRequest: mergedUpstreamReq})
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody := model.JSON{"http_status": resp.StatusCode, "body": string(body)}
@@ -227,15 +263,28 @@ func pollOneTask(ctx context.Context, task *model.Task, ch *model.Channel) {
 	{
 		var detectedErr string
 		var isErr bool
+		var fatal bool
 		if ch.ErrorScript != "" {
 			var scriptErr error
-			detectedErr, _, scriptErr = script.RunCheckError(ch.ErrorScript, mappedResp)
+			detectedErr, fatal, scriptErr = script.RunCheckError(ch.ErrorScript, mappedResp)
 			if scriptErr != nil {
 				log.Printf("[poller] task %d: error_script failed: %v", task.ID, scriptErr)
 			}
 			isErr = detectedErr != ""
 		} else {
 			detectedErr, isErr = script.DetectUpstreamError(mappedResp)
+		}
+		if fatal {
+			if err := service.PatchChannelActive(ctx, task.ChannelID, false); err != nil {
+				log.Printf("[poller] task %d: disable channel %d failed: %v", task.ID, task.ChannelID, err)
+			} else {
+				go func(name string, id int64, reason string) {
+					defer func() { recover() }()
+					if err := notify.SendLarkChannelDisabled(name, id, reason); err != nil {
+						log.Printf("[lark notify] failed: %v", err)
+					}
+				}(ch.Name, ch.ID, detectedErr)
+			}
 		}
 		if isErr {
 			db.Engine.Where("id = ?", task.ID).Cols("upstream_response").
