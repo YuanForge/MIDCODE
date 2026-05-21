@@ -131,8 +131,12 @@ func CalcActualCostForUser(ch *model.Channel, req, resp map[string]interface{}, 
 	if proto == "" {
 		proto = "openai"
 	}
-	// openaiStyleCache 表示 prompt_tokens 已将缓存 token 计入其中（OpenAI、Gemini 均如此）
-	openaiStyleCache := proto == "openai" || proto == "gemini"
+	// openaiStyleCache 表示输入 token 已将缓存命中计入其中，需先扣除 cacheReadTokens
+	// 再计算基础输入费用。
+	// OpenAI Chat Completions: prompt_tokens 包含 cached_tokens
+	// OpenAI Responses: input_tokens 包含 input_tokens_details.cached_tokens
+	// Gemini: promptTokenCount 包含 cachedContentTokenCount
+	openaiStyleCache := proto == "openai" || proto == "gemini" || proto == "responses"
 
 	cacheCreatePricePer1m := getInt64Val(cfg, "cache_creation_price_per_1m_tokens")
 	if cacheCreatePricePer1m == 0 && inputPricePer1m > 0 {
@@ -535,7 +539,7 @@ func CalcActualUpstreamCost(ch *model.Channel, req, resp map[string]interface{})
 	if proto == "" {
 		proto = "openai"
 	}
-	openaiStyleCache := proto == "openai" || proto == "gemini"
+	openaiStyleCache := proto == "openai" || proto == "gemini" || proto == "responses"
 
 	// 缓存 token 进价（与售价逻辑相同，字段名用 _cost_ 替代 _price_）
 	cacheCreateCostPer1m := getInt64Val(cfg, "cache_creation_cost_per_1m_tokens")
