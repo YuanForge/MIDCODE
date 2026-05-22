@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import QRCode from 'qrcode'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -57,6 +57,8 @@ export function UserBillingPage() {
   const [currentOutTradeNo, setCurrentOutTradeNo] = useState<string>('')
   const [showPayFrame, setShowPayFrame] = useState(false)
   const qrCanvasRef = useRef<HTMLCanvasElement>(null)
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [qrError, setQrError] = useState('')
 
   // Coupon State
@@ -132,13 +134,27 @@ export function UserBillingPage() {
     setSearchParams({ tab: val })
   }
 
+  const stopPolling = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current)
+      pollTimerRef.current = null
+    }
+    if (pollTimeoutRef.current) {
+      clearTimeout(pollTimeoutRef.current)
+      pollTimeoutRef.current = null
+    }
+  }, [])
+
   const handlePaymentSuccess = () => {
     toast.success('充值成功')
+    stopPolling()
     setShowPayFrame(false)
     txReload()
     orderReload()
     reloadBalance()
   }
+
+  useEffect(() => stopPolling, [stopPolling])
 
   const isMobileBrowser = () => /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent)
   const isWeChatBrowser = () => /micromessenger/i.test(navigator.userAgent)
@@ -171,7 +187,7 @@ export function UserBillingPage() {
           setPayUrl(res.pay_url)
           setCurrentOutTradeNo(res.out_trade_no || "")
           setShowPayFrame(!isMobileBrowser())
-          startPolling(res.out_trade_no || "")
+          startPolling(res.out_trade_no)
           openPaymentPage(res.pay_url)
         }
       } else if (settings.epayEnabled) {
@@ -181,6 +197,7 @@ export function UserBillingPage() {
           setPayUrl(res.pay_url)
           setCurrentOutTradeNo(res.out_trade_no || "")
           setShowPayFrame(!isMobileBrowser())
+          startPolling(res.out_trade_no)
           openPaymentPage(res.pay_url)
         }
       }
@@ -191,21 +208,29 @@ export function UserBillingPage() {
     }
   }
 
-  const startPolling = (outTradeNo: string) => {
-    const timer = setInterval(async () => {
+  const startPolling = (outTradeNo?: string) => {
+    if (!outTradeNo) return
+    stopPolling()
+
+    pollTimerRef.current = setInterval(async () => {
       try {
         const res = await payApi.getOrderStatus(outTradeNo)
         if (res.status === 'paid') {
-          clearInterval(timer)
           handlePaymentSuccess()
         }
-      } catch (e) {
+      } catch {
         // ignore polling errors
       }
     }, 3000)
 
-    // Cleanup timer after some time or when dialog unmounts - handled roughly here via a timeout
-    setTimeout(() => clearInterval(timer), 300000) // 5 minutes max
+    pollTimeoutRef.current = setTimeout(stopPolling, 300000) // 5 minutes max
+  }
+
+  const handlePayDialogOpenChange = (open: boolean) => {
+    setShowPayFrame(open)
+    if (!open) {
+      stopPolling()
+    }
   }
 
   const txTypeLabel = (type: string) => {
@@ -530,18 +555,20 @@ export function UserBillingPage() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={showPayFrame} onOpenChange={setShowPayFrame}>
-        <DialogContent className="max-w-[400px]">
-          <DialogHeader>
+      <Dialog open={showPayFrame} onOpenChange={handlePayDialogOpenChange}>
+        <DialogContent className="w-[min(calc(100vw-2rem),420px)] max-w-none gap-0 overflow-hidden p-0">
+          <DialogHeader className="px-5 pb-3 pt-5 pr-12">
             <DialogTitle>扫描二维码支付</DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="leading-6">
               请使用 {payMethod === 'wechat' ? '微信' : '支付宝'} 扫码完成支付，支付成功后系统将自动到账。
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col items-center justify-center p-4">
+          <div className="flex flex-col items-center justify-center px-5 pb-5 pt-2">
             {payUrl ? (
               <>
-                <canvas ref={qrCanvasRef} className="rounded-lg border bg-white p-2" />
+                <div className="flex h-[180px] w-full max-w-[320px] items-center justify-center rounded-xl border bg-white p-3">
+                  <canvas ref={qrCanvasRef} className="max-h-full max-w-full" />
+                </div>
                 {qrError ? (
                   <div className="mt-3 text-xs text-destructive">{qrError}</div>
                 ) : null}
@@ -555,24 +582,24 @@ export function UserBillingPage() {
             <div className="mt-6 text-sm text-center">
               长按保存或截图扫码
               <br />
-              <span className="text-muted-foreground text-xs mt-2 inline-block">单号: {currentOutTradeNo}</span>
+              <span className="text-muted-foreground text-xs mt-2 inline-block break-all">单号: {currentOutTradeNo}</span>
             </div>
 
             {payUrl ? (
               <Button
                 variant="link"
                 size="sm"
-                className="mt-2"
+                className="mt-2 h-auto max-w-full whitespace-normal px-0 text-center"
                 onClick={() => window.open(payUrl, '_blank', 'noopener,noreferrer')}
               >
                 在新窗口中打开支付页 →
               </Button>
             ) : null}
 
-            <div className="mt-6 flex w-full gap-2">
-              <Button variant="outline" className="w-full" onClick={() => setShowPayFrame(false)}>取消支付</Button>
+            <div className="mt-6 grid w-full grid-cols-2 gap-3">
+              <Button variant="outline" className="min-w-0 w-full" onClick={() => handlePayDialogOpenChange(false)}>取消支付</Button>
               <Button className="w-full" onClick={() => {
-                setShowPayFrame(false);
+                handlePayDialogOpenChange(false);
                 txReload();
                 orderReload();
                 reloadBalance();
