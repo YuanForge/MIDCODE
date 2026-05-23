@@ -18,7 +18,15 @@ import (
 func Auth(cfg *config.ServerConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Try API Key first
-		rawKey := c.GetHeader("X-API-Key")
+		rawKey := strings.TrimSpace(c.GetHeader("X-API-Key"))
+		if rawKey == "" {
+			rawKey = strings.TrimSpace(c.GetHeader("X-Goog-Api-Key"))
+		}
+		// Gemini official clients usually send key in query for native route:
+		// /v1beta/models/{model}:generateContent?key=...
+		if rawKey == "" && strings.HasPrefix(c.Request.URL.Path, "/v1beta/models/") {
+			rawKey = strings.TrimSpace(c.Query("key"))
+		}
 		if rawKey != "" {
 			apiKey, err := service.LookupAPIKey(c.Request.Context(), rawKey)
 			if err != nil {
