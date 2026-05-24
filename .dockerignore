@@ -10,4 +10,6 @@ web/app/dist
 /tmp
 *.log
 *.pid
+uploads/
+server
 
