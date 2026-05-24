@@ -32,6 +32,8 @@ function payChannelLabel(channel: string | undefined, payFlat: number | undefine
   if (channel === 'wechat') return '微信支付'
   if (channel === 'alipay') return '支付宝'
   if (channel === 'epay') return 'Epay'
+  if (channel === 'shouqianba_wechat') return '收钱吧-微信'
+  if (channel === 'shouqianba_alipay') return '收钱吧-支付宝'
   // fallback from pay_flat
   if (payFlat === 1) return '微信支付'
   if (payFlat === 2) return '支付宝'
@@ -111,6 +113,8 @@ export function AdminPaymentsPage() {
                 <SelectItem value="epay">Epay</SelectItem>
                 <SelectItem value="wechat">微信支付</SelectItem>
                 <SelectItem value="alipay">支付宝</SelectItem>
+                <SelectItem value="shouqianba_wechat">收钱吧-微信</SelectItem>
+                <SelectItem value="shouqianba_alipay">收钱吧-支付宝</SelectItem>
               </SelectContent>
             </Select>
           </div>

@@ -177,7 +177,9 @@ export function AdminSettingsPage() {
 
   const epayEnabled = form.epay_enabled === 'true'
   const payApplyEnabled = form.pay_apply_enabled === 'true'
+  const shouqianbaEnabled = form.shouqianba_enabled === 'true'
   const payApplyNotifyUrl = `${window.location.origin.replace(':3001', '')}/pay/apply/notify`
+  const shouqianbaNotifyUrl = `${window.location.origin.replace(':3001', '')}/pay/shouqianba/notify`
 
   async function save() {
     setSaving(true)
@@ -326,7 +328,10 @@ export function AdminSettingsPage() {
                       checked={epayEnabled}
                       onChange={(v) => {
                         set('epay_enabled', v ? 'true' : 'false')
-                        if (v) set('pay_apply_enabled', 'false')
+                        if (v) {
+                          set('pay_apply_enabled', 'false')
+                          set('shouqianba_enabled', 'false')
+                        }
                       }}
                     >
                       <Tip>开启后用户可以通过易支付（支付宝/微信）充值余额</Tip>
@@ -362,7 +367,10 @@ export function AdminSettingsPage() {
                       checked={payApplyEnabled}
                       onChange={(v) => {
                         set('pay_apply_enabled', v ? 'true' : 'false')
-                        if (v) set('epay_enabled', 'false')
+                        if (v) {
+                          set('epay_enabled', 'false')
+                          set('shouqianba_enabled', 'false')
+                        }
                       }}
                     >
                       <Tip>开启后用户可通过支付中台（微信/支付宝）充值余额</Tip>
@@ -381,6 +389,48 @@ export function AdminSettingsPage() {
                       <FieldRow label="回调地址">
                         <Input readOnly value={payApplyNotifyUrl} className="bg-muted/30 font-mono text-xs" />
                         <Tip>将此地址填写到支付中台的回调配置中，必须可从公网访问</Tip>
+                      </FieldRow>
+                    </>
+                  ) : null}
+                  <FieldRow label="">
+                    <Separator className="my-2" />
+                  </FieldRow>
+                  <FieldRow label="启用收钱吧">
+                    <ToggleField
+                      checked={shouqianbaEnabled}
+                      onChange={(v) => {
+                        set('shouqianba_enabled', v ? 'true' : 'false')
+                        if (v) {
+                          set('epay_enabled', 'false')
+                          set('pay_apply_enabled', 'false')
+                        }
+                      }}
+                    >
+                      <Tip>开启后用户可通过收钱吧（微信/支付宝）充值余额</Tip>
+                    </ToggleField>
+                  </FieldRow>
+                  {shouqianbaEnabled ? (
+                    <>
+                      <FieldRow label="API 域名">
+                        <Input value={form.shouqianba_api_domain ?? ''} onChange={(e) => set('shouqianba_api_domain', e.target.value)} placeholder="https://vsi-api.shouqianba.com" />
+                        <Tip>收钱吧接入域名（不含末尾斜杠）</Tip>
+                      </FieldRow>
+                      <FieldRow label="终端号 terminal_sn">
+                        <Input value={form.shouqianba_terminal_sn ?? ''} onChange={(e) => set('shouqianba_terminal_sn', e.target.value)} placeholder="收钱吧终端号" />
+                      </FieldRow>
+                      <FieldRow label="终端密钥 terminal_key">
+                        <Input type="password" value={form.shouqianba_terminal_key ?? ''} onChange={(e) => set('shouqianba_terminal_key', e.target.value)} placeholder="收钱吧终端密钥" />
+                      </FieldRow>
+                      <FieldRow label="收钱吧公钥">
+                        <Textarea value={form.shouqianba_public_key ?? ''} onChange={(e) => set('shouqianba_public_key', e.target.value)} rows={4} placeholder="-----BEGIN PUBLIC KEY----- ... -----END PUBLIC KEY-----" className="font-mono text-xs" />
+                        <Tip>用于验证收钱吧回调签名（SHA256WithRSA）</Tip>
+                      </FieldRow>
+                      <FieldRow label="异步通知地址">
+                        <Input value={form.shouqianba_notify_url ?? shouqianbaNotifyUrl} onChange={(e) => set('shouqianba_notify_url', e.target.value)} placeholder={shouqianbaNotifyUrl} />
+                        <Tip>可留空使用默认地址，需在收钱吧后台配置可公网访问</Tip>
+                      </FieldRow>
+                      <FieldRow label="默认回调地址">
+                        <Input readOnly value={shouqianbaNotifyUrl} className="bg-muted/30 font-mono text-xs" />
                       </FieldRow>
                     </>
                   ) : null}

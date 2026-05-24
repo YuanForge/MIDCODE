@@ -868,7 +868,7 @@ func CreateExportTask(c *gin.Context) {
 }
 
 // runExportTask 在后台执行导出任务，生成 CSV 文件。
-func runExportTask(taskID int64, host string) {
+func runExportTask(taskID int64, _ string) {
 	fail := func(msg string) {
 		db.Engine.ID(taskID).Cols("status", "error_msg").Update(&model.ExportTask{
 			Status:   "failed",
@@ -995,12 +995,17 @@ func runExportTask(taskID int64, host string) {
 				payChannelZH = "支付宝"
 			case "epay":
 				payChannelZH = "Epay"
+			case "shouqianba_wechat":
+				payChannelZH = "收钱吧-微信"
+			case "shouqianba_alipay":
+				payChannelZH = "收钱吧-支付宝"
 			case "":
-				if r.PayFlat == 1 {
+				switch r.PayFlat {
+				case 1:
 					payChannelZH = "微信支付"
-				} else if r.PayFlat == 2 {
+				case 2:
 					payChannelZH = "支付宝"
-				} else {
+				default:
 					payChannelZH = "-"
 				}
 			}

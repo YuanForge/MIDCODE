@@ -107,6 +107,8 @@ func main() {
 
 	// 中台支付回调（无需用户认证，支付中台回调）
 	r.POST("/pay/apply/notify", handler.PayApplyNotify)
+	// 收钱吧支付回调（无需用户认证，收钱吧回调）
+	r.POST("/pay/shouqianba/notify", handler.ShouqianbaNotify)
 
 	// 公开认证路由（注册/登录/发验证码等）
 	auth := r.Group("/auth")
@@ -317,6 +319,7 @@ func main() {
 
 		// 中台支付（需要 JWT 认证）
 		authed.POST("/pay/apply/create", handler.CreatePayApplyOrder)
+		authed.POST("/pay/shouqianba/create", handler.CreateShouqianbaOrder)
 		authed.GET("/pay/order/status", handler.GetPaymentOrderStatus)
 
 		// 客服端路由（JWT + agent 或 admin 角色）

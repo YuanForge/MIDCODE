@@ -81,7 +81,6 @@ psql -U <user> -d <db> -f scripts/seed_chatfire.sql
 ### 5. 数据库迁移（非首次部署）
 
 若数据库由旧版升级，需按顺序执行迁移脚本补充新字段（新部署由 xorm `Sync2` 自动处理，无需手动执行）：
-
 ```bash
 # 添加 error_script 字段、corr_id 关联字段
 psql -U <user> -d <db> -f scripts/migrate_20260405_add_error_script_corr_id.sql
@@ -110,6 +109,29 @@ psql -U <user> -d <db> -f scripts/migrate_20260418_invite_rebate.sql
 # 号商表（vendors）及号池 Key 归属关联
 psql -U <user> -d <db> -f scripts/migrate_20260418_vendors.sql
 ```
+
+## 收钱吧接入自检清单（最小可用）
+
+在管理后台的“支付设置”中启用收钱吧后，至少确认以下 6 项：
+
+- `shouqianba_enabled=true`
+- `shouqianba_api_domain=https://vsi-api.shouqianba.com`
+- `shouqianba_terminal_sn`（收钱吧终端号）
+- `shouqianba_terminal_key`（终端密钥）
+- `shouqianba_public_key`（收钱吧提供的回调验签公钥，PEM 格式）
+- `shouqianba_notify_url`（可选；留空时可使用默认回调路由）
+
+默认回调路由：
+
+- `POST /pay/shouqianba/notify`
+
+联调检查建议：
+
+- 发起下单：`POST /pay/shouqianba/create`
+- 浏览器能打开返回的 `pay_url`
+- 支付完成后，订单状态从 `pending` 变为 `paid`
+- 用户余额增加对应积分
+- 服务日志包含 `[shouqianba notify] success` 记录
 
 ## 渠道脚本系统
 

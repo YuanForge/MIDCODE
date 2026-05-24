@@ -18,6 +18,7 @@ var publicSettingKeys = map[string]bool{
 	"footer_html":               true,
 	"epay_enabled":              true,
 	"pay_apply_enabled":         true,
+	"shouqianba_enabled":        true,
 	"notice_title":              true,
 	"notice_content":            true,
 	"contact_info":              true,

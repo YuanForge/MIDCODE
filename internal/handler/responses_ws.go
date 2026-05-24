@@ -228,7 +228,7 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 	}
 
 	// refundHold 在错误路径下退还本次预扣
-	refundHold := func(reason string) {
+	refundHold := func(_ string) {
 		if totalHold <= 0 {
 			return
 		}
@@ -324,6 +324,10 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 		var rawSSEBytes int
 
 		scanner := bufio.NewScanner(resp.Body)
+		// 可选：提高单行上限，避免长 data: 行触发 scanner.Err()==bufio.ErrTooLong
+		buf := make([]byte, 0, 64*1024)
+		scanner.Buffer(buf, 1024*1024) // 1MB
+
 		wsError := false
 		for scanner.Scan() {
 			line := scanner.Text()
@@ -356,6 +360,23 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 			if wsError {
 				break
 			}
+		}
+
+		// 关键：补充 Scan 循环后的错误检查
+		if scanErr := scanner.Err(); scanErr != nil && !wsError {
+			service.RecordChannelError(c.Request.Context(), ch.ID)
+			refundHold("upstream_stream_read_error")
+			if totalHold > 0 {
+				_ = service.WriteTx(
+					c.Request.Context(), userID, ch.ID, apiKeyIDVal, poolKeyIDVal, corrID,
+					"refund", totalHold, upstreamCostHold, modelCreditCharged,
+					model.JSON{"reason": "upstream_stream_read_error"},
+				)
+			}
+			_, _ = db.Engine.Where("corr_id = ?", corrID).
+				Cols("status", "error_msg").
+				Update(&model.LLMLog{Status: "error", ErrorMsg: scanErr.Error()})
+			return fmt.Errorf("读取上游流失败: %w", scanErr)
 		}
 
 		// 冲刷 SSE 转换器末尾事件（response.completed 等）

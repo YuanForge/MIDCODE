@@ -177,7 +177,17 @@ export function UserBillingPage() {
     const amount = couponResult ? couponResult.final_amount : Number(selectedAmount)
     setIsPaying(true)
     try {
-      if (settings.payApplyEnabled) {
+      if (settings.shouqianbaEnabled) {
+      const payFlat = payMethod === 'wechat' ? 1 : 2
+      const res = await payApi.createShouqianbaOrder({ amount, pay_flat: payFlat })
+      if (res.pay_url) {
+        setPayUrl(res.pay_url)
+        setCurrentOutTradeNo(res.out_trade_no || "")
+        setShowPayFrame(!isMobileBrowser())
+        startPolling(res.out_trade_no)
+        openPaymentPage(res.pay_url)
+      }
+      } else if (settings.payApplyEnabled) {
         const payFlat = payMethod === 'wechat' ? 1 : 2
         const payFrom = isMobileBrowser()
           ? (payMethod === 'wechat' && isWeChatBrowser() ? 'wapwx' : 'wap')
@@ -260,6 +270,15 @@ export function UserBillingPage() {
     }
   }
 
+  const orderChannelLabel = (row: PaymentOrder) => {
+    if (row.pay_channel === 'shouqianba_wechat') return '收钱吧-微信'
+    if (row.pay_channel === 'shouqianba_alipay') return '收钱吧-支付宝'
+    if (row.pay_channel) return row.pay_channel
+    if (row.pay_flat === 1) return 'wechat'
+    if (row.pay_flat === 2) return 'alipay'
+    return 'epay'
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -331,7 +350,7 @@ export function UserBillingPage() {
             </Card>
           ) : null}
 
-          {(settings.epayEnabled || settings.payApplyEnabled) && (
+          {(settings.epayEnabled || settings.payApplyEnabled || settings.shouqianbaEnabled) && (
             <Card>
               <CardHeader>
                 <CardTitle>选择充值套餐</CardTitle>
@@ -536,7 +555,7 @@ export function UserBillingPage() {
                       <TableCell className="font-semibold text-green-600">
                         {row.credits ? `+${formatCredits(row.credits)} 积分` : '—'}
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{row.pay_channel || (row.pay_flat === 1 ? 'wechat' : row.pay_flat === 2 ? 'alipay' : 'epay')}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{orderChannelLabel(row)}</TableCell>
                       <TableCell>
                         <Badge variant={row.status === 'paid' ? 'default' : 'secondary'}>{orderStatusLabel(row.status)}</Badge>
                       </TableCell>

@@ -16,7 +16,7 @@ type PaymentOrder struct {
 	PayFlat    int        `xorm:"notnull default(0) 'pay_flat'" json:"pay_flat"`        // 0=Epay 1=微信 2=支付宝
 	PayFrom    string     `xorm:"notnull default('') 'pay_from'" json:"pay_from"`       // 支付终端来源
 	ProName    string     `xorm:"notnull default('') 'pro_name'" json:"pro_name"`       // 商品名称
-	PayChannel string     `xorm:"notnull default('') 'pay_channel'" json:"pay_channel"` // 充值渠道：epay / wechat / alipay
+	PayChannel string     `xorm:"notnull default('') 'pay_channel'" json:"pay_channel"` // 充值渠道：epay / wechat / alipay / shouqianba_wechat / shouqianba_alipay
 	CreatedAt  time.Time  `xorm:"created 'created_at'" json:"created_at"`
 	PaidAt     *time.Time `xorm:"null 'paid_at'" json:"paid_at"`
 }
