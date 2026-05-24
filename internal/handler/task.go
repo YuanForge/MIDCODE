@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -269,14 +270,46 @@ func applyAdminResultProxyRewrite(task *model.Task) {
 }
 
 func getTaskResultURLRewrite() func(string) string {
-	from := strings.TrimSpace(getSettingValue("result_url_proxy_from"))
-	to := strings.TrimSpace(getSettingValue("result_url_proxy_to"))
-	if from == "" || to == "" {
+	// 优先读取多规则 JSON（[{"from":"...","to":"..."}]）
+	rulesRaw := strings.TrimSpace(getSettingValue("result_url_proxy_rules"))
+	type ruleEntry struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	}
+	var rules []ruleEntry
+	if rulesRaw != "" {
+		_ = json.Unmarshal([]byte(rulesRaw), &rules)
+	}
+	// 兼容旧单对配置
+	if len(rules) == 0 {
+		from := strings.TrimSpace(getSettingValue("result_url_proxy_from"))
+		to := strings.TrimSpace(getSettingValue("result_url_proxy_to"))
+		if from != "" && to != "" {
+			rules = []ruleEntry{{From: from, To: to}}
+		}
+	}
+	if len(rules) == 0 {
 		return nil
 	}
-	to = strings.TrimRight(to, "/")
-	from = strings.TrimRight(from, "/")
-	return compilePrefixRewrite(from, to)
+	// 编译全部规则，组合为复合重写函数
+	var fns []func(string) string
+	for _, r := range rules {
+		f := strings.TrimRight(strings.TrimSpace(r.From), "/")
+		t := strings.TrimRight(strings.TrimSpace(r.To), "/")
+		if f == "" || t == "" {
+			continue
+		}
+		fns = append(fns, compilePrefixRewrite(f, t))
+	}
+	if len(fns) == 0 {
+		return nil
+	}
+	return func(s string) string {
+		for _, fn := range fns {
+			s = fn(s)
+		}
+		return s
+	}
 }
 
 func cloneJSON(src model.JSON) model.JSON {

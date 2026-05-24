@@ -18,6 +18,7 @@ import { useAsync } from '@/hooks/use-async'
 
 type SettingsMap = Record<string, string>
 type PlanRow = { credits: number; bonus: number; amount: number; origin_amount: number; desc: string }
+type ProxyRule = { from: string; to: string }
 
 function totalPlanCredits(plan: PlanRow) {
   return Number(plan.credits || 0) + Number(plan.bonus || 0)
@@ -118,6 +119,7 @@ export function AdminSettingsPage() {
   const [form, setForm] = useState<SettingsMap>({})
   const [formReady, setFormReady] = useState(false)
   const [planRows, setPlanRows] = useState<PlanRow[]>([])
+  const [proxyRules, setProxyRules] = useState<ProxyRule[]>([])
   const [allowCustom, setAllowCustom] = useState(true)
   const [rebatePercent, setRebatePercent] = useState('')
   const [vendorCommPercent, setVendorCommPercent] = useState('')
@@ -129,6 +131,19 @@ export function AdminSettingsPage() {
     setRebatePercent(String(parseFloat((parseFloat(rawSettings.default_rebate_ratio || '0') * 100).toFixed(2)) || ''))
     setVendorCommPercent(String(parseFloat((parseFloat(rawSettings.default_vendor_commission || '0') * 100).toFixed(2)) || ''))
     try { setPlanRows(JSON.parse(rawSettings.recharge_plans || '[]')) } catch { setPlanRows([]) }
+    // 加载多条代理规则；兼容旧单对
+    try {
+      const parsed: ProxyRule[] = JSON.parse(rawSettings.result_url_proxy_rules || '[]')
+      if (parsed.length > 0) {
+        setProxyRules(parsed)
+      } else if (rawSettings.result_url_proxy_from) {
+        setProxyRules([{ from: rawSettings.result_url_proxy_from, to: rawSettings.result_url_proxy_to ?? '' }])
+      }
+    } catch {
+      if (rawSettings.result_url_proxy_from) {
+        setProxyRules([{ from: rawSettings.result_url_proxy_from, to: rawSettings.result_url_proxy_to ?? '' }])
+      }
+    }
     setFormReady(true)
   }
 
@@ -191,8 +206,11 @@ export function AdminSettingsPage() {
         recharge_plans: JSON.stringify(planRows),
         default_rebate_ratio: (parseFloat(rebatePercent || '0') / 100).toFixed(4),
         default_vendor_commission: (parseFloat(vendorCommPercent || '0') / 100).toFixed(4),
+        result_url_proxy_rules: JSON.stringify(proxyRules.filter(r => r.from.trim() && r.to.trim())),
       }
       delete payload.pay_apply_notify_url
+      delete payload.result_url_proxy_from
+      delete payload.result_url_proxy_to
       await adminApi.updateSettings(payload)
     } catch (err) {
       const { getApiErrorMessage } = await import('@/lib/api/http')
@@ -265,6 +283,55 @@ export function AdminSettingsPage() {
                       </div>
                     </FieldRow>
                   ) : null}
+                  <FieldRow label="任务结果 URL 反代规则">
+                    <div className="space-y-2">
+                      {proxyRules.length > 0 && (
+                        <div className="rounded-lg border overflow-hidden">
+                          <table className="w-full text-sm">
+                            <thead className="bg-muted/30">
+                              <tr className="border-b">
+                                <th className="px-3 py-2 text-left font-medium">上游前缀（from）</th>
+                                <th className="px-3 py-2 text-left font-medium">替换为（to）</th>
+                                <th className="px-3 py-2 w-10"></th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y">
+                              {proxyRules.map((rule, i) => (
+                                <tr key={i}>
+                                  <td className="px-2 py-1.5">
+                                    <Input
+                                      value={rule.from}
+                                      onChange={(e) => setProxyRules(p => p.map((r, idx) => idx === i ? { ...r, from: e.target.value } : r))}
+                                      placeholder="https://upload.apimart.ai"
+                                      className="h-8 font-mono text-xs"
+                                    />
+                                  </td>
+                                  <td className="px-2 py-1.5">
+                                    <Input
+                                      value={rule.to}
+                                      onChange={(e) => setProxyRules(p => p.map((r, idx) => idx === i ? { ...r, to: e.target.value } : r))}
+                                      placeholder="https://api.fanapi.cc/apimart"
+                                      className="h-8 font-mono text-xs"
+                                    />
+                                  </td>
+                                  <td className="px-2 py-1.5">
+                                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:text-red-600" onClick={() => setProxyRules(p => p.filter((_, idx) => idx !== i))}>
+                                      <Trash2Icon className="h-4 w-4" />
+                                    </Button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                      <Button type="button" variant="outline" size="sm" onClick={() => setProxyRules(p => [...p, { from: '', to: '' }])}>
+                        <PlusIcon className="mr-1 h-4 w-4" />
+                        添加规则
+                      </Button>
+                    </div>
+                    <Tip>配置多个上游资源域名→反代前缀的替换规则，用户端和管理端任务结果统一生效。留空则不替换。</Tip>
+                  </FieldRow>
                   <FieldRow label="显示低价密钥类型">
                     <ToggleField
                       checked={form.show_low_price_key !== 'false'}
