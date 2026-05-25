@@ -34,6 +34,54 @@ const (
 	protocolResponses = "responses"
 )
 
+// OpenAIModels returns an OpenAI-compatible model list for clients that discover
+// available models through GET /v1/models.
+func OpenAIModels(c *gin.Context) {
+	var channels []model.Channel
+	if err := db.Engine.Where("is_active = true AND type = ?", "llm").
+		Cols("id", "model", "display_name", "created_at").
+		OrderBy("id ASC").
+		Find(&channels); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	type modelInfo struct {
+		ID      string `json:"id"`
+		Object  string `json:"object"`
+		Created int64  `json:"created"`
+		OwnedBy string `json:"owned_by"`
+	}
+
+	seen := make(map[string]bool)
+	data := make([]modelInfo, 0, len(channels))
+	for _, ch := range channels {
+		id := ch.Model
+		if ch.DisplayName != "" {
+			id = ch.DisplayName
+		}
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		created := int64(0)
+		if !ch.CreatedAt.IsZero() {
+			created = ch.CreatedAt.Unix()
+		}
+		data = append(data, modelInfo{
+			ID:      id,
+			Object:  "model",
+			Created: created,
+			OwnedBy: "fanapi",
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"object": "list",
+		"data":   data,
+	})
+}
+
 func effectiveProtocol(ch *model.Channel) string {
 	if ch.Protocol == "" {
 		return protocolOpenAI
@@ -1345,7 +1393,11 @@ func sendLLMRequest(c *gin.Context, ch *model.Channel, reqData map[string]interf
 		}
 	}
 
-	upReq, err := http.NewRequestWithContext(c.Request.Context(), ch.Method, targetURL, bytes.NewReader(body))
+	method := ch.Method
+	if method == "" {
+		method = http.MethodPost
+	}
+	upReq, err := http.NewRequestWithContext(c.Request.Context(), method, targetURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1394,6 +1446,10 @@ func sendLLMRequest(c *gin.Context, ch *model.Channel, reqData map[string]interf
 	}
 
 	// 采集完整请求头（用于管理端日志排查，含完整 API Key）
+	if err := applyChannelAuth(upReq, ch, poolKeyVal, body); err != nil {
+		return nil, nil, err
+	}
+
 	sanitizedHeaders := make(map[string]string, len(upReq.Header))
 	for k, vals := range upReq.Header {
 		sanitizedHeaders[k] = strings.Join(vals, ", ")
@@ -1401,6 +1457,61 @@ func sendLLMRequest(c *gin.Context, ch *model.Channel, reqData map[string]interf
 
 	resp, err := httpClient.Do(upReq)
 	return sanitizedHeaders, resp, err
+}
+
+// applyChannelAuth applies key-pool credentials according to the channel auth type.
+func applyChannelAuth(req *http.Request, ch *model.Channel, key string, body []byte) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil
+	}
+
+	authType := strings.ToLower(strings.TrimSpace(ch.AuthType))
+	if authType == "" {
+		authType = "bearer"
+	}
+
+	switch authType {
+	case "bearer":
+		if req.Header.Get("Authorization") == "" {
+			req.Header.Set("Authorization", "Bearer "+key)
+		}
+	case "query_param":
+		paramName := strings.TrimSpace(ch.AuthParamName)
+		if paramName == "" {
+			paramName = "key"
+		}
+		q := req.URL.Query()
+		if q.Get(paramName) == "" {
+			q.Set(paramName, key)
+			req.URL.RawQuery = q.Encode()
+		}
+	case "basic":
+		if req.Header.Get("Authorization") != "" {
+			return nil
+		}
+		parts := strings.SplitN(key, ":", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("basic key format should be user:pass")
+		}
+		req.SetBasicAuth(parts[0], parts[1])
+	case "sigv4":
+		if req.Header.Get("Authorization") != "" {
+			return nil
+		}
+		region := strings.TrimSpace(ch.AuthRegion)
+		if region == "" {
+			region = "us-east-1"
+		}
+		serviceName := strings.TrimSpace(ch.AuthService)
+		if serviceName == "" {
+			serviceName = "execute-api"
+		}
+		return signSigV4(req, key, region, serviceName, body)
+	default:
+		return fmt.Errorf("unsupported auth_type: %s", authType)
+	}
+	return nil
 }
 
 // signSigV4 为请求添加 AWS Signature Version 4 认证头。

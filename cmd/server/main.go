@@ -347,6 +347,7 @@ func main() {
 		v1 := authed.Group("/v1")
 		v1.Use(middleware.APIKeyOnly())
 		{
+			v1.GET("/models", handler.OpenAIModels)        // OpenAI 兼容模型列表
 			v1.POST("/chat/completions", handler.LLMProxy) // OpenAI 兼容格式
 			v1.POST("/messages", handler.ClaudeProxy)      // Claude 原生格式
 			v1.POST("/responses", handler.ResponsesProxy)  // OpenAI Responses API（SSE / 同步）

@@ -43,13 +43,30 @@ func NewSSEConverter(sourceProto, clientProto string) SSEConverter {
 // Claude SSE → OpenAI SSE
 // ─────────────────────────────────────────────
 
+func intFromJSON(v interface{}) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	case float32:
+		return int(n)
+	default:
+		return 0
+	}
+}
+
 type claudeToOpenAISSE struct {
-	msgID       string
-	model       string
-	lastEvent   string
-	inputTokens int64
-	sentRole    bool
-	doneSent    bool
+	msgID            string
+	model            string
+	lastEvent        string
+	inputTokens      int64
+	sentRole         bool
+	doneSent         bool
+	nextToolIndex    int
+	toolIndexByBlock map[int]int
 }
 
 func (c *claudeToOpenAISSE) Convert(line string) []string {
@@ -88,6 +105,20 @@ func (c *claudeToOpenAISSE) Convert(line string) []string {
 			if text, _ := delta["text"].(string); text != "" {
 				return c.emitTextChunk(text)
 			}
+			if partial, _ := delta["partial_json"].(string); partial != "" {
+				blockIndex := intFromJSON(chunk["index"])
+				return c.emitToolArgsChunk(blockIndex, partial)
+			}
+		}
+
+	case "content_block_start":
+		if block, ok := chunk["content_block"].(map[string]interface{}); ok {
+			if blockType, _ := block["type"].(string); blockType == "tool_use" {
+				blockIndex := intFromJSON(chunk["index"])
+				id, _ := block["id"].(string)
+				name, _ := block["name"].(string)
+				return c.emitToolStartChunk(blockIndex, id, name)
+			}
 		}
 
 	case "message_delta":
@@ -117,6 +148,19 @@ func (c *claudeToOpenAISSE) Convert(line string) []string {
 		}
 	}
 	return nil
+}
+
+func (c *claudeToOpenAISSE) openAIToolIndex(blockIndex int) int {
+	if c.toolIndexByBlock == nil {
+		c.toolIndexByBlock = make(map[int]int)
+	}
+	if idx, ok := c.toolIndexByBlock[blockIndex]; ok {
+		return idx
+	}
+	idx := c.nextToolIndex
+	c.nextToolIndex++
+	c.toolIndexByBlock[blockIndex] = idx
+	return idx
 }
 
 func (c *claudeToOpenAISSE) Flush() []string {
@@ -154,6 +198,55 @@ func (c *claudeToOpenAISSE) emitTextChunk(text string) []string {
 		"choices": []interface{}{map[string]interface{}{
 			"index":         0,
 			"delta":         map[string]interface{}{"content": text},
+			"finish_reason": nil,
+		}},
+	}
+	b, _ := json.Marshal(out)
+	return []string{"data: " + string(b), ""}
+}
+
+func (c *claudeToOpenAISSE) emitToolStartChunk(blockIndex int, id, name string) []string {
+	idx := c.openAIToolIndex(blockIndex)
+	out := map[string]interface{}{
+		"id":     c.msgID,
+		"object": "chat.completion.chunk",
+		"model":  c.model,
+		"choices": []interface{}{map[string]interface{}{
+			"index": 0,
+			"delta": map[string]interface{}{
+				"tool_calls": []interface{}{map[string]interface{}{
+					"index": idx,
+					"id":    id,
+					"type":  "function",
+					"function": map[string]interface{}{
+						"name":      name,
+						"arguments": "",
+					},
+				}},
+			},
+			"finish_reason": nil,
+		}},
+	}
+	b, _ := json.Marshal(out)
+	return []string{"data: " + string(b), ""}
+}
+
+func (c *claudeToOpenAISSE) emitToolArgsChunk(blockIndex int, partial string) []string {
+	idx := c.openAIToolIndex(blockIndex)
+	out := map[string]interface{}{
+		"id":     c.msgID,
+		"object": "chat.completion.chunk",
+		"model":  c.model,
+		"choices": []interface{}{map[string]interface{}{
+			"index": 0,
+			"delta": map[string]interface{}{
+				"tool_calls": []interface{}{map[string]interface{}{
+					"index": idx,
+					"function": map[string]interface{}{
+						"arguments": partial,
+					},
+				}},
+			},
 			"finish_reason": nil,
 		}},
 	}
@@ -427,12 +520,24 @@ func (r *responsesToOpenAISSE) chunkID() string {
 // ─────────────────────────────────────────────
 
 type openAIToClaudeSSE struct {
-	msgID        string
-	model        string
-	inputTokens  int64
-	outputTokens int64
-	sentStart    bool
-	doneSent     bool
+	msgID            string
+	model            string
+	inputTokens      int64
+	outputTokens     int64
+	sentStart        bool
+	doneSent         bool
+	nextBlockIndex   int
+	activeBlockIndex int
+	activeBlockKind  string
+	stopReason       string
+	toolBlocks       map[int]openAIToClaudeToolBlock
+}
+
+type openAIToClaudeToolBlock struct {
+	blockIndex int
+	id         string
+	name       string
+	args       string
 }
 
 func (o *openAIToClaudeSSE) Convert(line string) []string {
@@ -480,12 +585,25 @@ func (o *openAIToClaudeSSE) Convert(line string) []string {
 	if !o.sentStart {
 		o.sentStart = true
 		result = append(result, o.messageStartLines()...)
-		result = append(result, o.contentBlockStartLines()...)
+		result = append(result, o.pingLines()...)
 	}
 
 	delta, _ := choice["delta"].(map[string]interface{})
 	if content, _ := delta["content"].(string); content != "" {
+		result = append(result, o.ensureTextBlock()...)
 		result = append(result, o.contentDeltaLines(content)...)
+	}
+	if toolCalls, ok := delta["tool_calls"].([]interface{}); ok && len(toolCalls) > 0 {
+		result = append(result, o.toolCallDeltaLines(toolCalls)...)
+	}
+	if finish, _ := choice["finish_reason"].(string); finish != "" {
+		if finish == "tool_calls" {
+			o.stopReason = "tool_use"
+		} else if finish == "length" {
+			o.stopReason = "max_tokens"
+		} else {
+			o.stopReason = "end_turn"
+		}
 	}
 
 	return result
@@ -513,46 +631,186 @@ func (o *openAIToClaudeSSE) messageStartLines() []string {
 	return []string{"event: message_start", "data: " + string(b), ""}
 }
 
-func (o *openAIToClaudeSSE) contentBlockStartLines() []string {
-	return []string{
-		"event: content_block_start",
-		`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
-		"",
-		"event: ping",
-		`data: {"type":"ping"}`,
-		"",
+func (o *openAIToClaudeSSE) pingLines() []string {
+	return []string{"event: ping", `data: {"type":"ping"}`, ""}
+}
+
+func (o *openAIToClaudeSSE) ensureTextBlock() []string {
+	if o.activeBlockKind == "text" {
+		return nil
 	}
+	var out []string
+	out = append(out, o.closeActiveBlock()...)
+	index := o.nextBlockIndex
+	o.nextBlockIndex++
+	o.activeBlockKind = "text"
+	o.activeBlockIndex = index
+	data := map[string]interface{}{
+		"type":  "content_block_start",
+		"index": index,
+		"content_block": map[string]interface{}{
+			"type": "text",
+			"text": "",
+		},
+	}
+	b, _ := json.Marshal(data)
+	return append(out, "event: content_block_start", "data: "+string(b), "")
 }
 
 func (o *openAIToClaudeSSE) contentDeltaLines(text string) []string {
 	data := map[string]interface{}{
 		"type":  "content_block_delta",
-		"index": 0,
+		"index": o.activeBlockIndex,
 		"delta": map[string]interface{}{"type": "text_delta", "text": text},
 	}
 	b, _ := json.Marshal(data)
 	return []string{"event: content_block_delta", "data: " + string(b), ""}
 }
 
+func (o *openAIToClaudeSSE) toolCallDeltaLines(toolCalls []interface{}) []string {
+	for _, raw := range toolCalls {
+		tc, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		idx := intFromJSON(tc["index"])
+		fn, _ := tc["function"].(map[string]interface{})
+		id, _ := tc["id"].(string)
+		name, _ := fn["name"].(string)
+		args, _ := fn["arguments"].(string)
+
+		block, _ := o.openAIToolBlock(idx)
+		if id != "" {
+			block.id = id
+		}
+		if name != "" {
+			block.name = name
+		}
+		if block.id == "" {
+			block.id = "toolu_" + newShortID()
+		}
+		if args != "" {
+			block.args += args
+		}
+		o.toolBlocks[idx] = block
+	}
+	return nil
+}
+
+func (o *openAIToClaudeSSE) openAIToolBlock(index int) (openAIToClaudeToolBlock, bool) {
+	if o.toolBlocks == nil {
+		o.toolBlocks = make(map[int]openAIToClaudeToolBlock)
+	}
+	block, exists := o.toolBlocks[index]
+	if !exists {
+		block = openAIToClaudeToolBlock{
+			blockIndex: o.nextBlockIndex,
+		}
+		o.nextBlockIndex++
+	}
+	return block, exists
+}
+
+func (o *openAIToClaudeSSE) toolBlockStartLines(block openAIToClaudeToolBlock) []string {
+	data := map[string]interface{}{
+		"type":  "content_block_start",
+		"index": block.blockIndex,
+		"content_block": map[string]interface{}{
+			"type":  "tool_use",
+			"id":    block.id,
+			"name":  block.name,
+			"input": map[string]interface{}{},
+		},
+	}
+	b, _ := json.Marshal(data)
+	return []string{"event: content_block_start", "data: " + string(b), ""}
+}
+
+func (o *openAIToClaudeSSE) toolArgsDeltaLines(blockIndex int, args string) []string {
+	data := map[string]interface{}{
+		"type":  "content_block_delta",
+		"index": blockIndex,
+		"delta": map[string]interface{}{
+			"type":         "input_json_delta",
+			"partial_json": args,
+		},
+	}
+	b, _ := json.Marshal(data)
+	return []string{"event: content_block_delta", "data: " + string(b), ""}
+}
+
+func (o *openAIToClaudeSSE) closeActiveBlock() []string {
+	if o.activeBlockKind == "" {
+		return nil
+	}
+	data := map[string]interface{}{
+		"type":  "content_block_stop",
+		"index": o.activeBlockIndex,
+	}
+	b, _ := json.Marshal(data)
+	o.activeBlockKind = ""
+	return []string{"event: content_block_stop", "data: " + string(b), ""}
+}
+
+func (o *openAIToClaudeSSE) bufferedToolBlockLines() []string {
+	if len(o.toolBlocks) == 0 {
+		return nil
+	}
+	maxIndex := -1
+	for idx := range o.toolBlocks {
+		if idx > maxIndex {
+			maxIndex = idx
+		}
+	}
+	var out []string
+	for idx := 0; idx <= maxIndex; idx++ {
+		block, ok := o.toolBlocks[idx]
+		if !ok {
+			continue
+		}
+		out = append(out, o.toolBlockStartLines(block)...)
+		if block.args != "" {
+			out = append(out, o.toolArgsDeltaLines(block.blockIndex, block.args)...)
+		}
+		data := map[string]interface{}{
+			"type":  "content_block_stop",
+			"index": block.blockIndex,
+		}
+		b, _ := json.Marshal(data)
+		out = append(out, "event: content_block_stop", "data: "+string(b), "")
+	}
+	return out
+}
+
 func (o *openAIToClaudeSSE) stopEvents() []string {
+	var out []string
+	if !o.sentStart {
+		o.sentStart = true
+		out = append(out, o.messageStartLines()...)
+	}
+	out = append(out, o.closeActiveBlock()...)
+	out = append(out, o.bufferedToolBlockLines()...)
+
+	stopReason := o.stopReason
+	if stopReason == "" {
+		stopReason = "end_turn"
+	}
 	outTok := o.outputTokens
 	msgDelta := map[string]interface{}{
 		"type":  "message_delta",
-		"delta": map[string]interface{}{"stop_reason": "end_turn", "stop_sequence": nil},
+		"delta": map[string]interface{}{"stop_reason": stopReason, "stop_sequence": nil},
 		"usage": map[string]interface{}{"output_tokens": outTok},
 	}
 	b, _ := json.Marshal(msgDelta)
-	return []string{
-		"event: content_block_stop",
-		`data: {"type":"content_block_stop","index":0}`,
-		"",
+	out = append(out,
 		"event: message_delta",
 		"data: " + string(b),
 		"",
 		"event: message_stop",
 		`data: {"type":"message_stop"}`,
 		"",
-	}
+	)
+	return out
 }
 
 // ─────────────────────────────────────────────
@@ -580,6 +838,20 @@ type openAIToResponsesSSE struct {
 	// token 统计
 	inputTokens  int64
 	outputTokens int64
+	textOutputIndex int
+	textStarted     bool
+	textDone        bool
+	nextOutputIndex int
+	toolCalls       map[int]responsesToolCall
+}
+
+type responsesToolCall struct {
+	outputIndex int
+	itemID      string
+	callID      string
+	name        string
+	arguments   string
+	done        bool
 }
 
 func (r *openAIToResponsesSSE) Convert(line string) []string {
@@ -608,13 +880,10 @@ func (r *openAIToResponsesSSE) Convert(line string) []string {
 		} else {
 			r.respID = "resp_" + newShortID()
 		}
-		r.itemID = "msg_" + newShortID()
 		if m, ok := chunk["model"].(string); ok {
 			r.model = m
 		}
 		out = append(out, r.emitCreated()...)
-		out = append(out, r.emitOutputItemAdded()...)
-		out = append(out, r.emitContentPartAdded()...)
 	}
 
 	// 收集 usage（最后一个 chunk 会携带）
@@ -640,8 +909,12 @@ func (r *openAIToResponsesSSE) Convert(line string) []string {
 	// delta 文本增量
 	if delta, ok := choice["delta"].(map[string]interface{}); ok {
 		if text, ok := delta["content"].(string); ok && text != "" {
+			out = append(out, r.ensureTextOutput()...)
 			r.fullText += text
 			out = append(out, r.emitTextDelta(text)...)
+		}
+		if toolCalls, ok := delta["tool_calls"].([]interface{}); ok && len(toolCalls) > 0 {
+			out = append(out, r.toolCallDeltaLines(toolCalls)...)
 		}
 	}
 
@@ -654,9 +927,8 @@ func (r *openAIToResponsesSSE) Flush() []string {
 	}
 	r.doneSent = true
 	var out []string
-	out = append(out, r.emitTextDone()...)
-	out = append(out, r.emitContentPartDone()...)
-	out = append(out, r.emitOutputItemDone()...)
+	out = append(out, r.finishTextOutput()...)
+	out = append(out, r.finishToolOutputs()...)
 	out = append(out, r.emitCompleted()...)
 	return out
 }
@@ -676,10 +948,23 @@ func (r *openAIToResponsesSSE) emitCreated() []string {
 	return []string{"event: response.created", "data: " + string(b), ""}
 }
 
+func (r *openAIToResponsesSSE) ensureTextOutput() []string {
+	if r.textStarted {
+		return nil
+	}
+	r.textStarted = true
+	r.itemID = "msg_" + newShortID()
+	r.textOutputIndex = r.nextOutputIndex
+	r.nextOutputIndex++
+	out := r.emitOutputItemAdded()
+	out = append(out, r.emitContentPartAdded()...)
+	return out
+}
+
 func (r *openAIToResponsesSSE) emitOutputItemAdded() []string {
 	item := map[string]interface{}{
 		"type":         "response.output_item.added",
-		"output_index": 0,
+		"output_index": r.textOutputIndex,
 		"item": map[string]interface{}{
 			"id":      r.itemID,
 			"type":    "message",
@@ -696,7 +981,7 @@ func (r *openAIToResponsesSSE) emitContentPartAdded() []string {
 	ev := map[string]interface{}{
 		"type":          "response.content_part.added",
 		"item_id":       r.itemID,
-		"output_index":  0,
+		"output_index":  r.textOutputIndex,
 		"content_index": 0,
 		"part": map[string]interface{}{
 			"type": "output_text",
@@ -711,7 +996,7 @@ func (r *openAIToResponsesSSE) emitTextDelta(delta string) []string {
 	ev := map[string]interface{}{
 		"type":          "response.output_text.delta",
 		"item_id":       r.itemID,
-		"output_index":  0,
+		"output_index":  r.textOutputIndex,
 		"content_index": 0,
 		"delta":         delta,
 	}
@@ -723,7 +1008,7 @@ func (r *openAIToResponsesSSE) emitTextDone() []string {
 	ev := map[string]interface{}{
 		"type":          "response.output_text.done",
 		"item_id":       r.itemID,
-		"output_index":  0,
+		"output_index":  r.textOutputIndex,
 		"content_index": 0,
 		"text":          r.fullText,
 	}
@@ -735,7 +1020,7 @@ func (r *openAIToResponsesSSE) emitContentPartDone() []string {
 	ev := map[string]interface{}{
 		"type":          "response.content_part.done",
 		"item_id":       r.itemID,
-		"output_index":  0,
+		"output_index":  r.textOutputIndex,
 		"content_index": 0,
 		"part": map[string]interface{}{
 			"type": "output_text",
@@ -749,7 +1034,7 @@ func (r *openAIToResponsesSSE) emitContentPartDone() []string {
 func (r *openAIToResponsesSSE) emitOutputItemDone() []string {
 	ev := map[string]interface{}{
 		"type":         "response.output_item.done",
-		"output_index": 0,
+		"output_index": r.textOutputIndex,
 		"item": map[string]interface{}{
 			"id":     r.itemID,
 			"type":   "message",
@@ -767,6 +1052,174 @@ func (r *openAIToResponsesSSE) emitOutputItemDone() []string {
 	return []string{"event: response.output_item.done", "data: " + string(b), ""}
 }
 
+func (r *openAIToResponsesSSE) finishTextOutput() []string {
+	if !r.textStarted || r.textDone {
+		return nil
+	}
+	r.textDone = true
+	var out []string
+	out = append(out, r.emitTextDone()...)
+	out = append(out, r.emitContentPartDone()...)
+	out = append(out, r.emitOutputItemDone()...)
+	return out
+}
+
+func (r *openAIToResponsesSSE) toolCallDeltaLines(toolCalls []interface{}) []string {
+	var out []string
+	for _, raw := range toolCalls {
+		tc, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		idx := intFromJSON(tc["index"])
+		fn, _ := tc["function"].(map[string]interface{})
+		id, _ := tc["id"].(string)
+		name, _ := fn["name"].(string)
+		args, _ := fn["arguments"].(string)
+
+		block, exists := r.openAIToolCall(idx)
+		if id != "" {
+			block.callID = id
+		}
+		if name != "" {
+			block.name = name
+		}
+		if block.callID == "" {
+			block.callID = "call_" + newShortID()
+		}
+		if !exists {
+			out = append(out, r.emitToolOutputItemAdded(block)...)
+		}
+		if args != "" {
+			block.arguments += args
+			out = append(out, r.emitToolArgumentsDelta(block, args)...)
+		}
+		r.toolCalls[idx] = block
+	}
+	return out
+}
+
+func (r *openAIToResponsesSSE) openAIToolCall(index int) (responsesToolCall, bool) {
+	if r.toolCalls == nil {
+		r.toolCalls = make(map[int]responsesToolCall)
+	}
+	block, exists := r.toolCalls[index]
+	if !exists {
+		block = responsesToolCall{
+			outputIndex: r.nextOutputIndex,
+			itemID:      "fc_" + newShortID(),
+		}
+		r.nextOutputIndex++
+	}
+	return block, exists
+}
+
+func (r *openAIToResponsesSSE) emitToolOutputItemAdded(block responsesToolCall) []string {
+	ev := map[string]interface{}{
+		"type":         "response.output_item.added",
+		"output_index": block.outputIndex,
+		"item":         r.toolOutputItem(block, "in_progress"),
+	}
+	b, _ := json.Marshal(ev)
+	return []string{"event: response.output_item.added", "data: " + string(b), ""}
+}
+
+func (r *openAIToResponsesSSE) emitToolArgumentsDelta(block responsesToolCall, delta string) []string {
+	ev := map[string]interface{}{
+		"type":         "response.function_call_arguments.delta",
+		"item_id":      block.itemID,
+		"output_index": block.outputIndex,
+		"delta":        delta,
+	}
+	b, _ := json.Marshal(ev)
+	return []string{"event: response.function_call_arguments.delta", "data: " + string(b), ""}
+}
+
+func (r *openAIToResponsesSSE) emitToolArgumentsDone(block responsesToolCall) []string {
+	ev := map[string]interface{}{
+		"type":         "response.function_call_arguments.done",
+		"item_id":      block.itemID,
+		"output_index": block.outputIndex,
+		"arguments":    block.arguments,
+	}
+	b, _ := json.Marshal(ev)
+	return []string{"event: response.function_call_arguments.done", "data: " + string(b), ""}
+}
+
+func (r *openAIToResponsesSSE) emitToolOutputItemDone(block responsesToolCall) []string {
+	ev := map[string]interface{}{
+		"type":         "response.output_item.done",
+		"output_index": block.outputIndex,
+		"item":         r.toolOutputItem(block, "completed"),
+	}
+	b, _ := json.Marshal(ev)
+	return []string{"event: response.output_item.done", "data: " + string(b), ""}
+}
+
+func (r *openAIToResponsesSSE) finishToolOutputs() []string {
+	if len(r.toolCalls) == 0 {
+		return nil
+	}
+	var out []string
+	for _, idx := range r.sortedToolCallIndexes() {
+		block := r.toolCalls[idx]
+		if block.done {
+			continue
+		}
+		block.done = true
+		out = append(out, r.emitToolArgumentsDone(block)...)
+		out = append(out, r.emitToolOutputItemDone(block)...)
+		r.toolCalls[idx] = block
+	}
+	return out
+}
+
+func (r *openAIToResponsesSSE) sortedToolCallIndexes() []int {
+	indexes := make([]int, 0, len(r.toolCalls))
+	for idx := range r.toolCalls {
+		indexes = append(indexes, idx)
+	}
+	for i := 1; i < len(indexes); i++ {
+		for j := i; j > 0 && r.toolCalls[indexes[j-1]].outputIndex > r.toolCalls[indexes[j]].outputIndex; j-- {
+			indexes[j-1], indexes[j] = indexes[j], indexes[j-1]
+		}
+	}
+	return indexes
+}
+
+func (r *openAIToResponsesSSE) toolOutputItem(block responsesToolCall, status string) map[string]interface{} {
+	return map[string]interface{}{
+		"id":        block.itemID,
+		"type":      "function_call",
+		"status":    status,
+		"call_id":   block.callID,
+		"name":      block.name,
+		"arguments": block.arguments,
+	}
+}
+
+func (r *openAIToResponsesSSE) completedOutput() []interface{} {
+	output := make([]interface{}, 0)
+	if r.textStarted {
+		output = append(output, map[string]interface{}{
+			"id":     r.itemID,
+			"type":   "message",
+			"role":   "assistant",
+			"status": "completed",
+			"content": []interface{}{
+				map[string]interface{}{
+					"type": "output_text",
+					"text": r.fullText,
+				},
+			},
+		})
+	}
+	for _, idx := range r.sortedToolCallIndexes() {
+		output = append(output, r.toolOutputItem(r.toolCalls[idx], "completed"))
+	}
+	return output
+}
+
 func (r *openAIToResponsesSSE) emitCompleted() []string {
 	usage := map[string]interface{}{
 		"input_tokens":  r.inputTokens,
@@ -780,21 +1233,8 @@ func (r *openAIToResponsesSSE) emitCompleted() []string {
 			"object": "response",
 			"status": "completed",
 			"model":  r.model,
-			"output": []interface{}{
-				map[string]interface{}{
-					"id":     r.itemID,
-					"type":   "message",
-					"role":   "assistant",
-					"status": "completed",
-					"content": []interface{}{
-						map[string]interface{}{
-							"type": "output_text",
-							"text": r.fullText,
-						},
-					},
-				},
-			},
-			"usage": usage,
+			"output": r.completedOutput(),
+			"usage":  usage,
 		},
 	}
 	b, _ := json.Marshal(resp)

@@ -1223,10 +1223,46 @@ func openAIToResponsesRequest(req map[string]interface{}) (map[string]interface{
 	}
 
 	if tools, ok := req["tools"].([]interface{}); ok && len(tools) > 0 {
-		out["tools"] = tools
+		out["tools"] = convertOpenAIToolsToResponses(tools)
 	}
 
 	return out, nil
+}
+
+func convertOpenAIToolsToResponses(tools []interface{}) []map[string]interface{} {
+	var out []map[string]interface{}
+	for _, raw := range tools {
+		tm, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if tm["type"] != "function" {
+			out = append(out, tm)
+			continue
+		}
+		fn, _ := tm["function"].(map[string]interface{})
+		if fn == nil {
+			out = append(out, tm)
+			continue
+		}
+		tool := map[string]interface{}{
+			"type": "function",
+			"name": fn["name"],
+		}
+		if desc, ok := fn["description"]; ok {
+			tool["description"] = desc
+		}
+		if params, ok := fn["parameters"]; ok {
+			tool["parameters"] = params
+		}
+		if strict, ok := fn["strict"]; ok {
+			tool["strict"] = strict
+		} else if strict, ok := tm["strict"]; ok {
+			tool["strict"] = strict
+		}
+		out = append(out, tool)
+	}
+	return out
 }
 
 // responsesToOpenAI converts an OpenAI Responses API request to OpenAI chat/completions format.
@@ -1273,6 +1309,43 @@ func responsesToOpenAI(req map[string]interface{}) (map[string]interface{}, erro
 			if !ok {
 				continue
 			}
+			itemType, _ := im["type"].(string)
+			switch itemType {
+			case "function_call_output":
+				callID, _ := im["call_id"].(string)
+				if callID == "" {
+					callID, _ = im["id"].(string)
+				}
+				messages = append(messages, map[string]interface{}{
+					"role":         "tool",
+					"tool_call_id": callID,
+					"content":      responsesStringValue(im["output"]),
+				})
+				continue
+			case "function_call":
+				callID, _ := im["call_id"].(string)
+				if callID == "" {
+					callID, _ = im["id"].(string)
+				}
+				name, _ := im["name"].(string)
+				arguments, _ := im["arguments"].(string)
+				messages = append(messages, map[string]interface{}{
+					"role":    "assistant",
+					"content": nil,
+					"tool_calls": []interface{}{map[string]interface{}{
+						"id":   callID,
+						"type": "function",
+						"function": map[string]interface{}{
+							"name":      name,
+							"arguments": arguments,
+						},
+					}},
+				})
+				continue
+			case "reasoning":
+				continue
+			}
+
 			role, _ := im["role"].(string)
 			if role == "" {
 				role = "user"
@@ -1320,12 +1393,59 @@ func responsesToOpenAI(req map[string]interface{}) (map[string]interface{}, erro
 
 	out["messages"] = messages
 
-	// tools passthrough (already OpenAI format in Responses API)
+	// tools: Responses API function tools are flat; Chat Completions expects nested function metadata.
 	if tools, ok := req["tools"].([]interface{}); ok && len(tools) > 0 {
-		out["tools"] = tools
+		out["tools"] = convertResponsesToolsToOpenAI(tools)
 	}
 
 	return out, nil
+}
+
+func convertResponsesToolsToOpenAI(tools []interface{}) []map[string]interface{} {
+	var out []map[string]interface{}
+	for _, raw := range tools {
+		tm, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if tm["type"] != "function" {
+			out = append(out, tm)
+			continue
+		}
+		if _, ok := tm["function"].(map[string]interface{}); ok {
+			out = append(out, tm)
+			continue
+		}
+		fn := map[string]interface{}{
+			"name": tm["name"],
+		}
+		if desc, ok := tm["description"]; ok {
+			fn["description"] = desc
+		}
+		if params, ok := tm["parameters"]; ok {
+			fn["parameters"] = params
+		}
+		if strict, ok := tm["strict"]; ok {
+			fn["strict"] = strict
+		}
+		out = append(out, map[string]interface{}{
+			"type":     "function",
+			"function": fn,
+		})
+	}
+	return out
+}
+
+func responsesStringValue(v interface{}) string {
+	switch val := v.(type) {
+	case string:
+		return val
+	case nil:
+		return ""
+	default:
+		b, _ := json.Marshal(val)
+		return string(b)
+	}
 }
 
 // openAIToResponsesSync converts an OpenAI chat.completion response to Responses API format.
@@ -1339,10 +1459,45 @@ func openAIToResponsesSync(body []byte) ([]byte, error) {
 	model, _ := resp["model"].(string)
 
 	var text string
+	output := make([]interface{}, 0)
 	if choices, ok := resp["choices"].([]interface{}); ok && len(choices) > 0 {
 		if choice, ok := choices[0].(map[string]interface{}); ok {
 			if msg, ok := choice["message"].(map[string]interface{}); ok {
 				text, _ = msg["content"].(string)
+				if text != "" {
+					output = append(output, map[string]interface{}{
+						"type":   "message",
+						"id":     id,
+						"status": "completed",
+						"role":   "assistant",
+						"content": []interface{}{
+							map[string]interface{}{
+								"type": "output_text",
+								"text": text,
+							},
+						},
+					})
+				}
+				if toolCalls, ok := msg["tool_calls"].([]interface{}); ok {
+					for _, raw := range toolCalls {
+						tc, ok := raw.(map[string]interface{})
+						if !ok {
+							continue
+						}
+						callID, _ := tc["id"].(string)
+						fn, _ := tc["function"].(map[string]interface{})
+						name, _ := fn["name"].(string)
+						arguments, _ := fn["arguments"].(string)
+						output = append(output, map[string]interface{}{
+							"type":      "function_call",
+							"id":        "fc_" + newShortID(),
+							"status":    "completed",
+							"call_id":   callID,
+							"name":      name,
+							"arguments": arguments,
+						})
+					}
+				}
 			}
 		}
 	}
@@ -1364,20 +1519,7 @@ func openAIToResponsesSync(body []byte) ([]byte, error) {
 		"created_at": resp["created"],
 		"model":      model,
 		"status":     "completed",
-		"output": []interface{}{
-			map[string]interface{}{
-				"type":   "message",
-				"id":     id,
-				"status": "completed",
-				"role":   "assistant",
-				"content": []interface{}{
-					map[string]interface{}{
-						"type": "output_text",
-						"text": text,
-					},
-				},
-			},
-		},
+		"output":     output,
 		"usage": map[string]interface{}{
 			"input_tokens":  inputTokens,
 			"output_tokens": outputTokens,
