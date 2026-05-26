@@ -180,8 +180,15 @@ func openAIToClaude(req map[string]interface{}) (map[string]interface{}, error) 
 					{"type": "text", "text": c},
 				}
 			case []interface{}:
-				// already array — pass through (vision etc.)
-				claudeMsg["content"] = c
+				var parts []map[string]interface{}
+				for _, p := range c {
+					pm, ok := p.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					parts = append(parts, convertOpenAIContentPartToClaude(pm))
+				}
+				claudeMsg["content"] = parts
 			default:
 				claudeMsg["content"] = msg["content"]
 			}
@@ -647,6 +654,49 @@ func extractBase64Data(dataURI string) string {
 	return ""
 }
 
+func convertOpenAIContentPartToClaude(part map[string]interface{}) map[string]interface{} {
+	partType, _ := part["type"].(string)
+	switch partType {
+	case "text":
+		return map[string]interface{}{
+			"type": "text",
+			"text": responsesStringValue(part["text"]),
+		}
+	case "image_url":
+		var url string
+		switch iv := part["image_url"].(type) {
+		case map[string]interface{}:
+			url, _ = iv["url"].(string)
+		case string:
+			url = iv
+		}
+		if strings.HasPrefix(url, "data:") {
+			return map[string]interface{}{
+				"type": "image",
+				"source": map[string]interface{}{
+					"type":       "base64",
+					"media_type": extractMimeType(url),
+					"data":       extractBase64Data(url),
+				},
+			}
+		}
+		if url != "" {
+			return map[string]interface{}{
+				"type": "image",
+				"source": map[string]interface{}{
+					"type": "url",
+					"url":  url,
+				},
+			}
+		}
+	case "image":
+		if _, ok := part["source"].(map[string]interface{}); ok {
+			return part
+		}
+	}
+	return part
+}
+
 // ─────────────────────────────────────────────
 // Client Request Normalization (Native → OpenAI)
 // ─────────────────────────────────────────────
@@ -767,6 +817,10 @@ func claudeRequestToOpenAI(req map[string]interface{}) (map[string]interface{}, 
 								})
 							}
 						}
+
+					case "image_url":
+						hasRich = true
+						richParts = append(richParts, bm)
 
 					case "tool_result":
 						// Each tool_result block becomes a separate tool message in OpenAI
@@ -1278,6 +1332,10 @@ func responsesToOpenAI(req map[string]interface{}) (map[string]interface{}, erro
 	}
 	if mt, ok := req["max_output_tokens"]; ok {
 		out["max_tokens"] = mt
+	} else if mt, ok := req["max_tokens"]; ok {
+		out["max_tokens"] = mt
+	} else if mt, ok := req["max_completion_tokens"]; ok {
+		out["max_tokens"] = mt
 	}
 	if t, ok := req["temperature"]; ok {
 		out["temperature"] = t
@@ -1285,107 +1343,123 @@ func responsesToOpenAI(req map[string]interface{}) (map[string]interface{}, erro
 	if tp, ok := req["top_p"]; ok {
 		out["top_p"] = tp
 	}
-
-	var messages []interface{}
-
-	// instructions → system message
-	if inst, ok := req["instructions"].(string); ok && inst != "" {
-		messages = append(messages, map[string]interface{}{
-			"role":    "system",
-			"content": inst,
-		})
+	if tc, ok := req["tool_choice"]; ok {
+		out["tool_choice"] = tc
 	}
 
-	// input: string | array of content items
-	switch inp := req["input"].(type) {
-	case string:
-		messages = append(messages, map[string]interface{}{
-			"role":    "user",
-			"content": inp,
-		})
-	case []interface{}:
-		for _, item := range inp {
-			im, ok := item.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			itemType, _ := im["type"].(string)
-			switch itemType {
-			case "function_call_output":
-				callID, _ := im["call_id"].(string)
-				if callID == "" {
-					callID, _ = im["id"].(string)
-				}
-				messages = append(messages, map[string]interface{}{
-					"role":         "tool",
-					"tool_call_id": callID,
-					"content":      responsesStringValue(im["output"]),
-				})
-				continue
-			case "function_call":
-				callID, _ := im["call_id"].(string)
-				if callID == "" {
-					callID, _ = im["id"].(string)
-				}
-				name, _ := im["name"].(string)
-				arguments, _ := im["arguments"].(string)
-				messages = append(messages, map[string]interface{}{
-					"role":    "assistant",
-					"content": nil,
-					"tool_calls": []interface{}{map[string]interface{}{
-						"id":   callID,
-						"type": "function",
-						"function": map[string]interface{}{
-							"name":      name,
-							"arguments": arguments,
-						},
-					}},
-				})
-				continue
-			case "reasoning":
-				continue
-			}
+	var messages []interface{}
+	instructions, _ := req["instructions"].(string)
 
-			role, _ := im["role"].(string)
-			if role == "" {
-				role = "user"
-			}
-			switch c := im["content"].(type) {
-			case string:
-				messages = append(messages, map[string]interface{}{
-					"role":    role,
-					"content": c,
-				})
-			case []interface{}:
-				// content parts: {type: "input_text"|"output_text", text: "..."}
-				var parts []map[string]interface{}
-				var simpleText string
-				allText := true
-				for _, cp := range c {
-					cpm, ok := cp.(map[string]interface{})
-					if !ok {
-						continue
-					}
-					text, _ := cpm["text"].(string)
-					t, _ := cpm["type"].(string)
-					if t == "input_text" || t == "output_text" || t == "text" {
-						simpleText += text
-						parts = append(parts, map[string]interface{}{"type": "text", "text": text})
-					} else {
-						allText = false
-						parts = append(parts, cpm)
-					}
+	if msgs, ok := req["messages"].([]interface{}); ok && len(msgs) > 0 {
+		messages = append(messages, msgs...)
+		if strings.TrimSpace(instructions) != "" && !hasEquivalentSystemMessage(messages, instructions) {
+			messages = append([]interface{}{
+				map[string]interface{}{
+					"role":    "system",
+					"content": instructions,
+				},
+			}, messages...)
+		}
+	} else {
+		// instructions → system message
+		if instructions != "" {
+			messages = append(messages, map[string]interface{}{
+				"role":    "system",
+				"content": instructions,
+			})
+		}
+
+		// input: string | array of content items
+		switch inp := req["input"].(type) {
+		case string:
+			messages = append(messages, map[string]interface{}{
+				"role":    "user",
+				"content": inp,
+			})
+		case []interface{}:
+			for _, item := range inp {
+				im, ok := item.(map[string]interface{})
+				if !ok {
+					continue
 				}
-				if allText {
+				itemType, _ := im["type"].(string)
+				switch itemType {
+				case "function_call_output":
+					callID, _ := im["call_id"].(string)
+					if callID == "" {
+						callID, _ = im["id"].(string)
+					}
+					messages = append(messages, map[string]interface{}{
+						"role":         "tool",
+						"tool_call_id": callID,
+						"content":      responsesStringValue(im["output"]),
+					})
+					continue
+				case "function_call":
+					callID, _ := im["call_id"].(string)
+					if callID == "" {
+						callID, _ = im["id"].(string)
+					}
+					name, _ := im["name"].(string)
+					arguments, _ := im["arguments"].(string)
+					messages = append(messages, map[string]interface{}{
+						"role":    "assistant",
+						"content": nil,
+						"tool_calls": []interface{}{map[string]interface{}{
+							"id":   callID,
+							"type": "function",
+							"function": map[string]interface{}{
+								"name":      name,
+								"arguments": arguments,
+							},
+						}},
+					})
+					continue
+				case "reasoning":
+					continue
+				}
+
+				role, _ := im["role"].(string)
+				if role == "" {
+					role = "user"
+				}
+				switch c := im["content"].(type) {
+				case string:
 					messages = append(messages, map[string]interface{}{
 						"role":    role,
-						"content": simpleText,
+						"content": c,
 					})
-				} else {
-					messages = append(messages, map[string]interface{}{
-						"role":    role,
-						"content": parts,
-					})
+				case []interface{}:
+					// content parts: {type: "input_text"|"output_text", text: "..."}
+					var parts []map[string]interface{}
+					var simpleText string
+					allText := true
+					for _, cp := range c {
+						cpm, ok := cp.(map[string]interface{})
+						if !ok {
+							continue
+						}
+						text, _ := cpm["text"].(string)
+						t, _ := cpm["type"].(string)
+						if t == "input_text" || t == "output_text" || t == "text" {
+							simpleText += text
+							parts = append(parts, map[string]interface{}{"type": "text", "text": text})
+						} else {
+							allText = false
+							parts = append(parts, cpm)
+						}
+					}
+					if allText {
+						messages = append(messages, map[string]interface{}{
+							"role":    role,
+							"content": simpleText,
+						})
+					} else {
+						messages = append(messages, map[string]interface{}{
+							"role":    role,
+							"content": parts,
+						})
+					}
 				}
 			}
 		}
@@ -1446,6 +1520,43 @@ func responsesStringValue(v interface{}) string {
 		b, _ := json.Marshal(val)
 		return string(b)
 	}
+}
+
+func hasEquivalentSystemMessage(messages []interface{}, instructions string) bool {
+	want := strings.TrimSpace(instructions)
+	if want == "" {
+		return true
+	}
+	for _, m := range messages {
+		msg, ok := m.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if role, _ := msg["role"].(string); role != "system" {
+			continue
+		}
+		switch c := msg["content"].(type) {
+		case string:
+			if strings.TrimSpace(c) == want {
+				return true
+			}
+		case []interface{}:
+			var sb strings.Builder
+			for _, p := range c {
+				pm, ok := p.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				if text, _ := pm["text"].(string); text != "" {
+					sb.WriteString(text)
+				}
+			}
+			if strings.TrimSpace(sb.String()) == want {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // openAIToResponsesSync converts an OpenAI chat.completion response to Responses API format.
