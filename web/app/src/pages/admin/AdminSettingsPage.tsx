@@ -367,7 +367,7 @@ export function AdminSettingsPage() {
                       onChange={(e) => set('footer_html', e.target.value)}
                       rows={6}
                       className="font-mono text-xs"
-                      placeholder='<div style="text-align:center;padding:16px;color:#888">© 2025 FanAPI</div>'
+                      placeholder='<div style="text-align:center;padding:16px;color:#888">© 2025 MidCode</div>'
                     />
                     <Tip>留空则不显示页脚；支持 HTML 和内联样式</Tip>
                   </FieldRow>

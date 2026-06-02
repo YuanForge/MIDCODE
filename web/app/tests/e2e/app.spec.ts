@@ -7,7 +7,7 @@ test.beforeEach(async ({ page }) => {
       contentType: 'application/json',
       body: JSON.stringify({
         settings: {
-          site_name: 'FanAPI',
+          site_name: 'MidCode',
           logo_url: '',
         },
       }),
@@ -28,7 +28,7 @@ test.beforeEach(async ({ page }) => {
       contentType: 'application/json',
       body: JSON.stringify({
         openapi: '3.0.3',
-        info: { title: 'FanAPI', version: '1.0.0' },
+        info: { title: 'MidCode', version: '1.0.0' },
         paths: {},
       }),
     })
@@ -90,7 +90,7 @@ test('renders user dashboard with authenticated mocks', async ({ page }) => {
 test('renders admin dashboard with authenticated mocks', async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem('admin_token', 'mock-admin-token')
-    window.localStorage.setItem('fanapi_ui_mode', 'admin')
+    window.localStorage.setItem('MidCode_ui_mode', 'admin')
   })
 
   await page.route('**/api/admin/stats', async (route) => {
@@ -199,7 +199,7 @@ test('renders extended user routes with authenticated session', async ({ page })
 test('renders extended admin routes with authenticated session', async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem('admin_token', 'mock-admin-token')
-    window.localStorage.setItem('fanapi_ui_mode', 'admin')
+    window.localStorage.setItem('MidCode_ui_mode', 'admin')
   })
 
   await page.route('**/api/admin/key-pools**', async (route) => {

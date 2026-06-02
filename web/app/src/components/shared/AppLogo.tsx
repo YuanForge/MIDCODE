@@ -4,7 +4,7 @@ import { BotIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export function AppLogo({
-  siteName = 'FanAPI',
+  siteName = 'MidCode',
   logoUrl,
   label,
   className,

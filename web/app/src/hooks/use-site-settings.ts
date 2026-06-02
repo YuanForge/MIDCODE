@@ -31,7 +31,7 @@ export type SiteSettings = {
 }
 
 const defaultSettings: SiteSettings = {
-  siteName: 'FanAPI',
+  siteName: 'MidCode',
   logoUrl: '',
   plans: [],
   epayEnabled: false,
@@ -65,7 +65,7 @@ export function useSiteSettings() {
             ? (maybeSettings as Record<string, any>)
             : (response as Record<string, any>)
         setSettings({
-          siteName: record.site_name || 'FanAPI',
+          siteName: record.site_name || 'MidCode',
           logoUrl: record.logo_url || '',
           plans: (() => {
             try { return JSON.parse(record.recharge_plans || '[]') } catch { return [] }
