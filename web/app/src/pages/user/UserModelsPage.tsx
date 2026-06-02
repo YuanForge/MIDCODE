@@ -55,25 +55,29 @@ function copyText(text: string, label = '已复制') {
   void copyToClipboard(text, { successMessage: label })
 }
 
+function shouldUseChineseExamples(language: string) {
+  return language.toLowerCase().startsWith('zh')
+}
+
 function buildChannelRequestBody(channel: UserChannel, sunoMode: SunoMode, language: string) {
-  const isEnglish = language.startsWith('en')
+  const useChinese = shouldUseChineseExamples(language)
   const model = channel.routing_model || channel.name
   if (channel.type === 'llm') {
     if (channel.protocol === 'gemini') {
       return JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: isEnglish ? 'Hello, please introduce yourself.' : '你好，请介绍一下自己' }] }],
+        contents: [{ role: 'user', parts: [{ text: useChinese ? '你好，请介绍一下自己' : 'Hello, please introduce yourself.' }] }],
       }, null, 2)
     }
     return JSON.stringify({
       model,
-      messages: [{ role: 'user', content: isEnglish ? 'Hello, please introduce yourself.' : '你好，请介绍一下自己' }],
+      messages: [{ role: 'user', content: useChinese ? '你好，请介绍一下自己' : 'Hello, please introduce yourself.' }],
       stream: false,
     }, null, 2)
   }
   if (channel.type === 'image') {
     return JSON.stringify({
       model,
-      prompt: isEnglish ? 'A cute orange cat sitting in the sunlight' : '一只可爱的橘猫坐在阳光下',
+      prompt: useChinese ? '一只可爱的橘猫坐在阳光下' : 'A cute orange cat sitting in the sunlight',
       size: '1k',
       aspect_ratio: '1:1',
       n: 1,
@@ -82,7 +86,7 @@ function buildChannelRequestBody(channel: UserChannel, sunoMode: SunoMode, langu
   if (channel.type === 'video') {
     return JSON.stringify({
       model,
-      prompt: isEnglish ? 'Ocean waves hitting the shore at sunset' : '海浪拍打岸边，夕阳西下',
+      prompt: useChinese ? '海浪拍打岸边，夕阳西下' : 'Ocean waves hitting the shore at sunset',
       size: '720p',
       aspect_ratio: '16:9',
       duration: '5',
@@ -91,7 +95,7 @@ function buildChannelRequestBody(channel: UserChannel, sunoMode: SunoMode, langu
   if (channel.type === 'audio') {
     return JSON.stringify({
       model,
-      input: isEnglish ? 'Hello, welcome to the speech synthesis service.' : '你好，欢迎使用语音合成服务',
+      input: useChinese ? '你好，欢迎使用语音合成服务' : 'Hello, welcome to the speech synthesis service.',
       voice: 'alloy',
     }, null, 2)
   }
@@ -100,10 +104,10 @@ function buildChannelRequestBody(channel: UserChannel, sunoMode: SunoMode, langu
       return JSON.stringify({
         model,
         input_type: '20',
-        prompt: isEnglish
-          ? '[Verse]\nMorning light across my face\nA gentle breeze through the window\n\n[Chorus]\nKeep the good times rolling\nLaughter filling up the room'
-          : '[主歌]\n周四的阳光晒脸庞\n微风轻轻吹过窗\n\n[副歌]\n周四快乐不散场\n欢声笑语满心房',
-        title: isEnglish ? 'Bright Morning' : '周四快乐',
+        prompt: useChinese
+          ? '[主歌]\n周四的阳光晒脸庞\n微风轻轻吹过窗\n\n[副歌]\n周四快乐不散场\n欢声笑语满心房'
+          : '[Verse]\nMorning light across my face\nA gentle breeze through the window\n\n[Chorus]\nKeep the good times rolling\nLaughter filling up the room',
+        title: useChinese ? '周四快乐' : 'Bright Morning',
         tags: 'pop,female voice',
         mv_version: 'chirp-v5',
         make_instrumental: false,
@@ -113,10 +117,10 @@ function buildChannelRequestBody(channel: UserChannel, sunoMode: SunoMode, langu
       return JSON.stringify({
         model,
         input_type: '20',
-        prompt: isEnglish
-          ? '[Verse 1]\nCity lights are fading\nFootsteps moving with the rain\n\n[Chorus]\nSing it out, keep on dreaming\nEvery night can start again'
-          : '[Verse 1]\n小狗汪汪叫\n尾巴甩甩跳\n\n[Chorus]\n汪汪汪谁在听\n汪汪汪快乐行',
-        title: isEnglish ? 'Sing for You' : '为你歌唱',
+        prompt: useChinese
+          ? '[Verse 1]\n小狗汪汪叫\n尾巴甩甩跳\n\n[Chorus]\n汪汪汪谁在听\n汪汪汪快乐行'
+          : '[Verse 1]\nCity lights are fading\nFootsteps moving with the rain\n\n[Chorus]\nSing it out, keep on dreaming\nEvery night can start again',
+        title: useChinese ? '为你歌唱' : 'Sing for You',
         tags: '',
         mv_version: 'chirp-v5',
         make_instrumental: false,
@@ -158,9 +162,9 @@ function buildChannelRequestBody(channel: UserChannel, sunoMode: SunoMode, langu
     return JSON.stringify({
       model,
       input_type: '10',
-      gpt_description_prompt: isEnglish
-        ? 'Light jazz for a warm cafe atmosphere, female vocal'
-        : '轻快的爵士乐，适合咖啡馆氛围，女声演唱',
+      gpt_description_prompt: useChinese
+        ? '轻快的爵士乐，适合咖啡馆氛围，女声演唱'
+        : 'Light jazz for a warm cafe atmosphere, female vocal',
       mv_version: 'chirp-v5',
       make_instrumental: false,
     }, null, 2)
@@ -232,9 +236,9 @@ function getChannelResponse(channel: UserChannel, language: string) {
         index: 0,
         message: {
           role: 'assistant',
-          content: language.startsWith('en')
-            ? 'Hello! I am an AI assistant. Nice to meet you. How can I help?'
-            : '你好！我是一个人工智能助手，很高兴认识你。请问有什么我可以帮助你的吗？',
+          content: shouldUseChineseExamples(language)
+            ? '你好！我是一个人工智能助手，很高兴认识你。请问有什么我可以帮助你的吗？'
+            : 'Hello! I am an AI assistant. Nice to meet you. How can I help?',
         },
         finish_reason: 'stop',
       }],
@@ -254,6 +258,7 @@ export function UserModelsPage() {
   const [filterType, setFilterType] = useState('')
   const [filterName, setFilterName] = useState('')
   const [filterProtocol, setFilterProtocol] = useState('')
+  const [filterProvider, setFilterProvider] = useState('')
   const [docVisible, setDocVisible] = useState(false)
   const [docMode, setDocMode] = useState<DocMode>('channel')
   const [docChannel, setDocChannel] = useState<UserChannel | null>(null)
@@ -262,6 +267,11 @@ export function UserModelsPage() {
 
   const protocolOptions = useMemo(
     () => Array.from(new Set(channels.map((channel) => channel.protocol || 'openai'))),
+    [channels],
+  )
+
+  const providerOptions = useMemo(
+    () => Array.from(new Set(channels.map((channel) => channel.model_provider?.trim()).filter(Boolean) as string[])).sort(),
     [channels],
   )
 
@@ -274,13 +284,14 @@ export function UserModelsPage() {
     return channels.filter((channel) => {
       if (filterType && channel.type !== filterType) return false
       if (filterProtocol && (channel.protocol || 'openai') !== filterProtocol) return false
+      if (filterProvider && channel.model_provider !== filterProvider) return false
       if (!filterName) return true
 
       const keyword = filterName.toLowerCase()
-      return [channel.name, channel.routing_model, channel.description]
+      return [channel.name, channel.routing_model, channel.model_provider, channel.description]
         .some((value) => value?.toLowerCase().includes(keyword))
     })
-  }, [channels, filterName, filterProtocol, filterType])
+  }, [channels, filterName, filterProtocol, filterProvider, filterType])
 
   function openDoc(channel: UserChannel) {
     setDocChannel(channel)
@@ -373,6 +384,27 @@ export function UserModelsPage() {
             ))}
           </div>
         ) : null}
+        {providerOptions.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant={filterProvider === '' ? 'default' : 'secondary'}
+              className="cursor-pointer px-3 py-1"
+              onClick={() => setFilterProvider('')}
+            >
+              {t('models.allProviders')}
+            </Badge>
+            {providerOptions.map((provider) => (
+              <Badge
+                key={provider}
+                variant={filterProvider === provider ? 'default' : 'secondary'}
+                className="cursor-pointer px-3 py-1"
+                onClick={() => setFilterProvider(provider)}
+              >
+                {provider}
+              </Badge>
+            ))}
+          </div>
+        ) : null}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <span className="text-sm font-medium text-muted-foreground">{t('models.modelCount', { count: filteredChannels.length })}</span>
           <div className="relative">
@@ -436,6 +468,7 @@ export function UserModelsPage() {
                       </button>
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                      {channel.model_provider ? <Badge variant="outline">{channel.model_provider}</Badge> : null}
                       <Badge variant="outline">{getProtocolLabel(channel.protocol || 'openai')}</Badge>
                       {channel.billing_type ? <Badge variant="outline">{getBillingTypeLabel(channel.billing_type)}</Badge> : null}
                     </div>
@@ -580,6 +613,10 @@ export function UserModelsPage() {
                   <div>
                     <div className="text-xs text-muted-foreground">{t('models.protocol')}</div>
                     <div className="mt-1 text-sm font-medium">{getProtocolLabel(docChannel.protocol || 'openai')}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">{t('models.provider')}</div>
+                    <div className="mt-1 text-sm font-medium">{docChannel.model_provider || '—'}</div>
                   </div>
                   <div>
                     <div className="text-xs text-muted-foreground">{t('models.billingType')}</div>

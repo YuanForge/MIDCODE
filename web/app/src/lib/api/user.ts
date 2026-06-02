@@ -53,6 +53,7 @@ export type UserChannel = {
   name?: string
   routing_model?: string
   model?: string
+  model_provider?: string
   description?: string
   type?: string
   category?: string

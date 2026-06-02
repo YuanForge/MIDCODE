@@ -1,7 +1,8 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom'
 
+import { i18n, supportedLanguages, type AppLanguage } from '@/i18n'
 import { getRoleToken } from '@/lib/auth/storage'
 
 const AuthLayout = lazy(() => import('@/layouts/AuthLayout').then((m) => ({ default: m.AuthLayout })))
@@ -68,6 +69,22 @@ function renderLazy(node: ReactNode) {
   )
 }
 
+function LocalizedHomePage({ language }: { language: AppLanguage }) {
+  useEffect(() => {
+    if (i18n.language !== language) {
+      void i18n.changeLanguage(language)
+    }
+  }, [language])
+
+  return renderLazy(<PublicHomePage />)
+}
+
+const localizedHomeRoutes = supportedLanguages.map((language) => ({
+  path: language.homePath,
+  element: <LocalizedHomePage language={language.code} />,
+  errorElement: renderLazy(<AppErrorPage />),
+}))
+
 function RequireRole({
   role,
   redirectTo,
@@ -100,6 +117,7 @@ function PublicOnly({
 
 export const router = createBrowserRouter([
   { path: '/', element: renderLazy(<PublicHomePage />), errorElement: renderLazy(<AppErrorPage />) },
+  ...localizedHomeRoutes,
   {
     element: <PublicOnly role="user" redirectTo="/dashboard" />,
     errorElement: renderLazy(<AppErrorPage />),

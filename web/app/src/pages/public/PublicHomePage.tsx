@@ -36,6 +36,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useSiteSettings } from '@/hooks/use-site-settings'
+import { getHomePathForLanguage } from '@/i18n'
 import { getRoleToken } from '@/lib/auth/storage'
 import { cn } from '@/lib/utils'
 
@@ -154,12 +155,13 @@ const workflow = [
 ]
 
 function PublicHeader({ siteName, logoUrl, signedIn }: { siteName: string; logoUrl: string; signedIn: boolean }) {
-  const { t } = useTranslation()
+  const { i18n, t } = useTranslation()
+  const homePath = getHomePathForLanguage(i18n.language)
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/88 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
-        <Link to="/" aria-label={siteName}>
+        <Link to={homePath} aria-label={siteName}>
           <AppLogo siteName={siteName} logoUrl={logoUrl} label="AI Gateway" />
         </Link>
         <nav className="hidden items-center gap-7 text-sm font-medium text-muted-foreground md:flex">

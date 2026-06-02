@@ -47,6 +47,7 @@ type ChannelForm = {
   id?: number
   name: string
   model: string
+  model_provider: string
   type: string
   protocol: string
   base_url: string
@@ -181,6 +182,7 @@ function createEmptyPricingGroup(): PricingGroupForm {
 const emptyForm: ChannelForm = {
   name: '',
   model: '',
+  model_provider: '',
   type: 'llm',
   protocol: 'openai',
   base_url: '',
@@ -573,6 +575,7 @@ function buildFormFromChannel(row: AdminChannel, isCopy = false): ChannelForm {
     id: isCopy ? undefined : row.id,
     name: isCopy ? `${row.name ?? ''} - 副本` : row.name ?? '',
     model: row.model ?? row.routing_model ?? '',
+    model_provider: row.model_provider ?? '',
     type: row.type ?? 'llm',
     protocol: row.protocol ?? 'openai',
     base_url: row.base_url ?? '',
@@ -665,6 +668,7 @@ const emptyChannelFilters = {
   q: '',
   name: '',
   display_name: '',
+  model_provider: '',
   price_min: '',
   price_max: '',
   price_order: '',
@@ -792,6 +796,7 @@ export function AdminChannelsPage() {
       const payload = {
         name: form.name.trim(),
         model: form.model.trim(),
+        model_provider: form.model_provider.trim(),
         type: form.type,
         protocol: form.protocol,
         base_url: form.base_url.trim(),
@@ -911,11 +916,13 @@ export function AdminChannelsPage() {
     const q = filters.q.trim()
     const name = filters.name.trim()
     const displayName = filters.display_name.trim()
+    const modelProvider = filters.model_provider.trim()
     const priceMin = filters.price_min.trim()
     const priceMax = filters.price_max.trim()
     if (q) params.q = q
     if (name) params.name = name
     if (displayName) params.display_name = displayName
+    if (modelProvider) params.model_provider = modelProvider
     if (priceMin) params.price_min = priceMin
     if (priceMax) params.price_max = priceMax
     if (filters.price_order) {
@@ -1000,6 +1007,15 @@ export function AdminChannelsPage() {
               />
             </div>
             <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">企业</label>
+              <Input
+                className="w-40"
+                placeholder="OpenAI / Google"
+                value={filters.model_provider}
+                onChange={(event) => setFilters((current) => ({ ...current, model_provider: event.target.value }))}
+              />
+            </div>
+            <div className="space-y-1">
               <label className="text-xs text-muted-foreground">价格范围(CNY)</label>
               <div className="flex items-center gap-1">
                 <Input
@@ -1056,7 +1072,7 @@ export function AdminChannelsPage() {
       ) : null}
 
       <Card className="overflow-hidden">
-        <Table className="min-w-[1500px]">
+        <Table className="min-w-[1580px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-10">
@@ -1065,6 +1081,7 @@ export function AdminChannelsPage() {
               <TableHead className="w-14">ID</TableHead>
               <TableHead>名称</TableHead>
               <TableHead>模型</TableHead>
+              <TableHead>企业</TableHead>
               <TableHead>类型</TableHead>
               <TableHead>协议</TableHead>
               <TableHead>价格摘要</TableHead>
@@ -1076,12 +1093,12 @@ export function AdminChannelsPage() {
             </TableRow>
           </TableHeader>
           {loading ? (
-            <TableSkeleton cols={12} />
+            <TableSkeleton cols={13} />
           ) : (
             <TableBody>
               {rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={12} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={13} className="py-10 text-center text-muted-foreground">
                     暂无渠道数据
                   </TableCell>
                 </TableRow>
@@ -1102,6 +1119,7 @@ export function AdminChannelsPage() {
                       ) : null}
                     </TableCell>
                     <TableCell className="max-w-48 break-all text-xs">{row.model ?? row.routing_model ?? '-'}</TableCell>
+                    <TableCell>{row.model_provider || '—'}</TableCell>
                     <TableCell>{row.type ?? '-'}</TableCell>
                     <TableCell>{row.protocol ?? 'openai'}</TableCell>
                     <TableCell className="max-w-80 align-top text-xs">
@@ -1184,6 +1202,14 @@ export function AdminChannelsPage() {
                 <div className="space-y-2">
                   <label className="text-sm font-medium">标准模型名</label>
                   <Input value={form.model} onChange={(event) => setForm((current) => ({ ...current, model: event.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">模型企业</label>
+                  <Input
+                    value={form.model_provider}
+                    onChange={(event) => setForm((current) => ({ ...current, model_provider: event.target.value }))}
+                    placeholder="OpenAI / Anthropic / Google"
+                  />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">接口类型</label>

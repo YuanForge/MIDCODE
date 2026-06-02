@@ -37,6 +37,7 @@ export type AdminChannel = {
   model?: string
   routing_model?: string
   display_name?: string
+  model_provider?: string
   type?: string
   protocol?: string
   base_url?: string

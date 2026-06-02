@@ -3,6 +3,7 @@ package handler
 import (
 	"fanapi/internal/db"
 	"fanapi/internal/model"
+	"fanapi/internal/service"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"net/http"
@@ -20,7 +21,7 @@ import (
 func (h *AuthHandler) ListModels(c *gin.Context) {
 	var channels []model.Channel
 	if err := db.Engine.Where("is_active = true").
-		Cols("id", "name", "model", "display_name", "type", "protocol", "billing_type", "billing_config", "icon_url", "description").
+		Cols("id", "name", "model", "display_name", "model_provider", "type", "protocol", "billing_type", "billing_config", "icon_url", "description").
 		Find(&channels); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -33,16 +34,17 @@ func (h *AuthHandler) ListModels(c *gin.Context) {
 	}
 
 	type channelInfo struct {
-		ID           int64  `json:"id"`
-		Name         string `json:"name"`
-		RoutingModel string `json:"routing_model"`
-		Type         string `json:"type"`
-		Protocol     string `json:"protocol"`
-		BillingType  string `json:"billing_type"`
-		PriceDisplay string `json:"price_display"`         // 默认价格
-		GroupPrice   string `json:"group_price,omitempty"` // 用户专属价格（与默认不同时才返回）
-		IconURL      string `json:"icon_url"`
-		Description  string `json:"description"`
+		ID            int64  `json:"id"`
+		Name          string `json:"name"`
+		RoutingModel  string `json:"routing_model"`
+		ModelProvider string `json:"model_provider"`
+		Type          string `json:"type"`
+		Protocol      string `json:"protocol"`
+		BillingType   string `json:"billing_type"`
+		PriceDisplay  string `json:"price_display"`         // 默认价格
+		GroupPrice    string `json:"group_price,omitempty"` // 用户专属价格（与默认不同时才返回）
+		IconURL       string `json:"icon_url"`
+		Description   string `json:"description"`
 	}
 
 	// 按展示键去重：display_name 非空时以 display_name 为分组键，否则以 model 为分组键。
@@ -86,16 +88,17 @@ func (h *AuthHandler) ListModels(c *gin.Context) {
 			routingModel = ch.DisplayName
 		}
 		result = append(result, channelInfo{
-			ID:           ch.ID,
-			Name:         displayName,
-			RoutingModel: routingModel,
-			Type:         ch.Type,
-			Protocol:     ch.Protocol,
-			BillingType:  ch.BillingType,
-			PriceDisplay: defaultPrice,
-			GroupPrice:   groupPrice,
-			IconURL:      ch.IconURL,
-			Description:  ch.Description,
+			ID:            ch.ID,
+			Name:          displayName,
+			RoutingModel:  routingModel,
+			ModelProvider: service.EffectiveModelProvider(ch),
+			Type:          ch.Type,
+			Protocol:      ch.Protocol,
+			BillingType:   ch.BillingType,
+			PriceDisplay:  defaultPrice,
+			GroupPrice:    groupPrice,
+			IconURL:       ch.IconURL,
+			Description:   ch.Description,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"channels": result})

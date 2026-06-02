@@ -103,6 +103,7 @@ export const zhCN = {
     countBilling: '按次计费',
     customBilling: '自定义计费',
     allProtocols: '全部协议',
+    allProviders: '全部企业',
     modelCount: '共 {{count}} 个模型',
     searchPlaceholder: '搜索模型名称、标识或描述',
     emptyTitle: '暂无模型数据',
@@ -120,6 +121,7 @@ export const zhCN = {
     responseExample: '响应示例',
     modelId: '模型标识',
     protocol: '协议',
+    provider: '企业',
     billingType: '计费方式',
     exclusivePrice: '专属价格',
     defaultPriceEmpty: '暂无默认价格说明',
@@ -181,6 +183,12 @@ export const zhCN = {
     wechatSupportDesc: '扫码添加微信客服',
   },
 } as const
+
+type WidenStrings<T> = {
+  readonly [K in keyof T]: T[K] extends string ? string : WidenStrings<T[K]>
+}
+
+export type AppTranslationResource = WidenStrings<typeof zhCN>
 
 export const enUS = {
   common: {
@@ -287,6 +295,7 @@ export const enUS = {
     countBilling: 'Per request',
     customBilling: 'Custom billing',
     allProtocols: 'All protocols',
+    allProviders: 'All companies',
     modelCount: '{{count}} models',
     searchPlaceholder: 'Search by model name, ID, or description',
     emptyTitle: 'No model data',
@@ -304,6 +313,7 @@ export const enUS = {
     responseExample: 'Response example',
     modelId: 'Model ID',
     protocol: 'Protocol',
+    provider: 'Company',
     billingType: 'Billing type',
     exclusivePrice: 'Exclusive price',
     defaultPriceEmpty: 'No default pricing notes',

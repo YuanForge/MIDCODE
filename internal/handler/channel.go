@@ -55,7 +55,7 @@ func ListChannels(c *gin.Context) {
 
 func hasChannelListQuery(c *gin.Context) bool {
 	params := c.Request.URL.Query()
-	for _, key := range []string{"page", "size", "page_size", "name", "display_name", "q", "keyword", "price_min", "price_max", "sort_by", "sort_order"} {
+	for _, key := range []string{"page", "size", "page_size", "name", "display_name", "model_provider", "q", "keyword", "price_min", "price_max", "sort_by", "sort_order"} {
 		if params.Has(key) {
 			return true
 		}
@@ -68,13 +68,14 @@ func parseChannelListQuery(c *gin.Context) (service.ChannelListQuery, error) {
 	sizeRaw := c.DefaultQuery("size", c.DefaultQuery("page_size", "20"))
 	size, _ := strconv.Atoi(sizeRaw)
 	query := service.ChannelListQuery{
-		Page:        page,
-		Size:        size,
-		Name:        c.Query("name"),
-		DisplayName: c.Query("display_name"),
-		Keyword:     c.Query("q"),
-		SortBy:      c.Query("sort_by"),
-		SortOrder:   c.Query("sort_order"),
+		Page:          page,
+		Size:          size,
+		Name:          c.Query("name"),
+		DisplayName:   c.Query("display_name"),
+		ModelProvider: c.Query("model_provider"),
+		Keyword:       c.Query("q"),
+		SortBy:        c.Query("sort_by"),
+		SortOrder:     c.Query("sort_order"),
 	}
 	if query.Keyword == "" {
 		query.Keyword = c.Query("keyword")

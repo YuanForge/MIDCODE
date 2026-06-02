@@ -83,6 +83,9 @@ func invalidateChannelRouteCaches(ctx context.Context, channels ...model.Channel
 func ListChannels(ctx context.Context) ([]model.Channel, error) {
 	var channels []model.Channel
 	err := db.Engine.OrderBy("priority ASC, id DESC").Find(&channels)
+	for index := range channels {
+		channels[index].ModelProvider = EffectiveModelProvider(channels[index])
+	}
 	return channels, err
 }
 
@@ -90,15 +93,16 @@ func ListChannels(ctx context.Context) ([]model.Channel, error) {
 const channelListCreditsPerCNY = 1_000_000.0
 
 type ChannelListQuery struct {
-	Page        int
-	Size        int
-	Name        string
-	DisplayName string
-	Keyword     string
-	PriceMin    *float64
-	PriceMax    *float64
-	SortBy      string
-	SortOrder   string
+	Page          int
+	Size          int
+	Name          string
+	DisplayName   string
+	ModelProvider string
+	Keyword       string
+	PriceMin      *float64
+	PriceMax      *float64
+	SortBy        string
+	SortOrder     string
 }
 
 type ChannelListResult struct {
@@ -127,12 +131,17 @@ func ListChannelsPaged(ctx context.Context, query ChannelListQuery) (*ChannelLis
 	filtered := make([]model.Channel, 0, len(channels))
 	nameFilter := strings.ToLower(strings.TrimSpace(query.Name))
 	displayNameFilter := strings.ToLower(strings.TrimSpace(query.DisplayName))
+	modelProviderFilter := strings.ToLower(strings.TrimSpace(query.ModelProvider))
 	keywordFilter := strings.ToLower(strings.TrimSpace(query.Keyword))
 	for _, ch := range channels {
+		ch.ModelProvider = EffectiveModelProvider(ch)
 		if nameFilter != "" && !containsFold(ch.Name, nameFilter) {
 			continue
 		}
 		if displayNameFilter != "" && !containsFold(ch.DisplayName, displayNameFilter) {
+			continue
+		}
+		if modelProviderFilter != "" && !containsFold(EffectiveModelProvider(ch), modelProviderFilter) {
 			continue
 		}
 		if keywordFilter != "" && !channelMatchesKeyword(ch, keywordFilter) {
@@ -182,9 +191,77 @@ func containsFold(value, needleLower string) bool {
 func channelMatchesKeyword(ch model.Channel, needleLower string) bool {
 	return containsFold(ch.Name, needleLower) ||
 		containsFold(ch.DisplayName, needleLower) ||
+		containsFold(EffectiveModelProvider(ch), needleLower) ||
 		containsFold(ch.Model, needleLower) ||
 		containsFold(ch.Type, needleLower) ||
 		containsFold(ch.Protocol, needleLower)
+}
+
+func EffectiveModelProvider(ch model.Channel) string {
+	if provider := strings.TrimSpace(ch.ModelProvider); provider != "" {
+		return provider
+	}
+	return InferModelProvider(ch.Model, ch.DisplayName, ch.Name, nativeProtocolProviderHint(ch.Protocol))
+}
+
+func nativeProtocolProviderHint(protocol string) string {
+	switch strings.ToLower(strings.TrimSpace(protocol)) {
+	case "claude":
+		return "anthropic"
+	case "gemini":
+		return "google"
+	default:
+		return ""
+	}
+}
+
+func InferModelProvider(values ...string) string {
+	normalized := strings.ToLower(strings.Join(values, " "))
+	if normalized == "" {
+		return ""
+	}
+
+	if strings.Contains(normalized, "anthropic") || strings.Contains(normalized, "claude") {
+		return "Anthropic"
+	}
+	if strings.Contains(normalized, "google") || strings.Contains(normalized, "gemini") {
+		return "Google"
+	}
+	if strings.Contains(normalized, "deepseek") {
+		return "DeepSeek"
+	}
+	if strings.Contains(normalized, "qwen") || strings.Contains(normalized, "tongyi") || strings.Contains(normalized, "通义") {
+		return "Alibaba"
+	}
+	if strings.Contains(normalized, "suno") {
+		return "Suno"
+	}
+	if strings.Contains(normalized, "kling") || strings.Contains(normalized, "可灵") {
+		return "Kuaishou"
+	}
+	if strings.Contains(normalized, "midjourney") || strings.Contains(normalized, "mj-") {
+		return "Midjourney"
+	}
+	if strings.Contains(normalized, "openai") ||
+		strings.Contains(normalized, "gpt") ||
+		strings.Contains(normalized, "dall-e") ||
+		strings.Contains(normalized, "whisper") ||
+		strings.Contains(normalized, "tts") ||
+		hasOpenAIReasoningModelPrefix(normalized) {
+		return "OpenAI"
+	}
+	return ""
+}
+
+func hasOpenAIReasoningModelPrefix(value string) bool {
+	for _, token := range strings.FieldsFunc(value, func(r rune) bool {
+		return r == ' ' || r == '/' || r == '_' || r == ':' || r == ',' || r == ';' || r == '|'
+	}) {
+		if strings.HasPrefix(token, "o1") || strings.HasPrefix(token, "o3") || strings.HasPrefix(token, "o4") {
+			return true
+		}
+	}
+	return false
 }
 
 func CreateChannel(ctx context.Context, ch *model.Channel) error {

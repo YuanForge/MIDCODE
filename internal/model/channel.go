@@ -109,11 +109,12 @@ type Channel struct {
 	// 分组标签（如"高质"/"低价"/"备用"）— 存储为 JSON 字符串数组
 	Groups JSONStrings `xorm:"jsonb default('[]') 'groups'" json:"groups"`
 	// 展示字段
-	DisplayName string    `xorm:"notnull default('') 'display_name'" json:"display_name"` // 用户端展示名称（自定义模型名），留空时以 Model 字段作为展示名和分组依据
-	IconURL     string    `xorm:"notnull default('') 'icon_url'" json:"icon_url"`         // 模型图标 URL
-	Description string    `xorm:"text default('') 'description'" json:"description"`      // 模型描述
-	CreatedAt   time.Time `xorm:"created 'created_at'" json:"created_at"`
-	UpdatedAt   time.Time `xorm:"updated 'updated_at'" json:"updated_at"`
+	DisplayName   string    `xorm:"notnull default('') 'display_name'" json:"display_name"`     // 用户端展示名称（自定义模型名），留空时以 Model 字段作为展示名和分组依据
+	ModelProvider string    `xorm:"notnull default('') 'model_provider'" json:"model_provider"` // 模型对应的企业，如 OpenAI / Anthropic / Google
+	IconURL       string    `xorm:"notnull default('') 'icon_url'" json:"icon_url"`             // 模型图标 URL
+	Description   string    `xorm:"text default('') 'description'" json:"description"`          // 模型描述
+	CreatedAt     time.Time `xorm:"created 'created_at'" json:"created_at"`
+	UpdatedAt     time.Time `xorm:"updated 'updated_at'" json:"updated_at"`
 }
 
 func (*Channel) TableName() string { return "channels" }
