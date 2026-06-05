@@ -289,6 +289,11 @@ func main() {
 			admin.PUT("/upstream-platforms/:id", handler.UpdateUpstreamPlatform)
 			admin.DELETE("/upstream-platforms/:id", handler.DeleteUpstreamPlatform)
 			admin.GET("/upstream-platforms/:id/models", handler.GetUpstreamModels)
+			admin.GET("/upstream-platforms/:id/channel-bindings/preview", handler.PreviewUpstreamPlatformChannelBindings)
+			admin.POST("/upstream-platforms/:id/bind-channels", handler.BindUpstreamPlatformChannels)
+			admin.POST("/upstream-platforms/:id/sync-balance", handler.SyncUpstreamPlatformBalance)
+			admin.POST("/upstream-platforms/:id/sync-channels", handler.SyncUpstreamPlatformChannels)
+			admin.POST("/upstream-platforms/:id/api-keys", handler.CreateUpstreamAPIKey)
 			admin.POST("/channels/batch-from-upstream", handler.BatchCreateChannelsFromUpstream)
 
 			// RBAC 角色管理

@@ -111,15 +111,27 @@ CREATE INDEX IF NOT EXISTS risk_labels_user_id_idx ON risk_labels (user_id);
 CREATE TABLE IF NOT EXISTS upstream_platforms (
     id              BIGSERIAL PRIMARY KEY,
     name            VARCHAR(128) NOT NULL DEFAULT '',
+    platform_type   VARCHAR(32) NOT NULL DEFAULT 'openai',
     base_url        TEXT NOT NULL DEFAULT '',
     api_key_enc     TEXT NOT NULL DEFAULT '',  -- 加密存储
+    system_token_enc TEXT NOT NULL DEFAULT '',
+    upstream_user_id VARCHAR(128) NOT NULL DEFAULT '',
+    upstream_group   VARCHAR(128) NOT NULL DEFAULT '',
     balance         BIGINT NOT NULL DEFAULT 0, -- credits，定时同步
+    balance_amount  DOUBLE PRECISION NOT NULL DEFAULT 0,
+    balance_currency VARCHAR(16) NOT NULL DEFAULT 'CNY',
     balance_synced_at TIMESTAMPTZ,
     is_active       BOOLEAN NOT NULL DEFAULT TRUE,
     note            TEXT NOT NULL DEFAULT '',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE upstream_platforms ADD COLUMN IF NOT EXISTS platform_type VARCHAR(32) NOT NULL DEFAULT 'openai';
+ALTER TABLE upstream_platforms ADD COLUMN IF NOT EXISTS system_token_enc TEXT NOT NULL DEFAULT '';
+ALTER TABLE upstream_platforms ADD COLUMN IF NOT EXISTS upstream_user_id VARCHAR(128) NOT NULL DEFAULT '';
+ALTER TABLE upstream_platforms ADD COLUMN IF NOT EXISTS upstream_group VARCHAR(128) NOT NULL DEFAULT '';
+ALTER TABLE upstream_platforms ADD COLUMN IF NOT EXISTS balance_amount DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE upstream_platforms ADD COLUMN IF NOT EXISTS balance_currency VARCHAR(16) NOT NULL DEFAULT 'CNY';
 
 -- 10. alerts 告警记录
 CREATE TABLE IF NOT EXISTS alerts (

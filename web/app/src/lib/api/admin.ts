@@ -351,12 +351,50 @@ export type AdminExportTask = {
 export type AdminUpstreamPlatform = {
   id?: number
   name?: string
+  platform_type?: string
   base_url?: string
+  upstream_user_id?: string
+  upstream_group?: string
   balance?: number
+  balance_amount?: number
+  balance_currency?: string
   balance_synced_at?: string
   is_active?: boolean
+  has_api_key?: boolean
+  has_system_token?: boolean
   note?: string
   created_at?: string
+}
+
+export type AdminUpstreamChannelSyncResult = {
+  bound?: number
+  created?: number
+  updated?: number
+  skipped?: number
+  price_synced?: number
+  price_unavailable?: number
+}
+
+export type AdminUpstreamChannelBindingCandidate = {
+  channel_id: number
+  name?: string
+  model?: string
+  display_name?: string
+  base_url?: string
+  protocol?: string
+  is_active?: boolean
+  existing_platform_id?: number
+  match_reasons?: string[]
+  price_available?: boolean
+  price_will_update?: boolean
+}
+
+export type AdminUpstreamChannelBindingPreview = {
+  candidates?: AdminUpstreamChannelBindingCandidate[]
+  total?: number
+  bindable?: number
+  price_available?: number
+  price_unavailable?: number
 }
 
 export type AdminRole = {
@@ -649,16 +687,30 @@ export const adminApi = {
   // 上游平台
   listUpstreamPlatforms: () =>
     http.get<{ platforms: AdminUpstreamPlatform[] }>('/admin/upstream-platforms'),
-  createUpstreamPlatform: (payload: Partial<AdminUpstreamPlatform> & { api_key?: string }) =>
+  createUpstreamPlatform: (payload: Partial<AdminUpstreamPlatform> & { api_key?: string; system_token?: string }) =>
     http.post<AdminUpstreamPlatform>('/admin/upstream-platforms', payload),
-  updateUpstreamPlatform: (id: number, payload: Partial<AdminUpstreamPlatform>) =>
+  updateUpstreamPlatform: (id: number, payload: Partial<AdminUpstreamPlatform> & { api_key?: string; system_token?: string }) =>
     http.put<Record<string, unknown>>(`/admin/upstream-platforms/${id}`, payload),
   deleteUpstreamPlatform: (id: number) =>
     http.delete<Record<string, unknown>>(`/admin/upstream-platforms/${id}`),
   getUpstreamModels: (id: number) =>
-    http.get<{ models: string[] }>(`/admin/upstream-platforms/${id}/models`),
-  batchCreateChannelsFromUpstream: (platformId: number, models: string[]) =>
-    http.post<{ created: number }>('/admin/channels/batch-from-upstream', { platform_id: platformId, models }),
+    http.get<{ models: string[]; items?: Array<{ id: string; billing_type?: string; protocol?: string; billing_config?: Record<string, unknown> }> }>(`/admin/upstream-platforms/${id}/models`),
+  syncUpstreamBalance: (id: number) =>
+    http.post<{ platform?: AdminUpstreamPlatform; balance?: number; currency?: string; used_amount?: number }>(`/admin/upstream-platforms/${id}/sync-balance`, {}),
+  createUpstreamApiKey: (id: number, payload: { name?: string; group?: string; remain_quota?: number; unlimited_quota?: boolean; expired_time?: number; model_limits_enabled?: boolean; model_limits?: string; save_to_platform?: boolean }) =>
+    http.post<{ api_key: string; saved?: boolean }>(`/admin/upstream-platforms/${id}/api-keys`, payload),
+  syncUpstreamChannels: (id: number, models: string[], markup = 1) =>
+    http.post<AdminUpstreamChannelSyncResult>(`/admin/upstream-platforms/${id}/sync-channels`, { models, markup }),
+  batchCreateChannelsFromUpstream: (platformId: number, models: string[], markup = 1) =>
+    http.post<AdminUpstreamChannelSyncResult>('/admin/channels/batch-from-upstream', { platform_id: platformId, models, markup }),
+  previewUpstreamChannelBindings: (id: number, markup = 1) =>
+    http.get<AdminUpstreamChannelBindingPreview>(`/admin/upstream-platforms/${id}/channel-bindings/preview`, { params: { markup } }),
+  bindUpstreamChannels: (id: number, channelIds: number[], markup = 1, updatePrice = true) =>
+    http.post<AdminUpstreamChannelSyncResult>(`/admin/upstream-platforms/${id}/bind-channels`, {
+      channel_ids: channelIds,
+      markup,
+      update_price: updatePrice,
+    }),
   // RBAC
   listRoles: () =>
     http.get<{ roles: AdminRole[] }>('/admin/roles'),
