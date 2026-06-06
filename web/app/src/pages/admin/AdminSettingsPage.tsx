@@ -741,6 +741,14 @@ export function AdminSettingsPage() {
                     />
                     <Tip>企业微信群机器人 Webhook 地址，留空不推送</Tip>
                   </FieldRow>
+                  <FieldRow label="Lark Webhook URL">
+                    <Input
+                      value={form.alert_webhook_lark ?? ''}
+                      onChange={(e) => set('alert_webhook_lark', e.target.value)}
+                      placeholder="https://open.larksuite.com/open-apis/bot/v2/hook/..."
+                    />
+                    <Tip>Lark / 飞书群机器人 Webhook 地址；上游余额告警和渠道自动停用通知都会使用它，留空不推送。</Tip>
+                  </FieldRow>
                   <FieldRow label="告警邮件地址">
                     <Input
                       type="email"

@@ -1618,6 +1618,9 @@ func syncChannelUpstreamCost(ctx context.Context, ch model.Channel, req channelU
 		return nil, model.Channel{}, fmt.Errorf("上游未找到模型: %s", modelName)
 	}
 	priceSynced, priceUnavailable := applyUpstreamBindingUpdate(&ch, p, info, normalizeMarkup(req.Markup), true)
+	if priceSynced && ch.BillingConfig != nil {
+		ch.BillingConfig[upstreamCostAutoSyncKey] = true
+	}
 	if err := service.UpdateChannel(ctx, &ch); err != nil {
 		return nil, model.Channel{}, err
 	}

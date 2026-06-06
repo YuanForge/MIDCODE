@@ -726,6 +726,32 @@ function formatBillingCost(channel: AdminChannel) {
   return formatBillingSummary(channel.billing_type, channel.billing_config ?? {}, 'cost')
 }
 
+function isChannelUpstreamAutoSync(channel: AdminChannel) {
+  return getConfigBool(channel.billing_config ?? {}, 'upstream_cost_auto_sync')
+}
+
+function formatChannelUpstreamSync(channel: AdminChannel) {
+  const cfg = channel.billing_config ?? {}
+  const platformName = getConfigString(cfg, 'upstream_platform_name')
+  const platformID = getConfigString(cfg, 'upstream_platform_id')
+  const upstreamModel = getConfigString(cfg, 'upstream_model')
+  const upstreamGroup = getConfigString(cfg, 'upstream_group')
+
+  if (!platformID && !platformName && !upstreamModel) {
+    return '未绑定上游'
+  }
+
+  const platform = platformName || (platformID ? `#${platformID}` : '上游')
+  const parts = [platform]
+  if (upstreamModel) {
+    parts.push(upstreamModel)
+  }
+  if (upstreamGroup) {
+    parts.push(upstreamGroup)
+  }
+  return parts.join(' / ')
+}
+
 const channelPageSize = 20
 
 const emptyChannelFilters = {
@@ -807,7 +833,7 @@ export function AdminChannelsPage() {
   const upstreamAutoSyncHint = form.upstream_cost_auto_sync
     ? '已开启；每 10 秒检测一次，上游成本变化时自动同步。修改上游平台、模型、分组或利润倍数后需要重新检测并同步。'
     : upstreamAutoSyncReady
-      ? '检测和同步都已成功，可以开启自动同步；开启后每 10 秒检测一次成本变化。'
+      ? '检测和同步都已成功；如已手动关闭，可重新勾选开启自动同步。'
       : upstreamPreviewOk
         ? '请先同步成本成功后再开启自动同步。'
         : '请先检测成本成功，再同步成本后开启自动同步。'
@@ -912,10 +938,12 @@ export function AdminChannelsPage() {
       const result = await adminApi.syncChannelUpstreamCost(form.id, payload)
       const syncOk = Number(result.price_synced ?? 0) > 0
       if (result.channel) {
-        setForm((current) => ({
+        setForm(() => ({
           ...buildFormFromChannel(result.channel!),
-          upstream_cost_auto_sync: syncOk && current.upstream_cost_auto_sync,
+          upstream_cost_auto_sync: syncOk,
         }))
+      } else if (syncOk) {
+        setForm((current) => ({ ...current, upstream_cost_auto_sync: true }))
       }
       setUpstreamPreview((current) => ({
         ...(current ?? {}),
@@ -929,7 +957,7 @@ export function AdminChannelsPage() {
       if (!syncOk) {
         setForm((current) => ({ ...current, upstream_cost_auto_sync: false }))
       }
-      toast.success(syncOk ? '渠道成本已同步' : '渠道已绑定上游，暂无可同步公开成本')
+      toast.success(syncOk ? '渠道成本已同步，自动同步已开启' : '渠道已绑定上游，暂无可同步公开成本')
       reload()
     } catch (err) {
       const { getApiErrorMessage } = await import('@/lib/api/http')
@@ -1274,7 +1302,7 @@ export function AdminChannelsPage() {
       ) : null}
 
       <Card className="overflow-hidden">
-        <Table className="min-w-[1580px]">
+        <Table className="min-w-[1700px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-10">
@@ -1287,6 +1315,7 @@ export function AdminChannelsPage() {
               <TableHead>类型</TableHead>
               <TableHead>协议</TableHead>
               <TableHead>价格摘要</TableHead>
+              <TableHead>成本同步</TableHead>
               <TableHead>号池</TableHead>
               <TableHead>优先级/权重</TableHead>
               <TableHead>健康</TableHead>
@@ -1295,12 +1324,12 @@ export function AdminChannelsPage() {
             </TableRow>
           </TableHeader>
           {loading ? (
-            <TableSkeleton cols={13} />
+            <TableSkeleton cols={14} />
           ) : (
             <TableBody>
               {rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={13} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={14} className="py-10 text-center text-muted-foreground">
                     暂无渠道数据
                   </TableCell>
                 </TableRow>
@@ -1338,6 +1367,17 @@ export function AdminChannelsPage() {
                           <span className="text-muted-foreground">分组价：</span>
                           <span>{formatGroupPricing(row)}</span>
                         </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="max-w-56 align-top text-xs">
+                      <div className="flex flex-col gap-1">
+                        <Badge variant={isChannelUpstreamAutoSync(row) ? 'default' : 'secondary'} className="w-fit">
+                          {isChannelUpstreamAutoSync(row) ? '自动同步中' : '未开启'}
+                        </Badge>
+                        <span className="text-muted-foreground">{formatChannelUpstreamSync(row)}</span>
+                        {isChannelUpstreamAutoSync(row) ? (
+                          <span className="text-muted-foreground">每 10 秒检测成本变化</span>
+                        ) : null}
                       </div>
                     </TableCell>
                     <TableCell>{row.key_pool_id ? `#${row.key_pool_id}` : '—'}</TableCell>
@@ -1635,7 +1675,12 @@ export function AdminChannelsPage() {
                 <div className="space-y-3 rounded-lg border bg-muted/20 p-4 md:col-span-2">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="space-y-1">
-                      <label className="text-sm font-medium">上游成本同步</label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label className="text-sm font-medium">上游成本同步</label>
+                        <Badge variant={form.upstream_cost_auto_sync ? 'default' : 'secondary'}>
+                          {form.upstream_cost_auto_sync ? '自动同步中' : '未开启自动同步'}
+                        </Badge>
+                      </div>
                       <p className="text-xs text-muted-foreground">按当前渠道的标准模型名从上游价表读取成本；检测不会修改渠道配置。</p>
                     </div>
                     {upstreamPreview ? (

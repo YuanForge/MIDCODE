@@ -298,28 +298,39 @@ export function AdminUpstreamPage() {
               <Label>Base URL</Label>
               <Input value={form.base_url} onChange={(e) => setForm((f) => ({ ...f, base_url: e.target.value }))} placeholder="https://us.zzshu.cc" />
             </div>
-            <div className="space-y-1.5">
-              <Label>余额 API Key（可选）</Label>
-              <Input type="password" value={form.api_key} onChange={(e) => setForm((f) => ({ ...f, api_key: e.target.value }))} placeholder={editing?.id ? '留空不修改' : 'sk-...'} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>{form.platform_type === 'sub2api' ? '控制台 JWT（可选）' : '系统访问令牌（可选）'}</Label>
-              <Input type="password" value={form.system_token} onChange={(e) => setForm((f) => ({ ...f, system_token: e.target.value }))} placeholder={editing?.id ? '留空不修改' : form.platform_type === 'sub2api' ? 'eyJ...' : 'token'} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>上游用户 ID（New API 余额可选）</Label>
-              <Input value={form.upstream_user_id} onChange={(e) => setForm((f) => ({ ...f, upstream_user_id: e.target.value }))} placeholder="New-Api-User" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>低余额告警阈值</Label>
-              <Input
-                type="number"
-                min={0}
-                step="0.0001"
-                value={form.balance_alert_threshold}
-                onChange={(e) => setForm((f) => ({ ...f, balance_alert_threshold: e.target.value }))}
-                placeholder="0 = 关闭"
-              />
+            <div className="space-y-3 rounded-lg border bg-muted/20 p-4 md:col-span-2">
+              <div className="space-y-1">
+                <div className="text-sm font-medium">余额自动同步与告警</div>
+                <p className="text-xs text-muted-foreground">
+                  后台每 10 秒自动同步一次余额；余额小于等于阈值时通过 Lark 通知，阈值留空或 0 表示关闭。
+                </p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label>余额 API Key（可选）</Label>
+                  <Input type="password" value={form.api_key} onChange={(e) => setForm((f) => ({ ...f, api_key: e.target.value }))} placeholder={editing?.id ? '留空不修改' : 'sk-...'} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>{form.platform_type === 'sub2api' ? '控制台 JWT（可选）' : '系统访问令牌（可选）'}</Label>
+                  <Input type="password" value={form.system_token} onChange={(e) => setForm((f) => ({ ...f, system_token: e.target.value }))} placeholder={editing?.id ? '留空不修改' : form.platform_type === 'sub2api' ? 'eyJ...' : 'token'} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>上游用户 ID（New API 余额可选）</Label>
+                  <Input value={form.upstream_user_id} onChange={(e) => setForm((f) => ({ ...f, upstream_user_id: e.target.value }))} placeholder="New-Api-User" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>低余额告警阈值</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.0001"
+                    value={form.balance_alert_threshold}
+                    onChange={(e) => setForm((f) => ({ ...f, balance_alert_threshold: e.target.value }))}
+                    placeholder="0 = 关闭告警"
+                  />
+                  <p className="text-xs text-muted-foreground">单位跟当前余额币种一致，例如 USD 余额填 300 表示 USD &lt;= 300 告警。</p>
+                </div>
+              </div>
             </div>
             <div className="space-y-1.5 md:col-span-2">
               <Label>备注</Label>

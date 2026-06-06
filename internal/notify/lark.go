@@ -6,10 +6,14 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
+
+	"fanapi/internal/db"
+	"fanapi/internal/model"
 )
 
-const larkWebhook = "https://open.larksuite.com/open-apis/bot/v2/hook/a367d5fd-3a7c-4c73-b8ed-be22e19b4c32"
+const larkWebhookSettingKey = "alert_webhook_lark"
 
 // SendLarkChannelDisabled 通知运营：渠道因余额不足被停用
 func SendLarkChannelDisabled(channelName string, channelID int64, reason string) error {
@@ -39,6 +43,12 @@ func SendLarkUpstreamBalanceLow(platformName string, platformID int64, amount fl
 }
 
 func sendLarkCard(title, template, content string) error {
+	webhook := configuredLarkWebhook()
+	if webhook == "" {
+		log.Printf("Lark通知未配置，跳过: %s", title)
+		return nil
+	}
+
 	card := map[string]interface{}{
 		"msg_type": "interactive",
 		"card": map[string]interface{}{
@@ -70,7 +80,7 @@ func sendLarkCard(title, template, content string) error {
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Post(larkWebhook, "application/json", bytes.NewReader(body))
+	resp, err := client.Post(webhook, "application/json", bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -81,4 +91,20 @@ func sendLarkCard(title, template, content string) error {
 		return fmt.Errorf("Lark通知失败: %s", resp.Status)
 	}
 	return nil
+}
+
+func configuredLarkWebhook() string {
+	if db.Engine == nil {
+		return ""
+	}
+	var setting model.SystemSetting
+	found, err := db.Engine.Where("key = ?", larkWebhookSettingKey).Get(&setting)
+	if err != nil {
+		log.Printf("读取Lark webhook配置失败: %v", err)
+		return ""
+	}
+	if !found {
+		return ""
+	}
+	return strings.TrimSpace(setting.Value)
 }
