@@ -27,6 +27,7 @@ import (
 	"fanapi/internal/protocol"
 	"fanapi/internal/script"
 	"fanapi/internal/service"
+	"fanapi/internal/upstream"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -599,7 +600,11 @@ func resolveUpstreamWSURL(ch *model.Channel, resolvedModel string, poolKey *mode
 		}
 	}
 
-	base := ch.BaseURL
+	poolKeyBaseURL := ""
+	if poolKey != nil {
+		poolKeyBaseURL = poolKey.BaseURLOverride
+	}
+	base := upstream.BaseURLForPoolKey(ch.BaseURL, poolKeyBaseURL)
 	if resolvedModel != "" {
 		base = strings.ReplaceAll(base, "{model}", resolvedModel)
 	}

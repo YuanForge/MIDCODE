@@ -13,6 +13,7 @@ import (
 
 	"fanapi/internal/model"
 	"fanapi/internal/script"
+	"fanapi/internal/upstream"
 
 	"github.com/gin-gonic/gin"
 )
@@ -43,7 +44,11 @@ func sendLLMRequest(c *gin.Context, ch *model.Channel, reqData map[string]interf
 	if len(responsesOperation) > 0 {
 		op = responsesOperation[0]
 	}
-	targetURL := resolveLLMTargetURL(ch.BaseURL, resolvedModel, isStream, op)
+	poolKeyBaseURL := ""
+	if poolKey != nil {
+		poolKeyBaseURL = poolKey.BaseURLOverride
+	}
+	targetURL := resolveLLMTargetURL(upstream.BaseURLForPoolKey(ch.BaseURL, poolKeyBaseURL), resolvedModel, isStream, op)
 
 	method := ch.Method
 	if method == "" {

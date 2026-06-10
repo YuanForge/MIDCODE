@@ -19,6 +19,7 @@ import (
 	"fanapi/internal/notify"
 	"fanapi/internal/script"
 	"fanapi/internal/service"
+	"fanapi/internal/upstream"
 )
 
 const (
@@ -157,14 +158,17 @@ func pollPendingTasks(ctx context.Context) {
 }
 
 func pollOneTask(ctx context.Context, task *model.Task, ch *model.Channel) {
-	queryURL := strings.ReplaceAll(ch.QueryURL, "{id}", task.UpstreamTaskID)
 	// 号池 Key 注入 URL
 	var poolKeyValue string
+	var poolKeyBaseURL string
 	if ch.KeyPoolID > 0 {
-		if pk, pkErr := service.GetOrAssignPoolKey(ctx, ch.KeyPoolID, task.UserID); pkErr == nil && pk != nil {
+		if pk := poolKeyForTask(ctx, task, ch); pk != nil {
 			poolKeyValue = pk.Value
+			poolKeyBaseURL = pk.BaseURLOverride
 		}
 	}
+	queryTemplate := upstream.RewriteURLWithBaseOverride(ch.QueryURL, ch.BaseURL, poolKeyBaseURL)
+	queryURL := strings.ReplaceAll(queryTemplate, "{id}", task.UpstreamTaskID)
 	if poolKeyValue != "" {
 		queryURL = strings.ReplaceAll(queryURL, "{{pool_key}}", poolKeyValue)
 	}
@@ -206,7 +210,7 @@ func pollOneTask(ctx context.Context, task *model.Task, ch *model.Channel) {
 		}
 	}
 	// Fallback：Header 里没有 {{pool_key}} 占位符，自动注入 Authorization
-	if poolKeyValue != "" && !poolKeyUsedInHeaders && !strings.Contains(ch.QueryURL, "{{pool_key}}") {
+	if poolKeyValue != "" && !poolKeyUsedInHeaders && !strings.Contains(queryTemplate, "{{pool_key}}") {
 		httpReq.Header.Set("Authorization", "Bearer "+poolKeyValue)
 	}
 
@@ -399,6 +403,23 @@ func publishFailedResult(ctx context.Context, task *model.Task, errMsg string) {
 		log.Printf("[poller] task %d: publish synthetic failed result error: %v, falling back to direct fail", task.ID, pubErr)
 		failTaskDB(ctx, task.ID, task.UserID, task.ChannelID, task.APIKeyID, task.CorrID, task.CreditsCharged, errMsg)
 	}
+}
+
+func poolKeyForTask(ctx context.Context, task *model.Task, ch *model.Channel) *model.PoolKey {
+	var chargeTx model.BillingTransaction
+	found, _ := db.Engine.Where("corr_id = ? AND type = ? AND pool_key_id > 0", task.CorrID, "charge").Get(&chargeTx)
+	if found {
+		var key model.PoolKey
+		if keyFound, _ := db.Engine.ID(chargeTx.PoolKeyID).Get(&key); keyFound {
+			return &key
+		}
+	}
+
+	pk, err := service.GetOrAssignPoolKey(ctx, ch.KeyPoolID, task.UserID)
+	if err != nil {
+		return nil
+	}
+	return pk
 }
 
 // toIntField 从 map 里安全取整数值，兼容 goja 导出的 int64 / float64 / int。

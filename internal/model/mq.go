@@ -27,8 +27,9 @@ type TaskJob struct {
 	QueryScript    string                 `json:"query_script,omitempty"`
 
 	// 预分配的号池 Key（渠道已设置号池时嵌入）
-	PoolKeyID    int64  `json:"pool_key_id,omitempty"`
-	PoolKeyValue string `json:"pool_key_value,omitempty"`
+	PoolKeyID      int64  `json:"pool_key_id,omitempty"`
+	PoolKeyValue   string `json:"pool_key_value,omitempty"`
+	PoolKeyBaseURL string `json:"pool_key_base_url,omitempty"`
 
 	// 请求载荷（平台标准格式，尚未应用 request_script）
 	Payload map[string]interface{} `json:"payload"`

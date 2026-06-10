@@ -21,6 +21,7 @@ import (
 	"fanapi/internal/mq"
 	"fanapi/internal/notify"
 	"fanapi/internal/service"
+	"fanapi/internal/upstream"
 
 	"github.com/nats-io/nats.go"
 )
@@ -168,9 +169,9 @@ func execJob(ctx context.Context, job *model.TaskJob) *model.WorkerResult {
 		}
 	}
 	// 计算实际 URL：优先使用 request_script 输出的 _url，其次回退到渠道 base_url
-	targetURLForLog := job.BaseURL
+	targetURLForLog := upstream.BaseURLForPoolKey(job.BaseURL, job.PoolKeyBaseURL)
 	if v, ok := payload["_url"].(string); ok && strings.TrimSpace(v) != "" {
-		targetURLForLog = v
+		targetURLForLog = upstream.RewriteURLWithBaseOverride(v, job.BaseURL, job.PoolKeyBaseURL)
 	} else {
 		if modelVal, ok := job.Payload["model"].(string); ok && modelVal != "" {
 			targetURLForLog = strings.ReplaceAll(targetURLForLog, "{model}", modelVal)
@@ -199,13 +200,15 @@ func execJob(ctx context.Context, job *model.TaskJob) *model.WorkerResult {
 		return fail("upstream error: " + err.Error())
 	}
 
-	// 429: report rate_limited so server can rotate key and retry (once)
-	if statusCode == http.StatusTooManyRequests {
-		if job.PoolKeyID > 0 && job.RetryCount < 1 {
+	// 401/403/429: report rate_limited so server can rotate/sync the pool key and retry.
+	if isPoolKeyExhaustStatus(statusCode) {
+		if job.PoolKeyID > 0 {
 			base.Outcome = model.OutcomeRateLimited
+			base.ErrorMsg = fmt.Sprintf("upstream returned %d", statusCode)
+			base.PoolRetryKeyIDs = appendPoolRetryKeyID(base.PoolRetryKeyIDs, job.PoolKeyID)
 			return base
 		}
-		return fail("upstream rate limited")
+		return fail(fmt.Sprintf("upstream returned %d", statusCode))
 	}
 	if isPoolKeyRetryStatus(statusCode) {
 		if job.PoolKeyID > 0 {
@@ -293,6 +296,12 @@ func isPoolKeyRetryStatus(statusCode int) bool {
 	return statusCode == http.StatusGatewayTimeout || statusCode == 521
 }
 
+func isPoolKeyExhaustStatus(statusCode int) bool {
+	return statusCode == http.StatusUnauthorized ||
+		statusCode == http.StatusForbidden ||
+		statusCode == http.StatusTooManyRequests
+}
+
 func appendPoolRetryKeyID(ids []int64, id int64) []int64 {
 	if id <= 0 {
 		return ids
@@ -331,9 +340,9 @@ func callUpstream(job *model.TaskJob, payload map[string]interface{}) (map[strin
 	client := &http.Client{Timeout: timeout, Transport: upstreamHTTPTransport}
 
 	// 支持 requestScript 动态指定 _url；否则回退到渠道 base_url。
-	targetURL := job.BaseURL
+	targetURL := upstream.BaseURLForPoolKey(job.BaseURL, job.PoolKeyBaseURL)
 	if v, ok := payload["_url"].(string); ok && strings.TrimSpace(v) != "" {
-		targetURL = v
+		targetURL = upstream.RewriteURLWithBaseOverride(v, job.BaseURL, job.PoolKeyBaseURL)
 	}
 	// 支持 {model} 和 {{}} / {{pool_key}} 占位符，将请求载荷中的模型名 / 号池 Key 注入 URL
 	if modelVal, ok := job.Payload["model"].(string); ok && modelVal != "" {
@@ -398,7 +407,7 @@ func callUpstream(job *model.TaskJob, payload map[string]interface{}) (map[strin
 		if err != nil {
 			return nil, resp.StatusCode, err
 		}
-		if resp.StatusCode == http.StatusTooManyRequests || isPoolKeyRetryStatus(resp.StatusCode) {
+		if isPoolKeyExhaustStatus(resp.StatusCode) || isPoolKeyRetryStatus(resp.StatusCode) {
 			return nil, resp.StatusCode, nil
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {

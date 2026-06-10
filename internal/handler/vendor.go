@@ -8,12 +8,14 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"fanapi/internal/config"
 	"fanapi/internal/db"
 	"fanapi/internal/model"
 	"fanapi/internal/service"
+	"fanapi/internal/upstream"
 
 	"github.com/gin-gonic/gin"
 )
@@ -131,6 +133,7 @@ func (h *VendorHandler) GetPoolKeys(c *gin.Context) {
 		PoolID      int64     `json:"pool_id"`
 		ChannelID   int64     `json:"channel_id"`
 		ChannelName string    `json:"channel_name"`
+		BaseURL     string    `json:"base_url"`
 		MaskedValue string    `json:"masked_value"`
 		TotalCost   int64     `json:"total_cost"` // 累计平台进价（credits）
 		MyEarn      float64   `json:"my_earn"`    // 号商净收益（credits，已扣手续费）
@@ -166,6 +169,7 @@ func (h *VendorHandler) GetPoolKeys(c *gin.Context) {
 			PoolID:      k.PoolID,
 			ChannelID:   channelID,
 			ChannelName: channelName,
+			BaseURL:     k.BaseURLOverride,
 			MaskedValue: maskKeyValue(k.Value),
 			TotalCost:   totalCost,
 			MyEarn:      myEarn,
@@ -240,6 +244,7 @@ func (h *VendorHandler) SubmitKey(c *gin.Context) {
 		PoolID    int64  `json:"pool_id"`
 		ChannelID int64  `json:"channel_id"`
 		Value     string `json:"value" binding:"required"`
+		BaseURL   string `json:"base_url" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -249,11 +254,15 @@ func (h *VendorHandler) SubmitKey(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供 pool_id 或 channel_id"})
 		return
 	}
+	baseURL, err := upstream.ValidatePoolKeyBaseURL(c.Request.Context(), req.BaseURL)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	// 1. 解析并验证目标号池（支持直接传 pool_id，或仅传 channel_id）
 	var pool model.KeyPool
 	var found bool
-	var err error
 	if req.PoolID > 0 {
 		found, err = db.Engine.Where("id = ? AND vendor_submittable = true AND is_active = true", req.PoolID).Get(&pool)
 	} else {
@@ -277,38 +286,44 @@ func (h *VendorHandler) SubmitKey(c *gin.Context) {
 	}
 
 	// 3. 检查是否已存在（防重复）
-	exists, _ := db.Engine.Where("pool_id = ? AND value = ?", req.PoolID, req.Value).Exist(&model.PoolKey{})
+	keyValue := strings.TrimSpace(req.Value)
+	if keyValue == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供 Key 值"})
+		return
+	}
+	exists, _ := db.Engine.Where("pool_id = ? AND value = ?", pool.ID, keyValue).Exist(&model.PoolKey{})
 	if exists {
 		c.JSON(http.StatusConflict, gin.H{"error": "该 Key 已存在于号池中，请勿重复提交"})
 		return
 	}
 
 	// 4. 验证 Key 有效性
-	if err := testKeyAgainstChannel(c.Request.Context(), &ch, req.Value); err != nil {
+	if err := testKeyAgainstChannel(c.Request.Context(), &ch, keyValue, baseURL); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 		return
 	}
 
 	// 5. 写入号池
 	key := model.PoolKey{
-		PoolID:   req.PoolID,
-		VendorID: &vendorID,
-		Value:    req.Value,
-		Priority: 0,
-		IsActive: true,
+		PoolID:          pool.ID,
+		VendorID:        &vendorID,
+		Value:           keyValue,
+		BaseURLOverride: baseURL,
+		Priority:        0,
+		IsActive:        false,
 	}
 	if err := service.AddPoolKey(c.Request.Context(), &key); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "添加失败: " + err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"message": "Key 验证通过，已成功加入号池"})
+	c.JSON(http.StatusCreated, gin.H{"message": "Key 和 base_url 验证通过，等待管理员审核启用"})
 }
 
 // testKeyAgainstChannel 向渠道上游发送最小测试请求验证 Key 是否有效。
 // 仅当上游明确返回 401 Unauthorized 或 403 Forbidden 时认定 Key 无效；
 // 其他状态码（400 参数错误、5xx 服务错误、200 正常）均视为 Key 本身可用。
-func testKeyAgainstChannel(ctx context.Context, ch *model.Channel, keyValue string) error {
+func testKeyAgainstChannel(ctx context.Context, ch *model.Channel, keyValue string, baseURL string) error {
 	var reqBody io.Reader
 	method := "POST"
 
@@ -329,7 +344,11 @@ func testKeyAgainstChannel(ctx context.Context, ch *model.Channel, keyValue stri
 	testCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	httpReq, err := http.NewRequestWithContext(testCtx, method, ch.BaseURL, reqBody)
+	targetURL := strings.TrimSpace(baseURL)
+	if targetURL == "" {
+		targetURL = ch.BaseURL
+	}
+	httpReq, err := http.NewRequestWithContext(testCtx, method, targetURL, reqBody)
 	if err != nil {
 		// 构建请求失败，忽略测试
 		return nil

@@ -18,6 +18,7 @@ import (
 	"fanapi/internal/protocol"
 	"fanapi/internal/script"
 	"fanapi/internal/service"
+	"fanapi/internal/upstream"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -30,6 +31,7 @@ const (
 	protocolResponses = "responses"
 
 	responsesOperationCompact = "compact"
+	maxPoolKeyExhaustRetries  = 8
 )
 
 // OpenAIModels returns an OpenAI-compatible model list for clients that discover
@@ -417,6 +419,12 @@ func isPoolKeyRetryStatus(statusCode int) bool {
 	return statusCode == http.StatusGatewayTimeout || statusCode == 521
 }
 
+func isPoolKeyExhaustStatus(statusCode int) bool {
+	return statusCode == http.StatusUnauthorized ||
+		statusCode == http.StatusForbidden ||
+		statusCode == http.StatusTooManyRequests
+}
+
 func appendPoolKeyID(ids []int64, id int64) []int64 {
 	if id <= 0 {
 		return ids
@@ -642,7 +650,11 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 	// 5. 写入 LLM 请求日志
 	modelName := resolvedModel
 	// 预先计算实际上游 URL（与 sendLLMRequest 中逻辑保持一致）
-	upstreamURL := resolveLLMTargetURL(ch.BaseURL, modelName, isStream, responsesOperation)
+	poolKeyBaseURL := ""
+	if poolKey != nil {
+		poolKeyBaseURL = poolKey.BaseURLOverride
+	}
+	upstreamURL := resolveLLMTargetURL(upstream.BaseURLForPoolKey(ch.BaseURL, poolKeyBaseURL), modelName, isStream, responsesOperation)
 	upstreamMethod := ch.Method
 	if upstreamMethod == "" {
 		upstreamMethod = "POST"
@@ -678,21 +690,23 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 	persistLLMUpstreamHeaders(llmLog.ID, sentHeaders)
 
 	if err == nil && resp != nil {
-		// 429 时轮转 Key 重试一次（同渠道）。保留原有行为：重试仍失败则直接终止。
-		if resp.StatusCode == http.StatusTooManyRequests && ch.KeyPoolID > 0 && poolKey != nil {
+		// 401/403/429 视为当前号池 Key 失效或额度不可用：临时摘除该 Key，并在同池内换 Key 重试。
+		for err == nil && resp != nil && isPoolKeyExhaustStatus(resp.StatusCode) &&
+			ch.KeyPoolID > 0 && poolKey != nil && len(triedPoolKeyIDs) < maxPoolKeyExhaustRetries {
 			resp.Body.Close()
 			newKey, rotErr := service.MarkExhaustedAndRotate(c.Request.Context(), ch.KeyPoolID, poolKey.ID, entityID)
-			if rotErr == nil && newKey != nil {
-				poolKey = newKey
-				poolKeyIDVal = newKey.ID // 更新 poolKeyIDVal，确保后续结算流水关联正确的号商
-				triedPoolKeyIDs = appendPoolKeyID(triedPoolKeyIDs, newKey.ID)
-				sentHeaders, resp, err = sendLLMRequest(c, ch, mappedReq, poolKey, proto, resolvedModel, isStream, responsesOperation)
-				persistLLMUpstreamHeaders(llmLog.ID, sentHeaders)
-				if err != nil {
-					service.RecordChannelError(c.Request.Context(), channelID)
-					llmRefundAndAbort(c, corrID, userID, totalHold, upstreamCostHold, poolKeyIDVal, 0, "上游请求失败(重试): "+err.Error())
-					return
-				}
+			if rotErr != nil || newKey == nil {
+				break
+			}
+			poolKey = newKey
+			poolKeyIDVal = newKey.ID // 更新 poolKeyIDVal，确保后续结算流水关联正确的号商
+			triedPoolKeyIDs = appendPoolKeyID(triedPoolKeyIDs, newKey.ID)
+			sentHeaders, resp, err = sendLLMRequest(c, ch, mappedReq, poolKey, proto, resolvedModel, isStream, responsesOperation)
+			persistLLMUpstreamHeaders(llmLog.ID, sentHeaders)
+			if err != nil {
+				service.RecordChannelError(c.Request.Context(), channelID)
+				llmRefundAndAbort(c, corrID, userID, totalHold, upstreamCostHold, poolKeyIDVal, 0, "上游请求失败(重试): "+err.Error())
+				return
 			}
 		}
 
@@ -769,8 +783,10 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 			}(ch.Name, ch.ID, bizErr)
 		}
 
-		// 5xx 总是尝试换渠道；4xx 仅在 error_script 命中时换（fatal 或普通业务错误均触发）。
-		shouldRetry := resp.StatusCode >= 500 || bizErr != ""
+		// 5xx 总是尝试换渠道；4xx 仅在 error_script 命中时换。
+		// 号池 Key 级错误在同池重试后仍存在时，也交给渠道级重试。
+		poolKeyRetryExhausted := ch.KeyPoolID > 0 && poolKey != nil && isPoolKeyExhaustStatus(resp.StatusCode)
+		shouldRetry := resp.StatusCode >= 500 || bizErr != "" || poolKeyRetryExhausted
 		if shouldRetry && len(triedIDs) < maxRetries {
 			if nextCh := selectNextChannel(reqData, triedIDs, stableChannels); nextCh != nil {
 				if totalHold > 0 {
@@ -779,6 +795,8 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 					retryMsg := "channel retry"
 					if bizErr != "" {
 						retryMsg = "channel retry: " + bizErr
+					} else if poolKeyRetryExhausted {
+						retryMsg = fmt.Sprintf("channel retry: pool key returned %d", resp.StatusCode)
 					}
 					_, _ = db.Engine.Where("corr_id = ?", corrID).Cols("status", "error_msg").
 						Update(&model.LLMLog{Status: "error", ErrorMsg: retryMsg})

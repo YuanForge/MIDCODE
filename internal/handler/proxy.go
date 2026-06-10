@@ -230,6 +230,7 @@ func createTask(c *gin.Context, taskType string, reqData map[string]interface{})
 	// 解析号池 Key（在任务写入前获取，以便后续所有流水记录携带 pool_key_id）
 	var poolKeyID int64
 	var poolKeyValue string
+	var poolKeyBaseURL string
 	if ch.KeyPoolID > 0 {
 		pk, pkErr := service.GetOrAssignPoolKey(c.Request.Context(), ch.KeyPoolID, userID)
 		if pkErr != nil {
@@ -244,6 +245,7 @@ func createTask(c *gin.Context, taskType string, reqData map[string]interface{})
 		}
 		poolKeyID = pk.ID
 		poolKeyValue = pk.Value
+		poolKeyBaseURL = pk.BaseURLOverride
 	}
 
 	// 将平台标准格式原样存入 DB，方便排障；vendor 格式只在 worker 内转换
@@ -312,6 +314,7 @@ func createTask(c *gin.Context, taskType string, reqData map[string]interface{})
 		QueryScript:     ch.QueryScript,
 		PoolKeyID:       poolKeyID,
 		PoolKeyValue:    poolKeyValue,
+		PoolKeyBaseURL:  poolKeyBaseURL,
 		Payload:         reqData,
 		RetryChannelIDs: retryChannelIDs,
 	}

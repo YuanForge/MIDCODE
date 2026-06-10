@@ -191,6 +191,7 @@ func main() {
 			admin.GET("/key-pools/:id/keys", handler.ListPoolKeys)
 			admin.POST("/key-pools/:id/keys", handler.AddPoolKey)
 			admin.POST("/key-pools/:id/keys/import", handler.ImportPoolKeys)
+			admin.POST("/key-pools/:id/sync-upstream", handler.SyncKeyPoolFromUpstream)
 			admin.GET("/key-pools/:id/channels", handler.GetKeyPoolChannels)
 			admin.DELETE("/pool-keys/:id", handler.RemovePoolKey)
 			admin.PATCH("/pool-keys/:id", handler.UpdatePoolKey)

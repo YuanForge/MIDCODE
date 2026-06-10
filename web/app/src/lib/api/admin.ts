@@ -246,12 +246,25 @@ export type AdminPoolKey = {
   pool_id?: number
   vendor_id?: number | null
   value?: string
+  base_url_override?: string
   priority?: number
   is_active?: boolean
   last_used_at?: string | null
   fail_rate?: number
   total_calls?: number
   balance?: number | null
+}
+
+export type AdminKeyPoolSyncResult = {
+  pool_id?: number
+  platform_id?: number
+  group?: string
+  listed?: number
+  imported?: number
+  reactivated?: number
+  skipped?: number
+  created_upstream?: number
+  skipped_by_lock?: boolean
 }
 
 export type AdminOcpcPlatform = {
@@ -617,15 +630,17 @@ export const adminApi = {
     http.patch<Record<string, unknown>>(`/admin/key-pools/${id}/vendor-toggle`, {}),
   listPoolKeys: (poolId: number) =>
     http.get<{ keys?: AdminPoolKey[] } | AdminPoolKey[]>(`/admin/key-pools/${poolId}/keys`),
-  addPoolKey: (poolId: number, payload: { value: string; priority: number }) =>
+  addPoolKey: (poolId: number, payload: { value: string; priority: number; base_url_override?: string }) =>
     http.post<Record<string, unknown>>(`/admin/key-pools/${poolId}/keys`, payload),
   importPoolKeys: (poolId: number, keys: string[]) =>
     http.post<{ imported: number; skipped: number }>(`/admin/key-pools/${poolId}/keys/import`, { keys }),
+  syncKeyPoolFromUpstream: (poolId: number, ensure = false) =>
+    http.post<AdminKeyPoolSyncResult>(`/admin/key-pools/${poolId}/sync-upstream`, {}, { params: ensure ? { ensure: 1 } : undefined }),
   getKeyPoolChannels: (id: number) =>
     http.get<{ channels?: AdminChannel[] }>(`/admin/key-pools/${id}/channels`),
   removePoolKey: (id: number) =>
     http.delete<Record<string, unknown>>(`/admin/pool-keys/${id}`),
-  updatePoolKey: (id: number, payload: { priority: number; is_active: boolean }) =>
+  updatePoolKey: (id: number, payload: { priority: number; is_active: boolean; base_url_override?: string }) =>
     http.patch<Record<string, unknown>>(`/admin/pool-keys/${id}`, payload),
   setPoolKeyVendor: (id: number, vendorId: number | null) =>
     http.patch<Record<string, unknown>>(`/admin/pool-keys/${id}/vendor`, { vendor_id: vendorId }),

@@ -45,6 +45,7 @@ export function VendorKeysPage() {
   const [mutError, setMutError] = useState('')
   const [open, setOpen] = useState(false)
   const [poolId, setPoolId] = useState('')
+  const [baseUrl, setBaseUrl] = useState('')
   const [value, setValue] = useState('')
   const [submitResult, setSubmitResult] = useState<{ ok: boolean; message: string } | null>(null)
 
@@ -59,6 +60,10 @@ export function VendorKeysPage() {
       setMutError('请输入要提交的 API Key')
       return
     }
+    if (!baseUrl.trim()) {
+      setMutError('请输入上游 Base URL')
+      return
+    }
     setMutError('')
     setSubmitResult(null)
     try {
@@ -66,11 +71,13 @@ export function VendorKeysPage() {
       const response = await vendorApi.submitKey({
         pool_id: selected?.id,
         channel_id: selected?.channel_id,
+        base_url: baseUrl.trim(),
         value: value.trim(),
       })
       const resultMessage = typeof response?.message === 'string' ? response.message : 'Key 已成功提交到号池'
       setSubmitResult({ ok: true, message: resultMessage })
       setValue('')
+      setBaseUrl('')
       reload()
     } catch (err) {
       const { getApiErrorMessage } = await import('@/lib/api/http')
@@ -84,6 +91,7 @@ export function VendorKeysPage() {
     setOpen(nextOpen)
     if (!nextOpen) {
       setPoolId('')
+      setBaseUrl('')
       setValue('')
       setSubmitResult(null)
     }
@@ -111,12 +119,13 @@ export function VendorKeysPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
-      <Card>
-        <Table>
+      <Card className="overflow-hidden">
+        <Table className="min-w-[960px]">
           <TableHeader>
             <TableRow>
               <TableHead>ID</TableHead>
               <TableHead>渠道</TableHead>
+              <TableHead>Base URL</TableHead>
               <TableHead>Key</TableHead>
               <TableHead>累计消耗</TableHead>
               <TableHead>我的收益</TableHead>
@@ -125,12 +134,12 @@ export function VendorKeysPage() {
             </TableRow>
           </TableHeader>
           {loading ? (
-            <TableSkeleton cols={7} />
+            <TableSkeleton cols={8} />
           ) : (
             <TableBody>
               {keys.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
                     暂无 Key 数据
                   </TableCell>
                 </TableRow>
@@ -139,6 +148,7 @@ export function VendorKeysPage() {
                   <TableRow key={row.id ?? index}>
                     <TableCell>{row.id ?? '-'}</TableCell>
                     <TableCell>{row.channel_name ?? row.channel_id ?? '-'}</TableCell>
+                    <TableCell className="max-w-[280px] truncate font-mono text-xs text-muted-foreground">{row.base_url ?? '-'}</TableCell>
                     <TableCell className="font-mono text-xs">{row.masked_value ?? row.key ?? '-'}</TableCell>
                     <TableCell>{formatCredits(row.total_cost ?? 0)}</TableCell>
                     <TableCell>{formatCredits(row.my_earn ?? row.total_profit ?? 0)}</TableCell>
@@ -172,6 +182,7 @@ export function VendorKeysPage() {
                 </option>
               ))}
             </NativeSelect>
+            <Input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://api.example.com/v1/images/generations" />
             <Input value={value} onChange={(event) => setValue(event.target.value)} placeholder="请输入 API Key" />
             {pools.length === 0 ? (
               <p className="text-sm text-muted-foreground">
@@ -186,7 +197,7 @@ export function VendorKeysPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => resetDialog(false)}>取消</Button>
-            <Button onClick={submit} disabled={!poolId || !value.trim()}>验证并提交</Button>
+            <Button onClick={submit} disabled={!poolId || !baseUrl.trim() || !value.trim()}>验证并提交</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -20,6 +20,7 @@ export type VendorKey = {
   pool_id?: number
   channel_id?: number
   channel_name?: string
+  base_url?: string
   masked_value?: string
   key?: string
   total_cost?: number
@@ -45,6 +46,6 @@ export const vendorApi = {
     ),
   getPools: () =>
     http.get<{ pools?: VendorPool[] } | VendorPool[]>('/vendor/pools'),
-  submitKey: (payload: { pool_id?: number | null; channel_id?: number; value: string }) =>
+  submitKey: (payload: { pool_id?: number | null; channel_id?: number; value: string; base_url: string }) =>
     http.post<Record<string, unknown>>('/vendor/keys', payload),
 }

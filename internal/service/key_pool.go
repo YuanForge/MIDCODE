@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -18,6 +19,25 @@ const (
 	assignKeyFmt    = "pool:assign:%d:%d" // Redis 键格式：pool:assign:{pool_id}:{entity_id}
 	exhaustedKeyFmt = "pool:exhausted:%d" // Redis 键格式：pool:exhausted:{pool_key_id}
 )
+
+var (
+	ErrPoolNoAvailableKeys  = errors.New("pool has no available keys")
+	ErrPoolAllKeysExhausted = errors.New("pool keys exhausted")
+	ErrPoolAllKeysTried     = errors.New("pool keys tried")
+)
+
+type poolKeyStateError struct {
+	kind error
+	msg  string
+}
+
+func (e poolKeyStateError) Error() string { return e.msg }
+
+func (e poolKeyStateError) Unwrap() error { return e.kind }
+
+func newPoolKeyStateError(kind error, format string, args ...interface{}) error {
+	return poolKeyStateError{kind: kind, msg: fmt.Sprintf(format, args...)}
+}
 
 // GetOrAssignPoolKey 返回分配给 entityID 的三方 PoolKey（Sticky Assignment）。
 //
@@ -63,7 +83,11 @@ func GetOrAssignPoolKey(ctx context.Context, poolID, entityID int64) (*model.Poo
 	}
 
 	// 2. 尚未分配 or 当前分配已耗尽 → 重新轮转
-	return rotatePoolKey(ctx, poolID, entityID, assignKey, 0)
+	key, err := rotatePoolKey(ctx, poolID, entityID, assignKey, 0)
+	if err == nil {
+		return key, nil
+	}
+	return syncPoolKeysAndRetry(ctx, poolID, entityID, assignKey, 0, err)
 }
 
 // MarkExhaustedAndRotate 将 poolKeyID 标记为耗尽（带 TTL），同时为 entityID 轮转到下一可用 Key。
@@ -73,7 +97,11 @@ func MarkExhaustedAndRotate(ctx context.Context, poolID, poolKeyID, entityID int
 	cache.Client.Set(ctx, exhaustedKey, 1, exhaustedTTL)
 
 	assignKey := fmt.Sprintf(assignKeyFmt, poolID, entityID)
-	return rotatePoolKey(ctx, poolID, entityID, assignKey, poolKeyID)
+	key, err := rotatePoolKey(ctx, poolID, entityID, assignKey, poolKeyID)
+	if err == nil {
+		return key, nil
+	}
+	return syncPoolKeysAndRetry(ctx, poolID, entityID, assignKey, poolKeyID, err)
 }
 
 // RotatePoolKeySkipping 在当前请求内轮转到下一个可用 Key，不会把已试 Key 标记为耗尽。
@@ -92,7 +120,7 @@ func RotatePoolKeySkipping(ctx context.Context, poolID, entityID int64, skipKeyI
 		return nil, fmt.Errorf("key pool %d: db error: %w", poolID, err)
 	}
 	if len(keys) == 0 {
-		return nil, fmt.Errorf("号池 %d 暂无可用 Key", poolID)
+		return nil, newPoolKeyStateError(ErrPoolNoAvailableKeys, "号池 %d 暂无可用 Key", poolID)
 	}
 
 	assignKey := fmt.Sprintf(assignKeyFmt, poolID, entityID)
@@ -108,7 +136,7 @@ func RotatePoolKeySkipping(ctx context.Context, poolID, entityID int64, skipKeyI
 			return k, nil
 		}
 	}
-	return nil, fmt.Errorf("号池 %d 的可用 Key 均已尝试", poolID)
+	return nil, newPoolKeyStateError(ErrPoolAllKeysTried, "号池 %d 的可用 Key 均已尝试", poolID)
 }
 
 // rotatePoolKey 从池中选择第一个未耗尽的可用 Key（跳过 skipKeyID），并写入分配记录。
@@ -119,7 +147,7 @@ func rotatePoolKey(ctx context.Context, poolID, _ int64, assignKey string, skipK
 		return nil, fmt.Errorf("key pool %d: db error: %w", poolID, err)
 	}
 	if len(keys) == 0 {
-		return nil, fmt.Errorf("号池 %d 暂无可用 Key", poolID)
+		return nil, newPoolKeyStateError(ErrPoolNoAvailableKeys, "号池 %d 暂无可用 Key", poolID)
 	}
 
 	for i := range keys {
@@ -135,7 +163,25 @@ func rotatePoolKey(ctx context.Context, poolID, _ int64, assignKey string, skipK
 			return k, nil
 		}
 	}
-	return nil, fmt.Errorf("号池 %d 的所有 Key 已耗尽", poolID)
+	return nil, newPoolKeyStateError(ErrPoolAllKeysExhausted, "号池 %d 的所有 Key 已耗尽", poolID)
+}
+
+func shouldSyncPoolKeys(err error) bool {
+	return errors.Is(err, ErrPoolNoAvailableKeys) || errors.Is(err, ErrPoolAllKeysExhausted)
+}
+
+func syncPoolKeysAndRetry(ctx context.Context, poolID, entityID int64, assignKey string, skipKeyID int64, cause error) (*model.PoolKey, error) {
+	if !shouldSyncPoolKeys(cause) {
+		return nil, cause
+	}
+	if _, err := EnsureKeyPoolFromUpstream(ctx, poolID); err != nil {
+		return nil, fmt.Errorf("%s；同步上游 Key 失败: %v", cause.Error(), err)
+	}
+	key, err := rotatePoolKey(ctx, poolID, entityID, assignKey, skipKeyID)
+	if err != nil {
+		return nil, err
+	}
+	return key, nil
 }
 
 // ---- 管理接口 ----

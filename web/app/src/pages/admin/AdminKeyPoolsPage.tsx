@@ -64,6 +64,7 @@ export function AdminKeyPoolsPage() {
   const [name, setName] = useState('')
   const [channelId, setChannelId] = useState(() => String(data.channels[0]?.id ?? ''))
   const [keyValue, setKeyValue] = useState('')
+  const [keyBaseUrl, setKeyBaseUrl] = useState('')
   const [priority, setPriority] = useState('0')
   const [pendingDeletePool, setPendingDeletePool] = useState<AdminKeyPool | undefined>()
   const [importOpen, setImportOpen] = useState(false)
@@ -170,8 +171,13 @@ export function AdminKeyPoolsPage() {
     if (!activePool?.id) return
     setMutError('')
     try {
-      await adminApi.addPoolKey(activePool.id, { value: keyValue, priority: Number(priority) })
+      await adminApi.addPoolKey(activePool.id, {
+        value: keyValue,
+        priority: Number(priority),
+        base_url_override: keyBaseUrl.trim() || undefined,
+      })
       setKeyValue('')
+      setKeyBaseUrl('')
       setPriority('0')
       await openKeys(activePool)
     } catch (err) {
@@ -187,6 +193,7 @@ export function AdminKeyPoolsPage() {
       await adminApi.updatePoolKey(row.id, {
         priority: row.priority ?? 0,
         is_active: row.is_active ?? true,
+        base_url_override: row.base_url_override?.trim() ?? '',
       })
       if (activePool) await openKeys(activePool)
     } catch (err) {
@@ -348,10 +355,11 @@ export function AdminKeyPoolsPage() {
       </Dialog>
 
       <Dialog open={keyOpen} onOpenChange={setKeyOpen}>
-        <DialogContent className="max-h-[86vh] w-[min(calc(100vw-2rem),1160px)] max-w-none overflow-y-auto sm:max-w-[1160px]">
+        <DialogContent className="max-h-[86vh] w-[min(calc(100vw-2rem),1280px)] max-w-none overflow-y-auto sm:max-w-[1280px]">
           <DialogHeader><DialogTitle>{activePool?.name ?? ''} - Key 管理</DialogTitle></DialogHeader>
           <div className="flex flex-wrap gap-3">
             <Input value={keyValue} onChange={(event) => setKeyValue(event.target.value)} placeholder="Key 值" />
+            <Input className="min-w-[320px] flex-1" value={keyBaseUrl} onChange={(event) => setKeyBaseUrl(event.target.value)} placeholder="https://api.example.com/v1/images/generations" />
             <Input value={priority} onChange={(event) => setPriority(event.target.value)} placeholder="优先级" />
             <Button onClick={addKey}>添加 Key</Button>
             <Button variant="outline" onClick={() => { setImportOpen(true); setImportResult(null) }}>批量导入</Button>
@@ -378,11 +386,12 @@ export function AdminKeyPoolsPage() {
               </div>
             </div>
           ) : null}
-          <Table className="min-w-[1080px]">
+          <Table className="min-w-[1280px]">
             <TableHeader>
               <TableRow>
                 <TableHead>ID</TableHead>
                 <TableHead>Key</TableHead>
+                <TableHead>Base URL</TableHead>
                 <TableHead>号商</TableHead>
                 <TableHead>最近使用</TableHead>
                 <TableHead>调用次数</TableHead>
@@ -393,12 +402,12 @@ export function AdminKeyPoolsPage() {
               </TableRow>
             </TableHeader>
             {keysLoading ? (
-              <TableSkeleton cols={9} rows={3} />
+              <TableSkeleton cols={10} rows={3} />
             ) : (
               <TableBody>
                 {keys.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="py-6 text-center text-muted-foreground">
+                    <TableCell colSpan={10} className="py-6 text-center text-muted-foreground">
                       暂无 Key 数据
                     </TableCell>
                   </TableRow>
@@ -407,6 +416,16 @@ export function AdminKeyPoolsPage() {
                     <TableRow key={row.id ?? index}>
                       <TableCell>{row.id ?? '-'}</TableCell>
                       <TableCell className="font-mono text-xs">{row.value ?? '-'}</TableCell>
+                      <TableCell>
+                        <Input
+                          className="min-w-[280px] font-mono text-xs"
+                          value={row.base_url_override ?? ''}
+                          onChange={(event) =>
+                            updateDraftKey(row.id, { base_url_override: event.target.value })
+                          }
+                          placeholder="使用渠道 Base URL"
+                        />
+                      </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {row.vendor_id != null
                           ? <span className="font-medium text-foreground">号商 #{row.vendor_id}</span>

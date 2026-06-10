@@ -21,13 +21,14 @@ func (*KeyPool) TableName() string { return "key_pools" }
 // Value 存储原始 Key 字符串（如 sk-xxxxx），
 // 发请求时注入为 Authorization: Bearer {Value}，覆盖渠道静态 Headers。
 type PoolKey struct {
-	ID        int64     `xorm:"pk autoincr 'id'" json:"id"`
-	PoolID    int64     `xorm:"notnull index 'pool_id'" json:"pool_id"`
-	VendorID  *int64    `xorm:"'vendor_id' null" json:"vendor_id,omitempty"` // 所属号商 ID（nil 表示非号商提供）
-	Value     string    `xorm:"notnull text 'value'" json:"value"`
-	Priority  int       `xorm:"notnull default(0) 'priority'" json:"priority"` // 越小越优先
-	IsActive  bool      `xorm:"notnull default(true) 'is_active'" json:"is_active"`
-	CreatedAt time.Time `xorm:"created 'created_at'" json:"created_at"`
+	ID              int64     `xorm:"pk autoincr 'id'" json:"id"`
+	PoolID          int64     `xorm:"notnull index 'pool_id'" json:"pool_id"`
+	VendorID        *int64    `xorm:"'vendor_id' null" json:"vendor_id,omitempty"` // 所属号商 ID（nil 表示非号商提供）
+	Value           string    `xorm:"notnull text 'value'" json:"value"`
+	BaseURLOverride string    `xorm:"notnull text default('') 'base_url_override'" json:"base_url_override,omitempty"`
+	Priority        int       `xorm:"notnull default(0) 'priority'" json:"priority"` // 越小越优先
+	IsActive        bool      `xorm:"notnull default(true) 'is_active'" json:"is_active"`
+	CreatedAt       time.Time `xorm:"created 'created_at'" json:"created_at"`
 }
 
 func (*PoolKey) TableName() string { return "pool_keys" }

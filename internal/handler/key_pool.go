@@ -8,6 +8,7 @@ import (
 	"fanapi/internal/db"
 	"fanapi/internal/model"
 	"fanapi/internal/service"
+	"fanapi/internal/upstream"
 
 	"github.com/gin-gonic/gin"
 )
@@ -91,9 +92,18 @@ func AddPoolKey(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	key.Value = strings.TrimSpace(key.Value)
 	if key.Value == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供 Key 值"})
 		return
+	}
+	if strings.TrimSpace(key.BaseURLOverride) != "" {
+		baseURL, validateErr := upstream.ValidatePoolKeyBaseURL(c.Request.Context(), key.BaseURLOverride)
+		if validateErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": validateErr.Error()})
+			return
+		}
+		key.BaseURLOverride = baseURL
 	}
 	key.PoolID = poolID
 	key.IsActive = true
@@ -141,8 +151,9 @@ func UpdatePoolKey(c *gin.Context) {
 		return
 	}
 	var body struct {
-		Priority *int  `json:"priority"`
-		IsActive *bool `json:"is_active"`
+		Priority        *int    `json:"priority"`
+		IsActive        *bool   `json:"is_active"`
+		BaseURLOverride *string `json:"base_url_override"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -161,6 +172,19 @@ func UpdatePoolKey(c *gin.Context) {
 	if body.IsActive != nil {
 		key.IsActive = *body.IsActive
 		cols = append(cols, "is_active")
+	}
+	if body.BaseURLOverride != nil {
+		baseURL := strings.TrimSpace(*body.BaseURLOverride)
+		if baseURL != "" {
+			normalized, validateErr := upstream.ValidatePoolKeyBaseURL(c.Request.Context(), baseURL)
+			if validateErr != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": validateErr.Error()})
+				return
+			}
+			baseURL = normalized
+		}
+		key.BaseURLOverride = baseURL
+		cols = append(cols, "base_url_override")
 	}
 	if len(cols) == 0 {
 		c.JSON(http.StatusOK, key)
@@ -192,6 +216,28 @@ func ToggleVendorSubmittable(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"vendor_submittable": pool.VendorSubmittable})
+}
+
+// SyncKeyPoolFromUpstream POST /admin/key-pools/:id/sync-upstream?ensure=1
+// 从绑定渠道关联的 New API 上游平台同步已有 Key；ensure=1 时没有可导入 Key 会创建一个新上游 Key。
+func SyncKeyPoolFromUpstream(c *gin.Context) {
+	poolID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "号池 ID 格式错误"})
+		return
+	}
+	ensure := c.Query("ensure") == "1" || strings.EqualFold(c.Query("ensure"), "true")
+	var result service.KeyPoolSyncResult
+	if ensure {
+		result, err = service.EnsureKeyPoolFromUpstream(c.Request.Context(), poolID)
+	} else {
+		result, err = service.SyncKeyPoolFromUpstream(c.Request.Context(), poolID)
+	}
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error(), "result": result})
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }
 
 // ImportPoolKeys POST /admin/key-pools/:id/keys/import

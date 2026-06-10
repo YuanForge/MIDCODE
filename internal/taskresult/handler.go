@@ -16,6 +16,8 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
+const maxPoolKeyExhaustRetries = 8
+
 // StartResultProcessor 订阅 RESULTS JetStream 流。
 // 只应在 API 服务器进程中调用。
 func StartResultProcessor(_ config.WorkerConfig) error {
@@ -71,56 +73,62 @@ func handleResult(msg *nats.Msg) {
 		return // ACK 由批量写入器处理
 
 	case model.OutcomeRateLimited:
-		if res.RetryCount >= 1 {
-			saveAndFail(ctx, res, upstreamReq, upstreamResp, "upstream rate limited after retry")
-			_ = msg.Ack()
-			return
+		triedKeyIDs := appendResultPoolKeyID(res.PoolRetryKeyIDs, res.PoolKeyID)
+		retryErrMsg := ""
+		if res.PoolKeyID <= 0 {
+			retryErrMsg = "pool key retry unavailable"
+		} else if len(triedKeyIDs) >= maxPoolKeyExhaustRetries {
+			retryErrMsg = "pool key exhausted after retry"
+		} else {
+			ch, err := service.GetChannel(ctx, res.ChannelID)
+			if err != nil {
+				retryErrMsg = "rate limited + channel load failed: " + err.Error()
+			} else {
+				newKey, err := service.MarkExhaustedAndRotate(ctx, ch.KeyPoolID, res.PoolKeyID, res.UserID)
+				if err == nil && newKey != nil {
+					job := &model.TaskJob{
+						TaskID:          res.TaskID,
+						TaskType:        res.TaskType,
+						UserID:          res.UserID,
+						APIKeyID:        res.APIKeyID,
+						CorrID:          res.CorrID,
+						CreditsCharged:  res.CreditsCharged,
+						ChannelID:       res.ChannelID,
+						BaseURL:         ch.BaseURL,
+						Method:          ch.Method,
+						Headers:         ch.Headers,
+						TimeoutMs:       ch.TimeoutMs,
+						QueryTimeoutMs:  ch.QueryTimeoutMs,
+						RequestScript:   ch.RequestScript,
+						ResponseScript:  ch.ResponseScript,
+						ErrorScript:     ch.ErrorScript,
+						QueryURL:        ch.QueryURL,
+						QueryMethod:     ch.QueryMethod,
+						QueryScript:     ch.QueryScript,
+						PoolKeyID:       newKey.ID,
+						PoolKeyValue:    newKey.Value,
+						PoolKeyBaseURL:  newKey.BaseURLOverride,
+						Payload:         res.Payload,
+						RetryCount:      res.RetryCount + 1,
+						PoolRetryKeyIDs: triedKeyIDs,
+						RetryChannelIDs: res.RetryChannelIDs, // 透传：429 轮转 Key 重试若仍失败，仍可触发稳定密钥换渠道重试
+					}
+					data, _ := json.Marshal(job)
+					subject := fmt.Sprintf("task.%s.%d", res.TaskType, res.ChannelID)
+					if pubErr := mq.Publish(subject, data); pubErr != nil {
+						saveAndFail(ctx, res, upstreamReq, upstreamResp, "rate limited, retry publish failed")
+					}
+					_ = msg.Ack()
+					return
+				}
+				retryErrMsg = "pool key rotation failed: " + fmt.Sprint(err)
+			}
 		}
-		ch, err := service.GetChannel(ctx, res.ChannelID)
-		if err != nil {
-			saveAndFail(ctx, res, upstreamReq, upstreamResp, "rate limited + channel load failed: "+err.Error())
-			_ = msg.Ack()
-			return
+		res.PoolRetryKeyIDs = triedKeyIDs
+		if res.ErrorMsg == "" {
+			res.ErrorMsg = retryErrMsg
 		}
-		newKey, err := service.MarkExhaustedAndRotate(ctx, ch.KeyPoolID, res.PoolKeyID, res.UserID)
-		if err != nil || newKey == nil {
-			saveAndFail(ctx, res, upstreamReq, upstreamResp, "rate limited, key rotation failed: "+fmt.Sprint(err))
-			_ = msg.Ack()
-			return
-		}
-		job := &model.TaskJob{
-			TaskID:          res.TaskID,
-			TaskType:        res.TaskType,
-			UserID:          res.UserID,
-			APIKeyID:        res.APIKeyID,
-			CorrID:          res.CorrID,
-			CreditsCharged:  res.CreditsCharged,
-			ChannelID:       res.ChannelID,
-			BaseURL:         ch.BaseURL,
-			Method:          ch.Method,
-			Headers:         ch.Headers,
-			TimeoutMs:       ch.TimeoutMs,
-			QueryTimeoutMs:  ch.QueryTimeoutMs,
-			RequestScript:   ch.RequestScript,
-			ResponseScript:  ch.ResponseScript,
-			ErrorScript:     ch.ErrorScript,
-			QueryURL:        ch.QueryURL,
-			QueryMethod:     ch.QueryMethod,
-			QueryScript:     ch.QueryScript,
-			PoolKeyID:       newKey.ID,
-			PoolKeyValue:    newKey.Value,
-			Payload:         res.Payload,
-			RetryCount:      res.RetryCount + 1,
-			PoolRetryKeyIDs: res.PoolRetryKeyIDs,
-			RetryChannelIDs: res.RetryChannelIDs, // 透传：429 轮转 Key 重试若仍失败，仍可触发稳定密钥换渠道重试
-		}
-		data, _ := json.Marshal(job)
-		subject := fmt.Sprintf("task.%s.%d", res.TaskType, res.ChannelID)
-		if pubErr := mq.Publish(subject, data); pubErr != nil {
-			saveAndFail(ctx, res, upstreamReq, upstreamResp, "rate limited, retry publish failed")
-		}
-		_ = msg.Ack()
-		return
+		fallthrough
 
 	case model.OutcomePoolKeyRetry:
 		poolRetryChannel, channelErr := service.GetChannel(ctx, res.ChannelID)
@@ -149,6 +157,7 @@ func handleResult(msg *nats.Msg) {
 					QueryScript:     poolRetryChannel.QueryScript,
 					PoolKeyID:       newKey.ID,
 					PoolKeyValue:    newKey.Value,
+					PoolKeyBaseURL:  newKey.BaseURLOverride,
 					Payload:         res.Payload,
 					RetryCount:      res.RetryCount,
 					PoolRetryKeyIDs: triedKeyIDs,
@@ -282,11 +291,13 @@ func handleResult(msg *nats.Msg) {
 				// 分配号池 Key
 				var poolKeyID int64
 				var poolKeyValue string
+				var poolKeyBaseURL string
 				if nextCh.KeyPoolID > 0 {
 					pk, pkErr := service.GetOrAssignPoolKey(ctx, nextCh.KeyPoolID, res.UserID)
 					if pkErr == nil {
 						poolKeyID = pk.ID
 						poolKeyValue = pk.Value
+						poolKeyBaseURL = pk.BaseURLOverride
 					}
 				}
 
@@ -312,6 +323,7 @@ func handleResult(msg *nats.Msg) {
 					QueryScript:     nextCh.QueryScript,
 					PoolKeyID:       poolKeyID,
 					PoolKeyValue:    poolKeyValue,
+					PoolKeyBaseURL:  poolKeyBaseURL,
 					Payload:         res.Payload,
 					RetryChannelIDs: remaining,
 				}
