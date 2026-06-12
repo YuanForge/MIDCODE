@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strconv"
@@ -24,6 +25,8 @@ import (
 //   - "refund"  ：将通用余额部分加回 DB
 //   - "recharge"：充值加到 DB
 func WriteTx(ctx context.Context, userID, channelID, apiKeyID, poolKeyID int64, corrID, txType string, credits, cost, modelCreditCharged int64, metrics model.JSON) error {
+	taskID := metricInt64(metrics, "task_id")
+	llmLogID := metricInt64(metrics, "llm_log_id")
 	tx := &model.BillingTransaction{
 		UserID:             userID,
 		ChannelID:          channelID,
@@ -35,6 +38,8 @@ func WriteTx(ctx context.Context, userID, channelID, apiKeyID, poolKeyID int64, 
 		ModelCreditCharged: modelCreditCharged,
 		Cost:               cost,
 		Metrics:            metrics,
+		LLMLogID:           llmLogID,
+		TaskID:             taskID,
 	}
 
 	// DB 仅反映通用余额变化；专属模型积分变化记录在 user_model_credits 表。
@@ -116,6 +121,32 @@ func WriteTx(ctx context.Context, userID, channelID, apiKeyID, poolKeyID int64, 
 //  2. 号商收益：若本次请求使用了号商的 Key，按比例计入号商可提现余额
 //
 // credits/cost 可为负值（refund 场景），表示回扣已发放的返佣/收益，不会使余额低于 0。
+func metricInt64(metrics model.JSON, key string) int64 {
+	if metrics == nil {
+		return 0
+	}
+	switch v := metrics[key].(type) {
+	case int64:
+		return v
+	case int:
+		return int64(v)
+	case int32:
+		return int64(v)
+	case float64:
+		return int64(v)
+	case float32:
+		return int64(v)
+	case json.Number:
+		n, _ := v.Int64()
+		return n
+	case string:
+		n, _ := strconv.ParseInt(v, 10, 64)
+		return n
+	default:
+		return 0
+	}
+}
+
 func applyPostBillingHooks(userID, poolKeyID, credits, cost int64) {
 	ctx := context.Background()
 
@@ -264,7 +295,11 @@ func ListTransactions(ctx context.Context, userID int64, page, pageSize int, cor
 		sess.And("corr_id = ?", corrID)
 	}
 	if taskID != "" {
-		sess.And("metrics->>'task_id' = ?", taskID)
+		if id, err := strconv.ParseInt(taskID, 10, 64); err == nil {
+			sess.And("task_id = ?", id)
+		} else {
+			sess.And("1 = 0")
+		}
 	}
 	err := sess.Desc("created_at").
 		Limit(pageSize, (page-1)*pageSize).
@@ -279,7 +314,11 @@ func CountTransactions(ctx context.Context, userID int64, corrID, taskID string)
 		sess.And("corr_id = ?", corrID)
 	}
 	if taskID != "" {
-		sess.And("metrics->>'task_id' = ?", taskID)
+		if id, err := strconv.ParseInt(taskID, 10, 64); err == nil {
+			sess.And("task_id = ?", id)
+		} else {
+			sess.And("1 = 0")
+		}
 	}
 	count, err := sess.Count(&model.BillingTransaction{})
 	return count, err

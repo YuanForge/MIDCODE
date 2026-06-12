@@ -153,7 +153,8 @@ func ensureIndexes() error {
 		{
 			"idx_billing_tx_user_task_metric",
 			`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_billing_tx_user_task_metric
-			ON billing_transactions (user_id, ((metrics->>'task_id')))`,
+			ON billing_transactions (user_id, task_id, created_at DESC)
+			WHERE task_id != 0`,
 		},
 		{
 			"idx_billing_tx_pool_key_type",

@@ -15,6 +15,8 @@ type BillingTransaction struct {
 	Cost               int64     `xorm:"notnull default(0) 'cost'" json:"cost"`                                 // 支付给上游的进价 credits（成本），profit = credits - cost
 	BalanceAfter       int64     `xorm:"notnull default(0) 'balance_after'" json:"balance_after"`               // 操作后用户通用余额快照
 	Metrics            JSON      `xorm:"jsonb 'metrics'" json:"metrics"`
+	LLMLogID           int64     `xorm:"notnull default(0) 'llm_log_id'" json:"llm_log_id"`
+	TaskID             int64     `xorm:"notnull default(0) 'task_id'" json:"task_id"`
 	CreatedAt          time.Time `xorm:"created 'created_at'" json:"created_at"`
 }
 
