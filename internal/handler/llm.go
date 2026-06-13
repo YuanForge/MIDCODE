@@ -541,6 +541,13 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 	if ch.KeyPoolID > 0 {
 		pk, pkErr := service.GetOrAssignPoolKey(c.Request.Context(), ch.KeyPoolID, entityID)
 		if pkErr != nil {
+			service.RecordChannelError(c.Request.Context(), channelID)
+			if len(triedIDs) < maxRetries {
+				if nextCh := selectNextChannel(c.Request.Context(), routingKey, triedIDs, stableChannels, isResponsesCompact); nextCh != nil {
+					llmProxyWithChannel(c, nextCh, origReqData, userID, apiKeyIDVal, userGroup, triedIDs, stableChannels)
+					return
+				}
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "key pool error: " + pkErr.Error()})
 			return
 		}
