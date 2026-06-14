@@ -1,4 +1,6 @@
-import { Fragment, useMemo, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
+
+import { cn } from '@/lib/utils'
 
 type MarkdownBlock =
   | { type: 'heading'; level: number; text: string }
@@ -8,6 +10,17 @@ type MarkdownBlock =
   | { type: 'list'; ordered: boolean; items: string[] }
   | { type: 'table'; headers: string[]; rows: string[][] }
   | { type: 'divider' }
+
+type HeadingAnchor = {
+  id: string
+  level: number
+  text: string
+}
+
+type MarkdownDocumentProps = {
+  content: string
+  showHeadingNav?: boolean
+}
 
 function isTableSeparator(line: string) {
   return /^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$/.test(line)
@@ -235,124 +248,256 @@ function renderInline(text: string, keyPrefix: string) {
   ))
 }
 
-export function MarkdownDocument({ content }: { content: string }) {
+function headingSlug(text: string, index: number) {
+  const base = text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/[`*_~]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 72)
+
+  return base || `section-${index + 1}`
+}
+
+function buildHeadingAnchors(blocks: MarkdownBlock[]) {
+  const used = new Map<string, number>()
+  const headingIds = new Map<number, string>()
+  const headings: HeadingAnchor[] = []
+
+  blocks.forEach((block, index) => {
+    if (block.type !== 'heading') return
+
+    const slug = headingSlug(block.text, index)
+    const count = used.get(slug) ?? 0
+    used.set(slug, count + 1)
+
+    const id = count === 0 ? `tutorial-${slug}` : `tutorial-${slug}-${count + 1}`
+    headingIds.set(index, id)
+    headings.push({ id, level: block.level, text: block.text })
+  })
+
+  return { headingIds, headings }
+}
+
+function updateHash(id: string) {
+  const hash = encodeURIComponent(id)
+  window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${hash}`)
+}
+
+export function MarkdownDocument({ content, showHeadingNav = false }: MarkdownDocumentProps) {
   const blocks = useMemo(() => parseMarkdown(content), [content])
+  const { headingIds, headings } = useMemo(() => buildHeadingAnchors(blocks), [blocks])
+  const [activeHeading, setActiveHeading] = useState('')
+  const canShowHeadingNav = showHeadingNav && headings.length > 1
+
+  useEffect(() => {
+    if (!canShowHeadingNav) return undefined
+
+    const firstHeading = headings[0]?.id ?? ''
+    setActiveHeading((current) => (current && headings.some((heading) => heading.id === current) ? current : firstHeading))
+
+    const hash = window.location.hash ? decodeURIComponent(window.location.hash.slice(1)) : ''
+    if (hash && headings.some((heading) => heading.id === hash)) {
+      window.requestAnimationFrame(() => {
+        document.getElementById(hash)?.scrollIntoView({ block: 'start' })
+      })
+    }
+
+    if (!('IntersectionObserver' in window)) {
+      return undefined
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
+
+        if (visible[0]?.target.id) {
+          setActiveHeading(visible[0].target.id)
+        }
+      },
+      { rootMargin: '-96px 0px -65% 0px', threshold: [0, 1] },
+    )
+
+    headings.forEach((heading) => {
+      const element = document.getElementById(heading.id)
+      if (element) observer.observe(element)
+    })
+
+    return () => observer.disconnect()
+  }, [canShowHeadingNav, headings])
+
+  function scrollToHeading(id: string) {
+    const element = document.getElementById(id)
+    if (!element) return
+    setActiveHeading(id)
+    updateHash(id)
+    element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  function renderHeadingNav() {
+    if (!canShowHeadingNav) return null
+
+    return (
+      <aside className="order-first lg:order-none lg:sticky lg:top-6 lg:self-start">
+        <nav className="rounded-lg border bg-card/80 p-3 text-sm shadow-sm">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="text-xs font-medium text-muted-foreground">标题定位</p>
+            <button
+              type="button"
+              className="text-xs text-primary hover:underline"
+              onClick={() => scrollToHeading(headings[0].id)}
+            >
+              回到顶部
+            </button>
+          </div>
+          <div className="max-h-[calc(100vh-9rem)] space-y-1 overflow-auto pr-1">
+            {headings.map((heading) => (
+              <button
+                key={heading.id}
+                type="button"
+                className={cn(
+                  'block w-full rounded-md px-2 py-1.5 text-left text-xs leading-5 transition hover:bg-muted',
+                  heading.level > 2 && 'pl-4',
+                  heading.level > 3 && 'pl-6',
+                  activeHeading === heading.id
+                    ? 'bg-primary/10 font-medium text-primary'
+                    : 'text-muted-foreground',
+                )}
+                onClick={() => scrollToHeading(heading.id)}
+              >
+                {heading.text}
+              </button>
+            ))}
+          </div>
+        </nav>
+      </aside>
+    )
+  }
 
   return (
-    <article className="mx-auto w-full max-w-5xl space-y-6">
-      {blocks.map((block, index) => {
-        if (block.type === 'heading') {
-          const sizeClass =
-            block.level === 1
-              ? 'text-3xl font-semibold'
-              : block.level === 2
-                ? 'text-2xl font-semibold'
-                : block.level === 3
-                  ? 'text-xl font-semibold'
-                  : 'text-lg font-semibold'
+    <div className={cn('mx-auto w-full max-w-5xl', canShowHeadingNav && 'grid max-w-7xl gap-6 lg:grid-cols-[minmax(0,1fr)_240px]')}>
+      <article className="min-w-0 space-y-6">
+        {blocks.map((block, index) => {
+          if (block.type === 'heading') {
+            const sizeClass =
+              block.level === 1
+                ? 'text-3xl font-semibold'
+                : block.level === 2
+                  ? 'text-2xl font-semibold'
+                  : block.level === 3
+                    ? 'text-xl font-semibold'
+                    : 'text-lg font-semibold'
+            const headingId = headingIds.get(index)
+            const headingClassName = `${sizeClass} scroll-mt-24 text-foreground`
 
-          if (block.level === 1) {
-            return <h1 key={index} className={`${sizeClass} text-foreground`}>{renderInline(block.text, `heading-${index}`)}</h1>
+            if (block.level === 1) {
+              return <h1 key={index} id={headingId} className={headingClassName}>{renderInline(block.text, `heading-${index}`)}</h1>
+            }
+            if (block.level === 2) {
+              return <h2 key={index} id={headingId} className={headingClassName}>{renderInline(block.text, `heading-${index}`)}</h2>
+            }
+            if (block.level === 3) {
+              return <h3 key={index} id={headingId} className={headingClassName}>{renderInline(block.text, `heading-${index}`)}</h3>
+            }
+            if (block.level === 4) {
+              return <h4 key={index} id={headingId} className={headingClassName}>{renderInline(block.text, `heading-${index}`)}</h4>
+            }
+            if (block.level === 5) {
+              return <h5 key={index} id={headingId} className={headingClassName}>{renderInline(block.text, `heading-${index}`)}</h5>
+            }
+            return <h6 key={index} id={headingId} className={headingClassName}>{renderInline(block.text, `heading-${index}`)}</h6>
           }
-          if (block.level === 2) {
-            return <h2 key={index} className={`${sizeClass} text-foreground`}>{renderInline(block.text, `heading-${index}`)}</h2>
+
+          if (block.type === 'paragraph') {
+            return (
+              <p key={index} className="text-[15px] leading-7 text-foreground/90">
+                {renderInline(block.text, `paragraph-${index}`)}
+              </p>
+            )
           }
-          if (block.level === 3) {
-            return <h3 key={index} className={`${sizeClass} text-foreground`}>{renderInline(block.text, `heading-${index}`)}</h3>
+
+          if (block.type === 'blockquote') {
+            return (
+              <blockquote
+                key={index}
+                className="border-l-4 border-primary/25 bg-muted/30 px-4 py-3 text-[15px] leading-7 text-muted-foreground"
+              >
+                {renderInline(block.text, `blockquote-${index}`)}
+              </blockquote>
+            )
           }
-          if (block.level === 4) {
-            return <h4 key={index} className={`${sizeClass} text-foreground`}>{renderInline(block.text, `heading-${index}`)}</h4>
+
+          if (block.type === 'code') {
+            return (
+              <div key={index} className="overflow-hidden rounded-xl border bg-zinc-950">
+                {block.language ? (
+                  <div className="border-b border-zinc-800 px-4 py-2 text-xs font-medium uppercase text-zinc-400">
+                    {block.language}
+                  </div>
+                ) : null}
+                <pre className="overflow-x-auto p-4 text-sm leading-6 text-zinc-100">
+                  <code>{block.code}</code>
+                </pre>
+              </div>
+            )
           }
-          if (block.level === 5) {
-            return <h5 key={index} className={`${sizeClass} text-foreground`}>{renderInline(block.text, `heading-${index}`)}</h5>
+
+          if (block.type === 'list') {
+            const ListTag = block.ordered ? 'ol' : 'ul'
+            return (
+              <ListTag
+                key={index}
+                className={block.ordered ? 'list-decimal space-y-2 pl-6 text-[15px] leading-7' : 'list-disc space-y-2 pl-6 text-[15px] leading-7'}
+              >
+                {block.items.map((item, itemIndex) => (
+                  <li key={itemIndex} className="text-foreground/90">
+                    {renderInline(item, `list-${index}-${itemIndex}`)}
+                  </li>
+                ))}
+              </ListTag>
+            )
           }
-          return <h6 key={index} className={`${sizeClass} text-foreground`}>{renderInline(block.text, `heading-${index}`)}</h6>
-        }
 
-        if (block.type === 'paragraph') {
-          return (
-            <p key={index} className="text-[15px] leading-7 text-foreground/90">
-              {renderInline(block.text, `paragraph-${index}`)}
-            </p>
-          )
-        }
-
-        if (block.type === 'blockquote') {
-          return (
-            <blockquote
-              key={index}
-              className="border-l-4 border-primary/25 bg-muted/30 px-4 py-3 text-[15px] leading-7 text-muted-foreground"
-            >
-              {renderInline(block.text, `blockquote-${index}`)}
-            </blockquote>
-          )
-        }
-
-        if (block.type === 'code') {
-          return (
-            <div key={index} className="overflow-hidden rounded-xl border bg-zinc-950">
-              {block.language ? (
-                <div className="border-b border-zinc-800 px-4 py-2 text-xs font-medium uppercase text-zinc-400">
-                  {block.language}
-                </div>
-              ) : null}
-              <pre className="overflow-x-auto p-4 text-sm leading-6 text-zinc-100">
-                <code>{block.code}</code>
-              </pre>
-            </div>
-          )
-        }
-
-        if (block.type === 'list') {
-          const ListTag = block.ordered ? 'ol' : 'ul'
-          return (
-            <ListTag
-              key={index}
-              className={block.ordered ? 'list-decimal space-y-2 pl-6 text-[15px] leading-7' : 'list-disc space-y-2 pl-6 text-[15px] leading-7'}
-            >
-              {block.items.map((item, itemIndex) => (
-                <li key={itemIndex} className="text-foreground/90">
-                  {renderInline(item, `list-${index}-${itemIndex}`)}
-                </li>
-              ))}
-            </ListTag>
-          )
-        }
-
-        if (block.type === 'table') {
-          return (
-            <div key={index} className="overflow-x-auto rounded-xl border">
-              <table className="min-w-full border-collapse text-sm">
-                <thead className="bg-muted/40">
-                  <tr>
-                    {block.headers.map((header, headerIndex) => (
-                      <th
-                        key={headerIndex}
-                        className="border-b px-4 py-3 text-left font-semibold text-foreground"
-                      >
-                        {renderInline(header, `table-head-${index}-${headerIndex}`)}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {block.rows.map((row, rowIndex) => (
-                    <tr key={rowIndex} className="border-b last:border-b-0">
-                      {row.map((cell, cellIndex) => (
-                        <td key={cellIndex} className="px-4 py-3 align-top text-foreground/90">
-                          {renderInline(cell, `table-cell-${index}-${rowIndex}-${cellIndex}`)}
-                        </td>
+          if (block.type === 'table') {
+            return (
+              <div key={index} className="overflow-x-auto rounded-xl border">
+                <table className="min-w-full border-collapse text-sm">
+                  <thead className="bg-muted/40">
+                    <tr>
+                      {block.headers.map((header, headerIndex) => (
+                        <th
+                          key={headerIndex}
+                          className="border-b px-4 py-3 text-left font-semibold text-foreground"
+                        >
+                          {renderInline(header, `table-head-${index}-${headerIndex}`)}
+                        </th>
                       ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )
-        }
+                  </thead>
+                  <tbody>
+                    {block.rows.map((row, rowIndex) => (
+                      <tr key={rowIndex} className="border-b last:border-b-0">
+                        {row.map((cell, cellIndex) => (
+                          <td key={cellIndex} className="px-4 py-3 align-top text-foreground/90">
+                            {renderInline(cell, `table-cell-${index}-${rowIndex}-${cellIndex}`)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          }
 
-        return <hr key={index} className="border-border" />
-      })}
-    </article>
+          return <hr key={index} className="border-border" />
+        })}
+      </article>
+      {renderHeadingNav()}
+    </div>
   )
 }

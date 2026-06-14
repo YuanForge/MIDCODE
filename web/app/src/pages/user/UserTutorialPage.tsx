@@ -31,5 +31,5 @@ export function UserTutorialPage() {
     )
   }
 
-  return <MarkdownDocument content={markdown} />
+  return <MarkdownDocument content={markdown} showHeadingNav />
 }
