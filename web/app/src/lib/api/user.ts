@@ -12,6 +12,7 @@ export type UserProfileResponse = {
 }
 
 export type UserBalanceResponse = {
+  balance_cny?: number
   balance_credits?: number
 }
 

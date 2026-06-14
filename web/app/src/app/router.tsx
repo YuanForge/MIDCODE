@@ -28,6 +28,7 @@ const UserTasksPage = lazy(() => import('@/pages/user/UserTasksPage').then((m) =
 const UserLogsPage = lazy(() => import('@/pages/user/UserLogsPage').then((m) => ({ default: m.UserLogsPage })))
 const UserBillingPage = lazy(() => import('@/pages/user/UserBillingPage').then((m) => ({ default: m.UserBillingPage })))
 const UserDocsPage = lazy(() => import('@/pages/user/UserDocsPage').then((m) => ({ default: m.UserDocsPage })))
+const UserTutorialPage = lazy(() => import('@/pages/user/UserTutorialPage').then((m) => ({ default: m.UserTutorialPage })))
 const UserProfilePage = lazy(() => import('@/pages/user/UserProfilePage').then((m) => ({ default: m.UserProfilePage })))
 const UserStatsPage = lazy(() => import('@/pages/user/UserStatsPage').then((m) => ({ default: m.UserStatsPage })))
 const UserExchangePage = lazy(() => import('@/pages/user/UserExchangePage').then((m) => ({ default: m.UserExchangePage })))
@@ -140,6 +141,7 @@ export const router = createBrowserRouter([
       { path: '/dashboard', element: renderLazy(<UserDashboardPage />) },
       { path: '/models', element: renderLazy(<UserModelsPage />) },
       { path: '/docs', element: renderLazy(<UserDocsPage />) },
+      { path: '/tutorial', element: renderLazy(<UserTutorialPage />) },
     ],
   },
   // Auth-required user routes

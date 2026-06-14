@@ -597,7 +597,7 @@ export function UserModelsPage() {
                 </div>
                 <div>
                   <h4 className="mb-2 font-semibold">{t('models.responseExample')}</h4>
-                  <pre className="overflow-auto rounded-xl bg-zinc-950 p-4 font-mono text-sm text-green-400">{JSON.stringify({ balance_credits: 1971573, balance_cny: 1.971573 }, null, 2)}</pre>
+                  <pre className="overflow-auto rounded-xl bg-zinc-950 p-4 font-mono text-sm text-green-400">{JSON.stringify({ balance_cny: 1.971573 }, null, 2)}</pre>
                 </div>
               </div>
             ) : null}

@@ -12,6 +12,7 @@ export type Plan = {
 export type SiteSettings = {
   siteName: string
   logoUrl: string
+  tutorialMarkdown: string
   plans: Plan[]
   epayEnabled: boolean
   payApplyEnabled: boolean
@@ -33,6 +34,7 @@ export type SiteSettings = {
 const defaultSettings: SiteSettings = {
   siteName: 'MidCode',
   logoUrl: '',
+  tutorialMarkdown: '',
   plans: [],
   epayEnabled: false,
   payApplyEnabled: false,
@@ -67,6 +69,7 @@ export function useSiteSettings() {
         setSettings({
           siteName: record.site_name || 'MidCode',
           logoUrl: record.logo_url || '',
+          tutorialMarkdown: record.tutorial_markdown || '',
           plans: (() => {
             try { return JSON.parse(record.recharge_plans || '[]') } catch { return [] }
           })(),

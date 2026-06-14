@@ -1,6 +1,7 @@
 package billing
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -43,12 +44,50 @@ func ToInt64(v interface{}) (int64, error) {
 	switch n := v.(type) {
 	case float64:
 		return int64(n), nil
+	case float32:
+		return int64(n), nil
 	case int64:
 		return n, nil
 	case int:
 		return int64(n), nil
 	case int32:
 		return int64(n), nil
+	case int16:
+		return int64(n), nil
+	case int8:
+		return int64(n), nil
+	case uint64:
+		return int64(n), nil
+	case uint:
+		return int64(n), nil
+	case uint32:
+		return int64(n), nil
+	case uint16:
+		return int64(n), nil
+	case uint8:
+		return int64(n), nil
+	case json.Number:
+		if i, err := n.Int64(); err == nil {
+			return i, nil
+		}
+		f, err := n.Float64()
+		if err != nil {
+			return 0, err
+		}
+		return int64(f), nil
+	case string:
+		s := strings.TrimSpace(n)
+		if s == "" {
+			return 0, fmt.Errorf("cannot convert empty string to int64")
+		}
+		if i, err := strconv.ParseInt(s, 10, 64); err == nil {
+			return i, nil
+		}
+		f, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return 0, fmt.Errorf("cannot convert %q to int64", n)
+		}
+		return int64(f), nil
 	default:
 		return 0, fmt.Errorf("cannot convert %T to int64", v)
 	}

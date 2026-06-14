@@ -543,6 +543,16 @@ export function AdminSettingsPage() {
                     />
                     <Tip>纯文本，每行一条联系方式，显示在数据看板公告区域</Tip>
                   </FieldRow>
+                  <FieldRow label="新手教程 Markdown">
+                    <Textarea
+                      value={form.tutorial_markdown ?? ''}
+                      onChange={(e) => set('tutorial_markdown', e.target.value)}
+                      rows={16}
+                      className="font-mono text-xs"
+                      placeholder={`# 新手教程\n\n在这里粘贴完整的 Markdown 教程文档。`}
+                    />
+                    <Tip>用户端左侧「新手教程」页面会直接展示这里的 Markdown 内容。</Tip>
+                  </FieldRow>
                   <FieldRow label="QQ 交流群二维码">
                     <div className="flex gap-2">
                       <Input value={form.qq_group_url ?? ''} onChange={(e) => set('qq_group_url', e.target.value)} placeholder="图片 URL" className="flex-1" />

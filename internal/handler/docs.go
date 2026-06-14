@@ -141,6 +141,35 @@ func buildUserSwaggerDoc(doc []byte) ([]byte, error) {
 	}
 	spec["paths"] = filteredPaths
 
+	if balancePath, ok := filteredPaths["/user/balance"].(map[string]any); ok {
+		if getOp, ok := balancePath["get"].(map[string]any); ok {
+			getOp["summary"] = "查询账户余额（CNY）"
+			getOp["description"] = "返回当前 API Key 对应账户的剩余 CNY 额度。对接时请使用 balance_cny；balance_credits 仅为内部精度字段。1 CNY = 1,000,000 credits。"
+
+			responses, ok := getOp["responses"].(map[string]any)
+			if !ok {
+				responses = make(map[string]any)
+				getOp["responses"] = responses
+			}
+
+			resp200, ok := responses["200"].(map[string]any)
+			if !ok {
+				resp200 = make(map[string]any)
+				responses["200"] = resp200
+			}
+
+			resp200["schema"] = map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"balance_cny": map[string]any{
+						"type":        "number",
+						"description": "账户剩余 CNY 额度",
+					},
+				},
+			}
+		}
+	}
+
 	if info, ok := spec["info"].(map[string]any); ok {
 		info["description"] = "LLM 对话 · 媒体生成 · 查询任务结果 · 查询账户余额"
 	}

@@ -16,6 +16,7 @@ var publicSettingKeys = map[string]bool{
 	"logo_url":                  true,
 	"header_html":               true,
 	"footer_html":               true,
+	"tutorial_markdown":         true,
 	"epay_enabled":              true,
 	"pay_apply_enabled":         true,
 	"shouqianba_enabled":        true,

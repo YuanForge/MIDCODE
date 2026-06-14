@@ -69,3 +69,63 @@ func TestCalcActualUpstreamCost_ResponsesCacheReadTokensNotDoubleCharged(t *test
 		t.Fatalf("CalcActualUpstreamCost = %d, want %d", cost, want)
 	}
 }
+
+func TestCalcForUser_VideoPricePerSecondWithStringDuration(t *testing.T) {
+	channel := &model.Channel{
+		BillingType: "video",
+		BillingConfig: model.JSON{
+			"price_per_second": int64(48000),
+			"metric_paths": map[string]interface{}{
+				"size":         "request.size",
+				"aspect_ratio": "request.aspect_ratio",
+				"duration":     "request.duration",
+			},
+		},
+	}
+
+	req := map[string]interface{}{
+		"size":         "720p",
+		"aspect_ratio": "16:9",
+		"duration":     "5",
+	}
+
+	cost, _, err := CalcForUser(channel, req, "")
+	if err != nil {
+		t.Fatalf("CalcForUser returned error: %v", err)
+	}
+
+	const want int64 = 240000
+	if cost != want {
+		t.Fatalf("CalcForUser = %d, want %d", cost, want)
+	}
+}
+
+func TestCalcUpstreamCost_VideoCostPerSecondWithStringDuration(t *testing.T) {
+	channel := &model.Channel{
+		BillingType: "video",
+		BillingConfig: model.JSON{
+			"cost_per_second": int64(40000),
+			"metric_paths": map[string]interface{}{
+				"size":         "request.size",
+				"aspect_ratio": "request.aspect_ratio",
+				"duration":     "request.duration",
+			},
+		},
+	}
+
+	req := map[string]interface{}{
+		"size":         "720p",
+		"aspect_ratio": "16:9",
+		"duration":     "5",
+	}
+
+	cost, err := CalcUpstreamCost(channel, req)
+	if err != nil {
+		t.Fatalf("CalcUpstreamCost returned error: %v", err)
+	}
+
+	const want int64 = 200000
+	if cost != want {
+		t.Fatalf("CalcUpstreamCost = %d, want %d", cost, want)
+	}
+}
