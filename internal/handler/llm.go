@@ -29,6 +29,7 @@ const (
 	protocolClaude    = "claude"
 	protocolGemini    = "gemini"
 	protocolResponses = "responses"
+	protocolRealtime  = "realtime"
 
 	responsesOperationCompact = "compact"
 	maxPoolKeyExhaustRetries  = 8

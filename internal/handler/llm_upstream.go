@@ -74,9 +74,12 @@ func sendLLMRequest(c *gin.Context, ch *model.Channel, reqData map[string]interf
 			"Connection":        true,
 			"Upgrade":           true,
 			"Proxy-Connection":  true,
+			"X-API-Key":         true,
+			"X-API-Key-Id":      true,
+			"X-Goog-Api-Key":    true,
 		}
 		for k, vals := range c.Request.Header {
-			if !passthroughSkip[k] {
+			if !shouldSkipChannelHeader(k, passthroughSkip) {
 				upReq.Header[k] = vals
 			}
 		}

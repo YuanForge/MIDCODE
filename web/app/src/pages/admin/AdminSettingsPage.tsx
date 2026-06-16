@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { PlusIcon, SaveIcon, Trash2Icon } from 'lucide-react'
+import { PlusIcon, SaveIcon, Trash2Icon, UploadIcon } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -149,8 +149,10 @@ export function AdminSettingsPage() {
 
   const [mutError, setMutError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [uploadingLogo, setUploadingLogo] = useState(false)
   const error = loadError || mutError
 
+  const logoRef = useRef<HTMLInputElement>(null)
   const qrRef = useRef<HTMLInputElement>(null)
   const qqRef = useRef<HTMLInputElement>(null)
   const wechatRef = useRef<HTMLInputElement>(null)
@@ -159,7 +161,7 @@ export function AdminSettingsPage() {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
-  async function uploadSettingImage(key: 'qq_group_url' | 'wechat_cs_url' | 'qrcode_url', file: File | undefined) {
+  async function uploadSettingImage(key: 'logo_url' | 'qq_group_url' | 'wechat_cs_url' | 'qrcode_url', file: File | undefined) {
     if (!file) {
       return
     }
@@ -177,6 +179,18 @@ export function AdminSettingsPage() {
       const msg = getApiErrorMessage(err)
       setMutError(msg)
       toast.error(msg)
+    }
+  }
+
+  async function uploadLogoImage(file: File | undefined) {
+    if (!file) {
+      return
+    }
+    setUploadingLogo(true)
+    try {
+      await uploadSettingImage('logo_url', file)
+    } finally {
+      setUploadingLogo(false)
     }
   }
 
@@ -272,9 +286,16 @@ export function AdminSettingsPage() {
                     <Input value={form.site_name ?? ''} onChange={(e) => set('site_name', e.target.value)} placeholder="例如：FanAPI" />
                     <Tip>显示在浏览器标题栏和页面 Logo 旁</Tip>
                   </FieldRow>
-                  <FieldRow label="Logo 图片 URL">
-                    <Input value={form.logo_url ?? ''} onChange={(e) => set('logo_url', e.target.value)} placeholder="https://example.com/logo.png（留空则显示文字）" />
-                    <Tip>支持 PNG / SVG，建议尺寸 32×32 或 64×64，留空则使用首字母</Tip>
+                  <FieldRow label="Logo 图片">
+                    <div className="flex gap-2">
+                      <Input value={form.logo_url ?? ''} onChange={(e) => set('logo_url', e.target.value)} placeholder="https://example.com/logo.png（留空则显示文字）" className="flex-1" />
+                      <Button type="button" variant="outline" size="sm" onClick={() => logoRef.current?.click()} disabled={uploadingLogo}>
+                        <UploadIcon data-icon="inline-start" />
+                        {uploadingLogo ? '上传中...' : '上传'}
+                      </Button>
+                    </div>
+                    <input ref={logoRef} type="file" accept="image/*" className="hidden" onChange={(e) => { void uploadLogoImage(e.target.files?.[0]); e.target.value = '' }} />
+                    <Tip>支持手填 URL 或本地上传 PNG / SVG，建议尺寸 32×32 或 64×64，留空则使用首字母</Tip>
                   </FieldRow>
                   {form.logo_url ? (
                     <FieldRow label="Logo 预览">

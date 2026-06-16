@@ -422,32 +422,18 @@ func forwardResponsesWS(ctx context.Context, clientConn *websocket.Conn, c *gin.
 	}
 	targetURL := script.ResolveHeaderValue(upstreamWSURL, poolKeyVal)
 
-	dialHeader := http.Header{}
-	if ch.PassthroughHeaders {
-		passthroughSkip := map[string]bool{
-			"Authorization":     true,
-			"Host":              true,
-			"Content-Length":    true,
-			"Transfer-Encoding": true,
-			"Connection":        true,
-			"Upgrade":           true,
-			"Proxy-Connection":  true,
-		}
-		for k, vals := range c.Request.Header {
-			if !passthroughSkip[k] {
-				dialHeader[k] = vals
-			}
-		}
+	dialHeader, sentHeaders, headerErr := buildUpstreamWSHeaders(
+		c.Request.Header,
+		ch,
+		poolKeyVal,
+		ch.PassthroughHeaders,
+		map[string]bool{"x-upstream-ws-url": true},
+		nil,
+	)
+	if headerErr != nil {
+		return nil, nil, nil, headerErr
 	}
-	for k, v := range ch.Headers {
-		// 该自定义头仅用于本地配置上游WS地址，不能透传给第三方。
-		if strings.EqualFold(k, "x-upstream-ws-url") {
-			continue
-		}
-		if sv, ok := v.(string); ok {
-			dialHeader.Set(k, script.ResolveHeaderValue(sv, poolKeyVal))
-		}
-	}
+	_ = sentHeaders
 
 	if parsed, err := url.Parse(targetURL); err == nil {
 		if parsed.Scheme != "ws" && parsed.Scheme != "wss" {

@@ -370,6 +370,7 @@ func main() {
 			v1.POST("/responses", handler.ResponsesProxy)                // OpenAI Responses API（SSE / 同步）
 			v1.POST("/responses/compact", handler.ResponsesCompactProxy) // Codex 对话压缩兼容
 			v1.GET("/responses", handler.ResponsesWSProxy)               // OpenAI Responses API（WebSocket 双向流）
+			v1.GET("/realtime", handler.RealtimeWSProxy)                 // OpenAI Realtime API（WebSocket 双向流）
 			v1.POST("/gemini", handler.GeminiProxy)                      // Gemini 原生格式
 			v1.POST("/image", handler.CreateImageTask)
 			v1.POST("/video", handler.CreateVideoTask)
