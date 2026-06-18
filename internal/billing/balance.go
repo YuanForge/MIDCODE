@@ -201,7 +201,6 @@ if not bal then
 end
 redis.call("INCRBY", KEYS[1], ARGV[1])
 redis.call("SADD", KEYS[2], ARGV[2])
-redis.call("SADD", KEYS[3], ARGV[3])
 return 1
 `)
 
@@ -210,14 +209,12 @@ func ApplyBalanceSyncJob(ctx context.Context, job model.BalanceSyncJob) error {
 		return nil
 	}
 	jobID := strconv.FormatInt(job.ID, 10)
-	userID := strconv.FormatInt(job.UserID, 10)
 	result, err := luaApplyBalanceSyncJob.Run(
 		ctx,
 		cache.Client,
-		[]string{balanceKey(job.UserID), balanceSyncAppliedSetKey, dirtyBalanceSetKey},
+		[]string{balanceKey(job.UserID), balanceSyncAppliedSetKey},
 		job.Delta,
 		jobID,
-		userID,
 	).Int64()
 	if err != nil {
 		return err

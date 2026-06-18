@@ -17,7 +17,6 @@ import (
 
 const quotaKeyFmt = "billing:quota:%d"
 const quotaLeaseLockNamespace int64 = 20260618
-const quotaLeaseMinTopUpCredits int64 = 1_000_000
 
 var quotaLeaseTTL = 30 * time.Minute
 var quotaLeaseReclaimGrace = 2 * time.Minute
@@ -30,8 +29,15 @@ func quotaLeaseExpiresAt() time.Time {
 	return time.Now().Add(quotaLeaseTTL)
 }
 
-func reserveQuota(ctx context.Context, userID, needed int64, reason string) error {
-	if needed <= 0 {
+func quotaReserveNeeded(required, activeRemaining int64) int64 {
+	if required <= activeRemaining {
+		return 0
+	}
+	return required - activeRemaining
+}
+
+func reserveQuota(ctx context.Context, userID, required int64, reason string) error {
+	if required <= 0 {
 		return nil
 	}
 
@@ -43,6 +49,27 @@ func reserveQuota(ctx context.Context, userID, needed int64, reason string) erro
 	if _, err := sess.Exec("SELECT pg_advisory_xact_lock($1, $2)", quotaLeaseLockNamespace, userID); err != nil {
 		_ = sess.Rollback()
 		return err
+	}
+
+	leaseRows, err := sess.QueryString(`
+SELECT remaining_credits
+FROM billing_quota_leases
+WHERE user_id = $1 AND status = 'active' AND expires_at > NOW()
+FOR UPDATE`, userID)
+	if err != nil {
+		_ = sess.Rollback()
+		return err
+	}
+	activeRemaining := int64(0)
+	for _, row := range leaseRows {
+		remaining, _ := strconv.ParseInt(row["remaining_credits"], 10, 64)
+		if remaining > 0 {
+			activeRemaining += remaining
+		}
+	}
+	needed := quotaReserveNeeded(required, activeRemaining)
+	if needed <= 0 {
+		return sess.Commit()
 	}
 
 	rows, err := sess.QueryString("SELECT balance FROM users WHERE id = $1 FOR UPDATE", userID)
@@ -60,17 +87,7 @@ func reserveQuota(ctx context.Context, userID, needed int64, reason string) erro
 		return fmt.Errorf("余额不足")
 	}
 
-	reserve := quotaLeaseMinTopUpCredits
-	if needed > reserve {
-		reserve = needed
-	}
-	if balance < reserve {
-		reserve = balance
-	}
-	if reserve < needed {
-		_ = sess.Rollback()
-		return fmt.Errorf("余额不足")
-	}
+	reserve := needed
 
 	if _, err := sess.Exec("UPDATE users SET balance = balance - $1 WHERE id = $2 AND balance >= $1", reserve, userID); err != nil {
 		_ = sess.Rollback()
@@ -200,7 +217,7 @@ func SyncQuotaToRedis(ctx context.Context, userID int64) (int64, error) {
 	found, err := db.Engine.SQL(`
 SELECT id, remaining_credits, expires_at
 FROM billing_quota_leases
-WHERE user_id = $1 AND status = 'active'
+WHERE user_id = $1 AND status = 'active' AND expires_at > NOW()
 ORDER BY id DESC
 LIMIT 1`, userID).Get(&row)
 	if err != nil {
@@ -241,7 +258,7 @@ func ensureQuota(ctx context.Context, userID, credits int64) error {
 	if remaining >= credits {
 		return nil
 	}
-	return reserveQuota(ctx, userID, credits-remaining, "charge")
+	return reserveQuota(ctx, userID, credits, "charge")
 }
 
 func ensureRefundQuotaLease(ctx context.Context, userID int64) error {

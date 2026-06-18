@@ -5,15 +5,21 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	"fanapi/internal/billing"
 	"fanapi/internal/db"
 	"fanapi/internal/model"
 )
+
+var ErrDuplicateBillingTransaction = errors.New("duplicate billing transaction")
+
+const billingRefundJobRunningTimeout = 10 * time.Minute
 
 // WriteTx 写入一条计费流水，并在需要时同步余额。
 // poolKeyID 为本次请求使用的号池 Key ID（0 表示未使用号池）。
@@ -36,6 +42,10 @@ func WriteTx(ctx context.Context, userID, channelID, apiKeyID, poolKeyID int64, 
 	refundDedupeKey := ""
 	if txType == "refund" {
 		refundDedupeKey = ensureRefundDedupeKey(userID, corrID, credits, cost, modelCreditCharged, metrics)
+	}
+	consumptionDedupeKey := ""
+	if isConsumptionTx(txType) {
+		consumptionDedupeKey = ensureBillingDedupeKey(userID, corrID, txType, credits, cost, modelCreditCharged, taskID, llmLogID, metrics)
 	}
 	tx := &model.BillingTransaction{
 		UserID:             userID,
@@ -116,7 +126,7 @@ func WriteTx(ctx context.Context, userID, channelID, apiKeyID, poolKeyID int64, 
 	}
 
 	if redisPreApplied {
-		if txType == "refund" && refundRetryJob && refundDedupeKey != "" {
+		if txType == "refund" && refundDedupeKey != "" {
 			if exists, err := refundTxExists(sess, refundDedupeKey); err != nil {
 				if rbErr := sess.Rollback(); rbErr != nil {
 					log.Printf("[billing] rollback failed: %v", rbErr)
@@ -126,8 +136,24 @@ func WriteTx(ctx context.Context, userID, channelID, apiKeyID, poolKeyID int64, 
 				if rbErr := sess.Rollback(); rbErr != nil {
 					log.Printf("[billing] rollback failed: %v", rbErr)
 				}
+				compensateRedis("duplicate_refund_tx")
 				billing.InvalidateBalanceCache(context.Background(), userID)
 				return nil
+			}
+		}
+		if consumptionDedupeKey != "" {
+			if exists, err := billingTxExistsByDedupeKey(sess, consumptionDedupeKey); err != nil {
+				if rbErr := sess.Rollback(); rbErr != nil {
+					log.Printf("[billing] rollback failed: %v", rbErr)
+				}
+				return handlePreAppliedFailure("dedupe_lookup", err)
+			} else if exists {
+				if rbErr := sess.Rollback(); rbErr != nil {
+					log.Printf("[billing] rollback failed: %v", rbErr)
+				}
+				compensateRedis("duplicate_consumption_tx")
+				billing.InvalidateBalanceCache(context.Background(), userID)
+				return fmt.Errorf("%w: %s", ErrDuplicateBillingTransaction, consumptionDedupeKey)
 			}
 		}
 		if err := billing.ApplyQuotaLeaseTx(sess, userID, txType, generalCredits); err != nil {
@@ -168,6 +194,16 @@ func WriteTx(ctx context.Context, userID, channelID, apiKeyID, poolKeyID int64, 
 	if _, err := sess.Insert(tx); err != nil {
 		if rbErr := sess.Rollback(); rbErr != nil {
 			log.Printf("[billing] rollback failed: %v", rbErr)
+		}
+		if txType == "refund" && refundDedupeKey != "" && isUniqueViolation(err) {
+			compensateRedis("duplicate_refund_tx")
+			billing.InvalidateBalanceCache(context.Background(), userID)
+			return nil
+		}
+		if consumptionDedupeKey != "" && isUniqueViolation(err) {
+			compensateRedis("duplicate_consumption_tx")
+			billing.InvalidateBalanceCache(context.Background(), userID)
+			return fmt.Errorf("%w: %s", ErrDuplicateBillingTransaction, consumptionDedupeKey)
 		}
 		return handlePreAppliedFailure("insert_tx", err)
 	}
@@ -454,6 +490,51 @@ func CountTransactions(ctx context.Context, userID int64, corrID, taskID string)
 	return count, err
 }
 
+func isConsumptionTx(txType string) bool {
+	switch txType {
+	case "charge", "hold", "settle":
+		return true
+	default:
+		return false
+	}
+}
+
+func ensureBillingDedupeKey(userID int64, corrID, txType string, credits, cost, modelCreditCharged, taskID, llmLogID int64, metrics model.JSON) string {
+	if metrics == nil {
+		metrics = model.JSON{}
+	}
+	if key, _ := metrics["billing_dedupe_key"].(string); key != "" {
+		return key
+	}
+	payload := map[string]interface{}{
+		"user_id":    userID,
+		"type":       txType,
+		"corr_id":    corrID,
+		"task_id":    taskID,
+		"llm_log_id": llmLogID,
+	}
+	if corrID == "" && taskID == 0 && llmLogID == 0 {
+		clean := model.JSON{}
+		for k, v := range metrics {
+			switch k {
+			case "billing_dedupe_key", "refund_dedupe_key", "refund_retry_job", "skip_redis_sync", "last_error":
+				continue
+			default:
+				clean[k] = v
+			}
+		}
+		payload["credits"] = credits
+		payload["cost"] = cost
+		payload["model_credit_charged"] = modelCreditCharged
+		payload["metrics"] = clean
+	}
+	b, _ := json.Marshal(payload)
+	sum := sha1.Sum(b)
+	key := hex.EncodeToString(sum[:])
+	metrics["billing_dedupe_key"] = key
+	return key
+}
+
 func ensureRefundDedupeKey(userID int64, corrID string, credits, cost, modelCreditCharged int64, metrics model.JSON) string {
 	if metrics == nil {
 		metrics = model.JSON{}
@@ -464,7 +545,7 @@ func ensureRefundDedupeKey(userID int64, corrID string, credits, cost, modelCred
 	clean := model.JSON{}
 	for k, v := range metrics {
 		switch k {
-		case "refund_dedupe_key", "refund_retry_job", "skip_redis_sync", "last_error":
+		case "billing_dedupe_key", "refund_dedupe_key", "refund_retry_job", "skip_redis_sync", "last_error":
 			continue
 		default:
 			clean[k] = v
@@ -499,6 +580,31 @@ func refundTxExists(sess interface {
 		return false, err
 	}
 	return len(rows) > 0, nil
+}
+
+func billingTxExistsByDedupeKey(sess interface {
+	QueryString(...interface{}) ([]map[string]string, error)
+}, dedupeKey string) (bool, error) {
+	if dedupeKey == "" {
+		return false, nil
+	}
+	rows, err := sess.QueryString(
+		"SELECT id FROM billing_transactions WHERE type IN ('charge','hold','settle') AND metrics->>'billing_dedupe_key' = $1 LIMIT 1",
+		dedupeKey,
+	)
+	if err != nil {
+		return false, err
+	}
+	return len(rows) > 0, nil
+}
+
+func isUniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "SQLSTATE 23505") ||
+		strings.Contains(msg, "duplicate key value violates unique constraint")
 }
 
 func cloneMetrics(metrics model.JSON) model.JSON {
@@ -612,6 +718,9 @@ func ProcessBillingRefundJobs(ctx context.Context, limit int) (int, error) {
 	if limit <= 0 {
 		limit = 100
 	}
+	if _, err := reclaimStaleBillingRefundJobs(ctx, time.Now().Add(-billingRefundJobRunningTimeout)); err != nil {
+		return 0, err
+	}
 	var jobs []model.BillingRefundJob
 	if err := db.Engine.Context(ctx).
 		Where("status = ? AND next_run_at <= ?", "pending", time.Now()).
@@ -623,12 +732,57 @@ func ProcessBillingRefundJobs(ctx context.Context, limit int) (int, error) {
 
 	processed := 0
 	for _, job := range jobs {
+		claimed, err := claimBillingRefundJob(ctx, job.ID)
+		if err != nil {
+			return processed, err
+		}
+		if !claimed {
+			continue
+		}
 		if err := processBillingRefundJob(ctx, job); err != nil {
+			if releaseErr := releaseBillingRefundJob(ctx, job.ID, err); releaseErr != nil {
+				return processed, releaseErr
+			}
 			return processed, err
 		}
 		processed++
 	}
 	return processed, nil
+}
+
+func reclaimStaleBillingRefundJobs(ctx context.Context, before time.Time) (int64, error) {
+	return db.Engine.Context(ctx).
+		Where("status = ? AND updated_at < ?", "running", before).
+		Cols("status", "next_run_at", "last_error", "updated_at").
+		Update(&model.BillingRefundJob{
+			Status:    "pending",
+			NextRunAt: time.Now(),
+			LastError: "reclaimed stale running refund job",
+			UpdatedAt: time.Now(),
+		})
+}
+
+func claimBillingRefundJob(ctx context.Context, jobID int64) (bool, error) {
+	affected, err := db.Engine.Context(ctx).
+		Where("id = ? AND status = ?", jobID, "pending").
+		Cols("status", "updated_at").
+		Update(&model.BillingRefundJob{Status: "running", UpdatedAt: time.Now()})
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
+}
+
+func releaseBillingRefundJob(ctx context.Context, jobID int64, cause error) error {
+	_, err := db.Engine.Context(ctx).
+		ID(jobID).
+		Cols("status", "last_error", "updated_at").
+		Update(&model.BillingRefundJob{
+			Status:    "pending",
+			LastError: fmt.Sprint(cause),
+			UpdatedAt: time.Now(),
+		})
+	return err
 }
 
 func processBillingRefundJob(ctx context.Context, job model.BillingRefundJob) error {
@@ -668,8 +822,9 @@ func processBillingRefundJob(ctx context.Context, job model.BillingRefundJob) er
 		}
 		_, updateErr := db.Engine.Context(ctx).
 			ID(job.ID).
-			Cols("attempts", "next_run_at", "last_error", "updated_at").
+			Cols("status", "attempts", "next_run_at", "last_error", "updated_at").
 			Update(&model.BillingRefundJob{
+				Status:    "pending",
 				Attempts:  attempts,
 				NextRunAt: time.Now().Add(backoff),
 				LastError: err.Error(),

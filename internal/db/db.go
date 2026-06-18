@@ -94,7 +94,10 @@ func Init(cfg *config.DBConfig, migrate bool) error {
 	if err := seedChannels(); err != nil {
 		return err
 	}
-	return ensureIndexes()
+	if err := ensureIndexes(); err != nil {
+		return err
+	}
+	return ensureBillingConstraints()
 }
 
 // ensureIndexes creates performance indexes if they don't already exist.
@@ -164,6 +167,22 @@ func ensureIndexes() error {
 			`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_billing_tx_pool_key_type
 			ON billing_transactions (pool_key_id, type)
 			WHERE pool_key_id != 0`,
+		},
+		{
+			"idx_billing_tx_refund_dedupe",
+			`CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_billing_tx_refund_dedupe
+			ON billing_transactions ((metrics->>'refund_dedupe_key'))
+			WHERE type = 'refund'
+			  AND metrics ? 'refund_dedupe_key'
+			  AND metrics->>'refund_dedupe_key' != ''`,
+		},
+		{
+			"idx_billing_tx_consumption_dedupe",
+			`CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_billing_tx_consumption_dedupe
+			ON billing_transactions ((metrics->>'billing_dedupe_key'))
+			WHERE type IN ('charge', 'hold', 'settle')
+			  AND metrics ? 'billing_dedupe_key'
+			  AND metrics->>'billing_dedupe_key' != ''`,
 		},
 		{
 			"idx_balance_sync_jobs_pending",
@@ -414,6 +433,46 @@ func ensureIndexes() error {
 			return fmt.Errorf("create index %s: %w", idx.name, err)
 		}
 		log.Printf("[db] index ensured: %s", idx.name)
+	}
+	return nil
+}
+
+func ensureBillingConstraints() error {
+	constraints := []struct {
+		name string
+		ddl  string
+	}{
+		{
+			"chk_users_balance_nonnegative",
+			`DO $$
+BEGIN
+	IF NOT EXISTS (
+		SELECT 1 FROM pg_constraint WHERE conname = 'chk_users_balance_nonnegative'
+	) THEN
+		ALTER TABLE users
+		ADD CONSTRAINT chk_users_balance_nonnegative CHECK (balance >= 0) NOT VALID;
+	END IF;
+END $$;`,
+		},
+		{
+			"chk_billing_quota_leases_nonnegative",
+			`DO $$
+BEGIN
+	IF NOT EXISTS (
+		SELECT 1 FROM pg_constraint WHERE conname = 'chk_billing_quota_leases_nonnegative'
+	) THEN
+		ALTER TABLE billing_quota_leases
+		ADD CONSTRAINT chk_billing_quota_leases_nonnegative
+		CHECK (remaining_credits >= 0 AND reserved_credits >= 0) NOT VALID;
+	END IF;
+END $$;`,
+		},
+	}
+	for _, c := range constraints {
+		if _, err := Engine.Exec(c.ddl); err != nil {
+			return fmt.Errorf("ensure constraint %s: %w", c.name, err)
+		}
+		log.Printf("[db] constraint ensured: %s", c.name)
 	}
 	return nil
 }
