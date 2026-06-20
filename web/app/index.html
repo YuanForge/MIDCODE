@@ -5,6 +5,15 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MidCode</title>
+    <script src="/env.js"></script>
+    <script>
+      ;(function () {
+        var env = window.__FANAPI_ENV__ || {}
+        if (env.site_name && String(env.site_name).trim()) {
+          document.title = String(env.site_name)
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

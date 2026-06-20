@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { getRuntimeString } from '@/lib/runtime-env'
 import { publicApi } from '@/lib/api/public'
 
 export type Plan = {
@@ -34,8 +35,8 @@ export type SiteSettings = {
 }
 
 const defaultSettings: SiteSettings = {
-  siteName: 'MidCode',
-  logoUrl: '',
+  siteName: getRuntimeString('site_name', 'MidCode'),
+  logoUrl: getRuntimeString('logo_url'),
   tutorialMarkdown: '',
   plans: [],
   epayEnabled: false,
@@ -71,8 +72,8 @@ export function useSiteSettings() {
             ? (maybeSettings as Record<string, any>)
             : (response as Record<string, any>)
         setSettings({
-          siteName: record.site_name || 'MidCode',
-          logoUrl: record.logo_url || '',
+          siteName: getRuntimeString('site_name', record.site_name || 'MidCode'),
+          logoUrl: getRuntimeString('logo_url', record.logo_url || ''),
           tutorialMarkdown: record.tutorial_markdown || '',
           plans: (() => {
             try { return JSON.parse(record.recharge_plans || '[]') } catch { return [] }

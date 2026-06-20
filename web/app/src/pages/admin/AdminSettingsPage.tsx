@@ -288,7 +288,7 @@ export function AdminSettingsPage() {
                 <div className="max-w-2xl divide-y">
                   <FieldRow label="站点名称">
                     <Input value={form.site_name ?? ''} onChange={(e) => set('site_name', e.target.value)} placeholder="例如：FanAPI" />
-                    <Tip>显示在浏览器标题栏和页面 Logo 旁</Tip>
+                    <Tip>显示在浏览器标题栏和页面 Logo 旁；如果 env.js 配置了 site_name，则前台展示会优先使用 env.js</Tip>
                   </FieldRow>
                   <FieldRow label="Logo 图片">
                     <div className="flex gap-2">
@@ -299,7 +299,7 @@ export function AdminSettingsPage() {
                       </Button>
                     </div>
                     <input ref={logoRef} type="file" accept="image/*" className="hidden" onChange={(e) => { void uploadLogoImage(e.target.files?.[0]); e.target.value = '' }} />
-                    <Tip>支持手填 URL 或本地上传 PNG / SVG，建议尺寸 32×32 或 64×64，留空则使用首字母</Tip>
+                    <Tip>支持手填 URL 或本地上传 PNG / SVG，建议尺寸 32×32 或 64×64；如果 env.js 配置了 logo_url，则前台展示会优先使用 env.js</Tip>
                   </FieldRow>
                   {form.logo_url ? (
                     <FieldRow label="Logo 预览">
