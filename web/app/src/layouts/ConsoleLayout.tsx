@@ -8,8 +8,6 @@ import {
   BriefcaseBusinessIcon,
   CreditCardIcon,
   FileClockIcon,
-  HeadphonesIcon,
-  ImageIcon,
   KeySquareIcon,
   LayoutDashboardIcon,
   ListIcon,
@@ -21,12 +19,12 @@ import {
   SettingsIcon,
   ShareIcon,
   ShoppingCartIcon,
+  SparklesIcon,
   TicketIcon,
   TrendingUpIcon,
   UserRoundIcon,
   UsersIcon,
   UsersRoundIcon,
-  VideoIcon,
   WalletCardsIcon,
   WalletIcon,
 } from 'lucide-react'
@@ -186,7 +184,9 @@ export function ConsoleLayout({
   const navGroups = rawGroups.filter((g) => !g.requiresAuth || isLoggedIn)
 
   function translateUserLabel(label: string, labelKey?: string) {
-    return role === 'user' && labelKey ? t(labelKey) : label
+    if (role !== 'user' || !labelKey) return label
+    const translated = t(labelKey)
+    return translated === labelKey ? label : translated
   }
 
   function translateUserText(key: string, fallback: string) {
@@ -382,9 +382,7 @@ export const userNavGroups: NavGroup[] = [
     requiresAuth: true,
     items: [
       { label: '文本对话', labelKey: 'layout.navPlayground', href: '/playground', icon: MessageSquareIcon },
-      { label: '图片生成', labelKey: 'layout.navImageGen', href: '/image-gen', icon: ImageIcon },
-      { label: '视频生成', labelKey: 'layout.navVideoGen', href: '/video-gen', icon: VideoIcon },
-      { label: '音乐生成', labelKey: 'layout.navMusicGen', href: '/music-gen', icon: HeadphonesIcon },
+      { label: '创作中心', labelKey: 'layout.navCreation', href: '/creation', icon: SparklesIcon },
     ],
   },
   {
@@ -412,6 +410,7 @@ export const adminNavItems: NavItem[] = [
   { label: 'API Key', href: '/admin/api-keys', icon: KeySquareIcon },
   { label: '账单流水', href: '/admin/billing', icon: WalletCardsIcon },
   { label: '充值订单', href: '/admin/payments', icon: CreditCardIcon },
+  { label: 'VIP 分组', href: '/admin/vip-groups', icon: UsersRoundIcon },
   { label: '优惠券', href: '/admin/coupons', icon: TicketIcon },
   { label: '任务中心', href: '/admin/tasks', icon: ListIcon },
   { label: '调用日志', href: '/admin/llm-logs', icon: FileClockIcon },

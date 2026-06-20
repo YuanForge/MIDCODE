@@ -100,6 +100,60 @@ func TestCalcForUser_VideoPricePerSecondWithStringDuration(t *testing.T) {
 	}
 }
 
+func TestCalcForUser_AppliesVIPDiscountWithIntegerBps(t *testing.T) {
+	RegisterVIPDiscountLookup(func(group string) int64 {
+		if group == "vip" {
+			return 8500
+		}
+		return 10000
+	})
+	defer RegisterVIPDiscountLookup(nil)
+
+	channel := &model.Channel{
+		BillingType: "count",
+		BillingConfig: model.JSON{
+			"price_per_call": int64(101),
+		},
+	}
+
+	cost, _, err := CalcForUser(channel, nil, "vip")
+	if err != nil {
+		t.Fatalf("CalcForUser returned error: %v", err)
+	}
+
+	const want int64 = 86
+	if cost != want {
+		t.Fatalf("CalcForUser = %d, want %d", cost, want)
+	}
+}
+
+func TestCalcForUser_VIPDiscountDoesNotRoundToZero(t *testing.T) {
+	RegisterVIPDiscountLookup(func(group string) int64 {
+		if group == "vip" {
+			return 1
+		}
+		return 10000
+	})
+	defer RegisterVIPDiscountLookup(nil)
+
+	channel := &model.Channel{
+		BillingType: "count",
+		BillingConfig: model.JSON{
+			"price_per_call": int64(1),
+		},
+	}
+
+	cost, _, err := CalcForUser(channel, nil, "vip")
+	if err != nil {
+		t.Fatalf("CalcForUser returned error: %v", err)
+	}
+
+	const want int64 = 1
+	if cost != want {
+		t.Fatalf("CalcForUser = %d, want %d", cost, want)
+	}
+}
+
 func TestCalcUpstreamCost_VideoCostPerSecondWithStringDuration(t *testing.T) {
 	channel := &model.Channel{
 		BillingType: "video",

@@ -8,6 +8,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 // PUT /admin/users/:id/password — 管理员重置任意用户密码
@@ -52,18 +53,19 @@ func ListUsers(c *gin.Context) {
 	}
 
 	type adminUserRow struct {
-		ID           int64    `json:"id"`
-		Username     string   `json:"username"`
-		Email        *string  `json:"email"`
-		Role         string   `json:"role"`
-		Group        string   `json:"group"`
-		Balance      int64    `json:"balance"`
-		IsActive     bool     `json:"is_active"`
-		FrozenReason string   `json:"frozen_reason,omitempty"`
-		RebateRatio  *float64 `json:"rebate_ratio,omitempty"`
-		CreatedAt    string   `json:"created_at"`
-		InviteCount  int64    `json:"invite_count"`
-		TotalSpent   int64    `json:"total_spent"`
+		ID                  int64    `json:"id"`
+		Username            string   `json:"username"`
+		Email               *string  `json:"email"`
+		Role                string   `json:"role"`
+		Group               string   `json:"group"`
+		VIPRechargeBaseline int64    `json:"vip_recharge_baseline"`
+		Balance             int64    `json:"balance"`
+		IsActive            bool     `json:"is_active"`
+		FrozenReason        string   `json:"frozen_reason,omitempty"`
+		RebateRatio         *float64 `json:"rebate_ratio,omitempty"`
+		CreatedAt           string   `json:"created_at"`
+		InviteCount         int64    `json:"invite_count"`
+		TotalSpent          int64    `json:"total_spent"`
 	}
 
 	// 构建 WHERE 条件
@@ -135,7 +137,7 @@ func ListUsers(c *gin.Context) {
 
 	sql := `
 SELECT
-  u.id, u.username, u.email, u.role, u."group", ` + balanceExpr + ` AS balance, u.is_active, u.frozen_reason, u.rebate_ratio, u.created_at,
+  u.id, u.username, u.email, u.role, u."group", u.vip_recharge_baseline, ` + balanceExpr + ` AS balance, u.is_active, u.frozen_reason, u.rebate_ratio, u.created_at,
   COALESCE((SELECT COUNT(*) FROM users WHERE inviter_id = u.id), 0) AS invite_count,
   COALESCE((SELECT SUM(CASE WHEN type IN ('charge','hold','settle') THEN credits WHEN type = 'refund' THEN -credits ELSE 0 END) FROM billing_transactions WHERE user_id = u.id), 0) AS total_spent
 FROM users u
@@ -156,17 +158,19 @@ LIMIT $` + strconv.Itoa(limitArg) + ` OFFSET $` + strconv.Itoa(offsetArg)
 		inviteCount, _ := strconv.ParseInt(r["invite_count"], 10, 64)
 		totalSpent, _ := strconv.ParseInt(r["total_spent"], 10, 64)
 		isActive := r["is_active"] == "true" || r["is_active"] == "t" || r["is_active"] == "1"
+		baseline, _ := strconv.ParseInt(r["vip_recharge_baseline"], 10, 64)
 		row := adminUserRow{
-			ID:           id,
-			Username:     r["username"],
-			Role:         r["role"],
-			Group:        r["group"],
-			Balance:      balance,
-			IsActive:     isActive,
-			FrozenReason: r["frozen_reason"],
-			CreatedAt:    r["created_at"],
-			InviteCount:  inviteCount,
-			TotalSpent:   totalSpent,
+			ID:                  id,
+			Username:            r["username"],
+			Role:                r["role"],
+			Group:               r["group"],
+			VIPRechargeBaseline: baseline,
+			Balance:             balance,
+			IsActive:            isActive,
+			FrozenReason:        r["frozen_reason"],
+			CreatedAt:           r["created_at"],
+			InviteCount:         inviteCount,
+			TotalSpent:          totalSpent,
 		}
 		if email, ok := r["email"]; ok && email != "" {
 			row.Email = &email
@@ -201,8 +205,12 @@ func SetUserGroup(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if _, err := db.Engine.ID(id).Cols("group").Update(&model.User{Group: req.Group}); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := service.SetUserVIPGroup(c.Request.Context(), id, req.Group); err != nil {
+		status := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "请选择") || strings.Contains(err.Error(), "不存在") || strings.Contains(err.Error(), "停用") {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "group updated"})
@@ -409,16 +417,18 @@ func BatchUpdateUsers(c *gin.Context) {
 			return
 		}
 	case "set_group":
-		if req.Group == "" {
+		group := strings.TrimSpace(req.Group)
+		if err := service.ValidateAssignableVIPGroup(c.Request.Context(), group); err != nil {
 			sess.Rollback()
-			c.JSON(http.StatusBadRequest, gin.H{"error": "set_group 操作需要提供 group 值"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		if _, err := sess.In("id", req.IDs).Cols("group").
-			Update(&model.User{Group: req.Group}); err != nil {
-			sess.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+		for _, id := range req.IDs {
+			if err := service.SetUserVIPGroupTx(sess, id, group); err != nil {
+				sess.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
 		}
 	default:
 		sess.Rollback()

@@ -16,6 +16,7 @@ const PERMISSION_REQUIRED: Record<string, string> = {
   // 账单 / 卡密 / 优惠券
   '/admin/billing':       'billing:read',
   '/admin/payments':      'billing:read',
+  '/admin/vip-groups':    'billing:read',
   '/admin/coupons':       'billing:read',
   '/admin/cards':         'cards:read',
   // 提现

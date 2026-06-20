@@ -208,6 +208,15 @@ func WriteTx(ctx context.Context, userID, channelID, apiKeyID, poolKeyID int64, 
 		return handlePreAppliedFailure("insert_tx", err)
 	}
 
+	if txType == "recharge" {
+		if _, _, err := refreshUserVIPGroupTx(sess, userID); err != nil {
+			if rbErr := sess.Rollback(); rbErr != nil {
+				log.Printf("[billing] rollback failed: %v", rbErr)
+			}
+			return err
+		}
+	}
+
 	if !skipRedisSync && !redisPreApplied && delta != 0 {
 		balanceSyncJob = &model.BalanceSyncJob{
 			UserID: userID,

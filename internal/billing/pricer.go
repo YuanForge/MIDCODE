@@ -4,10 +4,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/big"
 	"strings"
+	"sync"
 
 	"fanapi/internal/model"
 )
+
+var (
+	vipDiscountLookupMu sync.RWMutex
+	vipDiscountLookup   func(string) int64
+)
+
+func RegisterVIPDiscountLookup(fn func(string) int64) {
+	vipDiscountLookupMu.Lock()
+	defer vipDiscountLookupMu.Unlock()
+	vipDiscountLookup = fn
+}
 
 // Calc 根据请求参数计算预扣费用。
 //
@@ -37,7 +50,7 @@ func Calc(ch *model.Channel, req map[string]interface{}) (inputHold int64, outpu
 //	  }
 //	}
 func CalcForUser(ch *model.Channel, req map[string]interface{}, userGroup string) (inputHold int64, outputHold int64, err error) {
-	cfg := applyGroupPricing(map[string]interface{}(ch.BillingConfig), userGroup)
+	cfg := EffectivePricingConfig(map[string]interface{}(ch.BillingConfig), userGroup)
 	data := map[string]map[string]interface{}{"request": req}
 
 	switch ch.BillingType {
@@ -54,9 +67,6 @@ func CalcForUser(ch *model.Channel, req map[string]interface{}, userGroup string
 		return cost, 0, e
 	case "count":
 		cost, e := calcCount(cfg)
-		return cost, 0, e
-	case "custom":
-		cost, e := calcCustom(ch.BillingScript, req)
 		return cost, 0, e
 	default:
 		return 0, 0, fmt.Errorf("未知计费类型: %s", ch.BillingType)
@@ -87,6 +97,119 @@ func applyGroupPricing(cfg map[string]interface{}, group string) map[string]inte
 	return merged
 }
 
+func EffectivePricingConfig(cfg map[string]interface{}, group string) map[string]interface{} {
+	return applyVIPDiscount(applyGroupPricing(cfg, group), group)
+}
+
+func applyVIPDiscount(cfg map[string]interface{}, group string) map[string]interface{} {
+	if group == "" || cfg == nil {
+		return cfg
+	}
+	discountBps := lookupVIPDiscountBps(group)
+	if discountBps <= 0 || discountBps >= 10000 {
+		return cfg
+	}
+	merged := cloneConfigMap(cfg)
+	discountPriceFields(merged, discountBps)
+	return merged
+}
+
+func lookupVIPDiscountBps(group string) int64 {
+	vipDiscountLookupMu.RLock()
+	fn := vipDiscountLookup
+	vipDiscountLookupMu.RUnlock()
+	if fn == nil {
+		return 10000
+	}
+	return fn(group)
+}
+
+func cloneConfigMap(cfg map[string]interface{}) map[string]interface{} {
+	merged := make(map[string]interface{}, len(cfg))
+	for key, value := range cfg {
+		merged[key] = value
+	}
+	return merged
+}
+
+func discountPriceFields(cfg map[string]interface{}, discountBps int64) {
+	for _, key := range []string{
+		"input_price_per_1m_tokens",
+		"output_price_per_1m_tokens",
+		"cache_creation_price_per_1m_tokens",
+		"cache_read_price_per_1m_tokens",
+		"base_price",
+		"default_size_price",
+		"price_per_second",
+		"price_per_call",
+		"price_per_count",
+	} {
+		discountConfigNumber(cfg, key, discountBps)
+	}
+	if raw, ok := cfg["size_prices"]; ok {
+		if discounted, changed := discountNumericMap(raw, discountBps); changed {
+			cfg["size_prices"] = discounted
+		}
+	}
+}
+
+func discountConfigNumber(cfg map[string]interface{}, key string, discountBps int64) {
+	value, ok := cfg[key]
+	if !ok {
+		return
+	}
+	n, ok := configNumberInt64(value)
+	if !ok || n <= 0 {
+		return
+	}
+	cfg[key] = multiplyCreditsByBpsCeil(n, discountBps)
+}
+
+func discountNumericMap(raw interface{}, discountBps int64) (map[string]interface{}, bool) {
+	values, ok := raw.(map[string]interface{})
+	if !ok {
+		if typed, ok := raw.(model.JSON); ok {
+			values = map[string]interface{}(typed)
+		} else {
+			return nil, false
+		}
+	}
+	changed := false
+	out := make(map[string]interface{}, len(values))
+	for key, value := range values {
+		n, ok := configNumberInt64(value)
+		if ok && n > 0 {
+			out[key] = multiplyCreditsByBpsCeil(n, discountBps)
+			changed = true
+			continue
+		}
+		out[key] = value
+	}
+	return out, changed
+}
+
+func configNumberInt64(value interface{}) (int64, bool) {
+	n, err := ToInt64(value)
+	return n, err == nil
+}
+
+func multiplyCreditsByBpsCeil(credits int64, bps int64) int64 {
+	if credits <= 0 || bps <= 0 {
+		return 0
+	}
+	product := credits * bps
+	if product/credits == bps {
+		return (product + 9999) / 10000
+	}
+	productBig := new(big.Int).Mul(big.NewInt(credits), big.NewInt(bps))
+	productBig.Add(productBig, big.NewInt(9999))
+	productBig.Div(productBig, big.NewInt(10000))
+	if !productBig.IsInt64() {
+		return math.MaxInt64
+	}
+	return productBig.Int64()
+}
+
 // CalcActualCost 根据请求 + SSE 响应中的实际用量计算真实总费用（仅用于 LLM token 类型结算）。
 //
 // 无论 input_from_response 如何，结算值始终包含输入 + 输出两部分：
@@ -102,7 +225,7 @@ func CalcActualCostForUser(ch *model.Channel, req, resp map[string]interface{}, 
 	if ch.BillingType != "token" {
 		return 0, nil
 	}
-	cfg := applyGroupPricing(map[string]interface{}(ch.BillingConfig), userGroup)
+	cfg := EffectivePricingConfig(map[string]interface{}(ch.BillingConfig), userGroup)
 	data := map[string]map[string]interface{}{"request": req, "response": resp}
 
 	outputPricePer1m := getInt64Val(cfg, "output_price_per_1m_tokens")
@@ -319,11 +442,6 @@ func calcAudio(cfg map[string]interface{}, data map[string]map[string]interface{
 // calcCount 按次固定收费。
 func calcCount(cfg map[string]interface{}) (int64, error) {
 	return getInt64Val(cfg, "price_per_call"), nil
-}
-
-// calcCustom 调用 JS 自定义计费脚本（goja 运行时）。
-func calcCustom(script string, req map[string]interface{}) (int64, error) {
-	return RunBillingScript(script, req, nil)
 }
 
 // ---- 辅助函数 ----

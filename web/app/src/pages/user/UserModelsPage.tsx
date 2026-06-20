@@ -671,6 +671,10 @@ export function UserModelsPage() {
                     <div className="text-xs text-muted-foreground">{t('models.exclusivePrice')}</div>
                     <div className="mt-1 whitespace-pre-wrap text-sm font-medium text-emerald-600">{docChannel.group_price || t('common.noDifference')}</div>
                   </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">原价</div>
+                    <div className="mt-1 whitespace-pre-wrap text-sm font-medium">{docChannel.price_display || t('models.defaultPriceEmpty')}</div>
+                  </div>
                 </div>
 
                 <div className="rounded-xl border bg-accent/50 p-4 text-sm leading-relaxed">

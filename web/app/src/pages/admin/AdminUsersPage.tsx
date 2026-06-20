@@ -34,7 +34,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { adminApi, type AdminUser, type AdminUserPortrait, type AdminAuditLog, type AdminRiskLabel, type AdminUserReferrals } from '@/lib/api/admin'
+import { adminApi, type AdminUser, type AdminUserPortrait, type AdminAuditLog, type AdminRiskLabel, type AdminUserReferrals, type AdminVIPGroup } from '@/lib/api/admin'
 import { useAsync } from '@/hooks/use-async'
 
 type DialogMode = 'recharge' | 'password' | 'group' | 'rebate' | 'model_credit' | 'freeze' | 'create' | 'delete' | 'detail' | 'batch_group' | 'batch_freeze' | null
@@ -290,6 +290,14 @@ export function AdminUsersPage() {
     return { users, total }
   }, { users: [] as AdminUser[], total: 0 }, [page, queryParams])
 
+  const { data: vipGroups } = useAsync(async () => {
+    const res = await adminApi.listVipGroups(true)
+    return res.groups ?? []
+  }, [] as AdminVIPGroup[])
+  const activeVipGroups = vipGroups.filter(
+    (group): group is AdminVIPGroup & { code: string } => group.is_active !== false && Boolean(group.code?.trim())
+  )
+
   const [mutError, setMutError] = useState('')
   const [activeUser, setActiveUser] = useState<AdminUser | null>(null)
   const [dialogMode, setDialogMode] = useState<DialogMode>(null)
@@ -342,6 +350,10 @@ export function AdminUsersPage() {
   async function submitBatch(action: 'freeze' | 'unfreeze' | 'set_group') {
     setMutError('')
     const ids = Array.from(selectedIds) as number[]
+    if (action === 'set_group' && !batchGroup) {
+      setMutError('请选择 VIP 分组')
+      return
+    }
     try {
       await adminApi.batchUpdateUsers({
         action,
@@ -411,6 +423,10 @@ export function AdminUsersPage() {
       setMutError('两次密码不一致')
       return
     }
+    if (dialogMode === 'group' && !value) {
+      setMutError('请选择 VIP 分组')
+      return
+    }
     if (dialogMode === 'freeze') {
       setMutError('')
       try {
@@ -444,7 +460,7 @@ export function AdminUsersPage() {
       } else if (dialogMode === 'password') {
         await adminApi.resetUserPassword(activeUser.id, value)
       } else if (dialogMode === 'group') {
-        await adminApi.setUserGroup(activeUser.id, value)
+        await adminApi.setUserVipGroup(activeUser.id, value)
       } else if (dialogMode === 'rebate') {
         const ratio = rebatePct === '' ? null : parseFloat(rebatePct) / 100
         await adminApi.setUserRebateRatio(activeUser.id, ratio)
@@ -466,6 +482,18 @@ export function AdminUsersPage() {
     setMutError('')
     try {
       await adminApi.freezeUser(user.id, false)
+      reload()
+    } catch (err) {
+      const { getApiErrorMessage } = await import('@/lib/api/http')
+      setMutError(getApiErrorMessage(err))
+    }
+  }
+
+  async function refreshVip(user: AdminUser) {
+    if (!user.id) return
+    setMutError('')
+    try {
+      await adminApi.refreshUserVipGroup(user.id)
       reload()
     } catch (err) {
       const { getApiErrorMessage } = await import('@/lib/api/http')
@@ -556,7 +584,7 @@ export function AdminUsersPage() {
           <span className="text-sm font-medium">已选 {selectedIds.size} 人</span>
           <div className="flex items-center gap-2 ml-2">
             <Button size="sm" variant="outline" onClick={() => { setBatchReason(''); setDialogMode('batch_freeze') }}>批量冻结</Button>
-            <Button size="sm" variant="outline" onClick={() => { setBatchGroup(''); setDialogMode('batch_group') }}>批量改分组</Button>
+            <Button size="sm" variant="outline" onClick={() => { setBatchGroup(''); setDialogMode('batch_group') }}>批量设置 VIP</Button>
             <Button size="sm" variant="ghost" onClick={() => submitBatch('unfreeze')}>批量解封</Button>
           </div>
           <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setSelectedIds(new Set())}>
@@ -617,7 +645,14 @@ export function AdminUsersPage() {
                         {(row.is_active ?? true) ? '正常' : '冻结'}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{row.group || '-'}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      <div>{row.group || '-'}</div>
+                      {row.vip_recharge_baseline ? (
+                        <div className="text-[11px] text-muted-foreground/70">
+                          重新累计 ¥{(Number(row.vip_recharge_baseline) / 1e6).toFixed(2)}
+                        </div>
+                      ) : null}
+                    </TableCell>
                     <TableCell className="font-mono text-sm">{fmtBalance(row)}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {row.created_at ? new Date(row.created_at).toLocaleString('zh-CN') : '-'}
@@ -698,8 +733,16 @@ export function AdminUsersPage() {
                         <p className="text-xs text-muted-foreground">{activeUser.frozen_reason}</p>
                       ) : null}
                     </div>
-                    <div className="text-muted-foreground">定价分组</div>
-                    <div>{activeUser.group || <span className="text-muted-foreground/60">默认</span>}</div>
+                    <div className="text-muted-foreground">VIP 等级</div>
+                    <div>
+                      {activeUser.group || <span className="text-muted-foreground/60">未达标</span>}
+                    </div>
+                    <div className="text-muted-foreground">升档累计起点</div>
+                    <div>
+                      {activeUser.vip_recharge_baseline
+                        ? `¥${(Number(activeUser.vip_recharge_baseline) / 1e6).toFixed(2)}`
+                        : <span className="text-muted-foreground/60">¥0.00</span>}
+                    </div>
                     <div className="text-muted-foreground">返佣比例</div>
                     <div>{activeUser.rebate_ratio != null ? `${(activeUser.rebate_ratio * 100).toFixed(2)}%` : <span className="text-muted-foreground/60">全局默认</span>}</div>
                     <div className="text-muted-foreground">余额</div><div className="font-mono">{fmtBalance(activeUser)}</div>
@@ -713,7 +756,8 @@ export function AdminUsersPage() {
                     <Button size="sm" variant="outline" onClick={() => openDialog(activeUser, 'recharge')}>充值</Button>
                     <Button size="sm" variant="outline" onClick={() => openDialog(activeUser, 'model_credit')}>赠积分</Button>
                     <Button size="sm" variant="outline" onClick={() => openDialog(activeUser, 'password')}>改密</Button>
-                    <Button size="sm" variant="outline" onClick={() => openDialog(activeUser, 'group')}>设置分组</Button>
+                    <Button size="sm" variant="outline" onClick={() => openDialog(activeUser, 'group')}>设置 VIP</Button>
+                    <Button size="sm" variant="outline" onClick={() => refreshVip(activeUser)}>按充值升级</Button>
                     <Button size="sm" variant="outline" onClick={() => openDialog(activeUser, 'rebate')}>设置返佣</Button>
                     <Button
                       size="sm"
@@ -760,7 +804,7 @@ export function AdminUsersPage() {
                           ? '删除用户'
                           : dialogMode === 'create'
                             ? '创建用户'
-                            : '设置定价分组'}
+                            : '设置 VIP 等级'}
             </DialogTitle>
             <DialogDescription>
               {dialogMode === 'create'
@@ -864,27 +908,42 @@ export function AdminUsersPage() {
                     ? '充值积分数（credits）'
                     : dialogMode === 'password'
                       ? '新密码'
-                      : '分组名称'}
+                      : 'VIP 等级'}
                 </Label>
-                <Input
-                  value={value}
-                  type={dialogMode === 'password' ? 'password' : 'text'}
-                  onChange={(event) => setValue(event.target.value)}
-                  placeholder={
-                    dialogMode === 'recharge'
-                      ? '如：1000000（= ¥1）'
-                      : dialogMode === 'password'
-                        ? '至少 8 位'
-                        : '留空=默认定价，如 vip / premium'
-                  }
-                />
+                {dialogMode === 'group' ? (
+                  <Select value={value} onValueChange={setValue}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="选择 VIP 分组" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {activeVipGroups.map((group) => (
+                        <SelectItem key={group.code} value={group.code}>
+                          {group.name || group.code}（{group.discount_percent ?? ((group.discount_bps ?? 10000) / 100)}%）
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    value={value}
+                    type={dialogMode === 'password' ? 'password' : 'text'}
+                    onChange={(event) => setValue(event.target.value)}
+                    placeholder={
+                      dialogMode === 'recharge'
+                        ? '如：1000000（= ¥1）'
+                        : dialogMode === 'password'
+                          ? '至少 8 位'
+                          : ''
+                    }
+                  />
+                )}
                 {dialogMode === 'recharge' && value ? (
                   <p className="text-xs text-muted-foreground">
                     {Number(value).toLocaleString()} credits = ¥{(Number(value) / 1e6).toFixed(6)}
                   </p>
                 ) : null}
                 {dialogMode === 'group' ? (
-                  <p className="text-xs text-muted-foreground">分组名须与渠道 billing_config.pricing_groups 中的键对应</p>
+                  <p className="text-xs text-muted-foreground">管理员调整 VIP 后，系统会从当前累计充值额重新统计后续升档；用户后续充值或卡密兑换仍会自动升档。</p>
                 ) : null}
               </div>
             )}
@@ -940,13 +999,24 @@ export function AdminUsersPage() {
       <Dialog open={dialogMode === 'batch_group'} onOpenChange={() => setDialogMode(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>批量设置定价分组</DialogTitle>
-            <DialogDescription>将对已选 {selectedIds.size} 个用户统一设置分组。</DialogDescription>
+            <DialogTitle>批量设置 VIP 等级</DialogTitle>
+            <DialogDescription>将对已选 {selectedIds.size} 个用户统一设置 VIP 等级。</DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">
-            <Label>分组名称</Label>
-            <Input value={batchGroup} onChange={(e) => setBatchGroup(e.target.value)} placeholder="留空=默认分组，如 vip" />
-            <p className="text-xs text-muted-foreground">分组名须与渠道 billing_config.pricing_groups 中的键对应</p>
+            <Label>VIP 等级</Label>
+            <Select value={batchGroup} onValueChange={setBatchGroup}>
+              <SelectTrigger>
+                <SelectValue placeholder="选择 VIP 分组" />
+              </SelectTrigger>
+              <SelectContent>
+                {activeVipGroups.map((group) => (
+                  <SelectItem key={group.code} value={group.code}>
+                    {group.name || group.code}（{group.discount_percent ?? ((group.discount_bps ?? 10000) / 100)}%）
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">批量调整后，每个用户都会从各自当前累计充值额重新统计后续升档。</p>
           </div>
           {mutError ? <p className="text-sm text-destructive">{mutError}</p> : null}
           <DialogFooter>

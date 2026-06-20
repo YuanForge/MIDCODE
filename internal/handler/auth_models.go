@@ -1,6 +1,7 @@
 package handler
 
 import (
+	billingcalc "fanapi/internal/billing"
 	"fanapi/internal/db"
 	"fanapi/internal/model"
 	"fanapi/internal/service"
@@ -76,7 +77,7 @@ func (h *AuthHandler) ListModels(c *gin.Context) {
 		defaultPrice := buildPriceDisplay(ch.BillingType, ch.BillingConfig)
 		groupPrice := ""
 		if userGroup != "" {
-			groupCfg := applyGroupPricingMap(map[string]interface{}(ch.BillingConfig), userGroup)
+			groupCfg := model.JSON(billingcalc.EffectivePricingConfig(map[string]interface{}(ch.BillingConfig), userGroup))
 			gp := buildPriceDisplay(ch.BillingType, groupCfg)
 			if gp != defaultPrice {
 				groupPrice = gp
@@ -143,7 +144,7 @@ func preferDisplayChannel(candidate, current model.Channel, userGroup string) bo
 func channelDisplayPriceRank(ch model.Channel, userGroup string) (float64, bool) {
 	cfg := ch.BillingConfig
 	if userGroup != "" {
-		cfg = applyGroupPricingMap(map[string]interface{}(ch.BillingConfig), userGroup)
+		cfg = model.JSON(billingcalc.EffectivePricingConfig(map[string]interface{}(ch.BillingConfig), userGroup))
 	}
 	return billingConfigPriceRank(ch.BillingType, cfg)
 }

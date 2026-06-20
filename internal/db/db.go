@@ -71,6 +71,7 @@ func Init(cfg *config.DBConfig, migrate bool) error {
 		new(model.BillingQuotaLease),
 		new(model.BillingRefundJob),
 		new(model.ChatConversation),
+		new(model.VIPGroup),
 		// superpower models
 		new(model.CardBatch),
 		new(model.ChannelLog),
@@ -97,7 +98,45 @@ func Init(cfg *config.DBConfig, migrate bool) error {
 	if err := ensureIndexes(); err != nil {
 		return err
 	}
+	if err := ensureVIPSchemaCompatibility(); err != nil {
+		return err
+	}
 	return ensureBillingConstraints()
+}
+
+func ensureVIPSchemaCompatibility() error {
+	ddl := `
+DO $$
+BEGIN
+	ALTER TABLE users
+	ADD COLUMN IF NOT EXISTS vip_recharge_baseline BIGINT NOT NULL DEFAULT 0;
+
+	IF EXISTS (
+		SELECT 1 FROM information_schema.columns
+		WHERE table_name = 'users' AND column_name = 'vip_group_manual'
+	) THEN
+		UPDATE users u
+		SET vip_recharge_baseline = COALESCE((
+			SELECT SUM(GREATEST(bt.credits - bt.model_credit_charged, 0))
+			FROM billing_transactions bt
+			WHERE bt.user_id = u.id AND bt.type = 'recharge'
+		), 0)
+		WHERE u.vip_group_manual = true AND u.vip_recharge_baseline = 0;
+	END IF;
+
+	IF EXISTS (
+		SELECT 1 FROM information_schema.columns
+		WHERE table_name = 'vip_groups' AND column_name = 'discount_ratio'
+	) THEN
+		UPDATE vip_groups
+		SET discount_bps = ROUND(discount_ratio * 10000)::bigint
+		WHERE discount_bps = 10000 AND discount_ratio > 0 AND discount_ratio <= 1;
+	END IF;
+END $$;`
+	if _, err := Engine.Exec(ddl); err != nil {
+		return fmt.Errorf("ensure vip schema compatibility: %w", err)
+	}
+	return nil
 }
 
 // ensureIndexes creates performance indexes if they don't already exist.
@@ -354,6 +393,11 @@ func ensureIndexes() error {
 			"idx_users_group_id",
 			`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_group_id
 			ON users ("group", id DESC)`,
+		},
+		{
+			"idx_vip_groups_active_threshold",
+			`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_vip_groups_active_threshold
+			ON vip_groups (is_active, recharge_threshold DESC, sort_order ASC, id ASC)`,
 		},
 		{
 			"idx_users_active_id",

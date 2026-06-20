@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
@@ -66,7 +66,6 @@ type ChannelForm = {
   billing_type: string
   headers_text: string
   billing_config_text: string
-  pricing_groups: PricingGroupForm[]
   upstream_platform_id: string
   upstream_model: string
   upstream_group: string
@@ -123,21 +122,6 @@ type ChannelForm = {
   is_active: boolean
 }
 
-type PricingGroupForm = {
-  group: string
-  input_price_per_1m_tokens: string
-  output_price_per_1m_tokens: string
-  base_price: string
-  default_size_price: string
-  size_price_1k: string
-  size_price_2k: string
-  size_price_3k: string
-  size_price_4k: string
-  price_per_second: string
-  price_per_call: string
-  extra_config: Record<string, unknown>
-}
-
 const emptyJson = '{}'
 const sizeTierKeys = ['1k', '2k', '3k', '4k'] as const
 const creditsPrecision = 1_000_000
@@ -173,33 +157,6 @@ const upstreamMetaKeys = new Set([
   'price_markup',
   'upstream_cost_auto_sync',
 ])
-const pricingGroupOverrideKeys = new Set([
-  'input_price_per_1m_tokens',
-  'output_price_per_1m_tokens',
-  'base_price',
-  'default_size_price',
-  'size_prices',
-  'price_per_second',
-  'price_per_call',
-])
-
-function createEmptyPricingGroup(): PricingGroupForm {
-  return {
-    group: '',
-    input_price_per_1m_tokens: '',
-    output_price_per_1m_tokens: '',
-    base_price: '',
-    default_size_price: '',
-    size_price_1k: '',
-    size_price_2k: '',
-    size_price_3k: '',
-    size_price_4k: '',
-    price_per_second: '',
-    price_per_call: '',
-    extra_config: {},
-  }
-}
-
 const emptyForm: ChannelForm = {
   name: '',
   model: '',
@@ -215,7 +172,6 @@ const emptyForm: ChannelForm = {
   billing_type: 'token',
   headers_text: emptyJson,
   billing_config_text: emptyJson,
-  pricing_groups: [],
   upstream_platform_id: '',
   upstream_model: '',
   upstream_group: '',
@@ -376,97 +332,6 @@ function buildSizeMap(entries: Array<[string, string]>) {
   return Object.keys(mapped).length > 0 ? mapped : undefined
 }
 
-function extractPricingGroups(cfg: Record<string, unknown>): PricingGroupForm[] {
-  const raw = cfg.pricing_groups
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    return []
-  }
-
-  return Object.entries(raw)
-    .filter(([, value]) => value && typeof value === 'object' && !Array.isArray(value))
-    .map(([group, value]) => {
-      const override = value as Record<string, unknown>
-      return {
-        group,
-        input_price_per_1m_tokens: getNum(override, 'input_price_per_1m_tokens'),
-        output_price_per_1m_tokens: getNum(override, 'output_price_per_1m_tokens'),
-        base_price: getNum(override, 'base_price'),
-        default_size_price: getNum(override, 'default_size_price'),
-        size_price_1k: getTierNum(override, 'size_prices', '1k'),
-        size_price_2k: getTierNum(override, 'size_prices', '2k'),
-        size_price_3k: getTierNum(override, 'size_prices', '3k'),
-        size_price_4k: getTierNum(override, 'size_prices', '4k'),
-        price_per_second: getNum(override, 'price_per_second'),
-        price_per_call: getNum(override, 'price_per_call'),
-        extra_config: Object.fromEntries(
-          Object.entries(override).filter(([key]) => !pricingGroupOverrideKeys.has(key))
-        ),
-      }
-    })
-}
-
-function buildPricingGroups(groups: PricingGroupForm[], billingType: string): Record<string, unknown> | undefined {
-  const entries = groups.flatMap((group) => {
-    const name = group.group.trim()
-    if (!name) {
-      return []
-    }
-
-    const override: Record<string, unknown> = { ...group.extra_config }
-    for (const key of pricingGroupOverrideKeys) {
-      delete override[key]
-    }
-
-    const setNumber = (key: string, value: string) => {
-      const parsed = fromCnyInput(value)
-      if (parsed === undefined) {
-        return
-      }
-      override[key] = parsed
-    }
-
-    switch (billingType) {
-      case 'token':
-        setNumber('input_price_per_1m_tokens', group.input_price_per_1m_tokens)
-        setNumber('output_price_per_1m_tokens', group.output_price_per_1m_tokens)
-        break
-      case 'image': {
-        setNumber('base_price', group.base_price)
-        setNumber('default_size_price', group.default_size_price)
-        const sizePrices = buildSizeMap([
-          ['1k', group.size_price_1k],
-          ['2k', group.size_price_2k],
-          ['3k', group.size_price_3k],
-          ['4k', group.size_price_4k],
-        ])
-        if (sizePrices) {
-          override.size_prices = sizePrices
-        }
-        break
-      }
-      case 'video':
-      case 'audio':
-        setNumber('price_per_second', group.price_per_second)
-        break
-      case 'count':
-        setNumber('price_per_call', group.price_per_call)
-        break
-    }
-
-    if (Object.keys(override).length === 0) {
-      return []
-    }
-
-    return [[name, override] as const]
-  })
-
-  if (entries.length === 0) {
-    return undefined
-  }
-
-  return Object.fromEntries(entries)
-}
-
 function formatBillingSummary(billingType: string | undefined, cfg: Record<string, unknown>, mode: 'price' | 'cost' = 'price') {
   const sizeMapKey = mode === 'price' ? 'size_prices' : 'size_costs'
   const defaultSizeKey = mode === 'price' ? 'default_size_price' : 'default_size_cost'
@@ -502,31 +367,6 @@ function formatBillingSummary(billingType: string | undefined, cfg: Record<strin
     default:
       return '—'
   }
-}
-
-function formatGroupPricing(channel: AdminChannel) {
-  if (channel.billing_type === 'custom') {
-    return '—'
-  }
-
-  const pricingGroups = channel.billing_config?.pricing_groups
-  if (!pricingGroups || typeof pricingGroups !== 'object' || Array.isArray(pricingGroups)) {
-    return '—'
-  }
-
-  const entries = Object.entries(pricingGroups)
-    .filter(([, value]) => value && typeof value === 'object' && !Array.isArray(value))
-    .map(([group, value]) => `${group}: ${formatBillingSummary(channel.billing_type, value as Record<string, unknown>, 'price')}`)
-
-  if (entries.length === 0) {
-    return '—'
-  }
-
-  if (entries.length <= 2) {
-    return entries.join(' | ')
-  }
-
-  return `${entries.slice(0, 2).join(' | ')} | +${entries.length - 2}组`
 }
 
 function buildBillingConfig(form: ChannelForm): Record<string, unknown> {
@@ -606,11 +446,6 @@ function buildBillingConfig(form: ChannelForm): Record<string, unknown> {
       break
   }
 
-  const pricingGroups = buildPricingGroups(form.pricing_groups, form.billing_type)
-  if (pricingGroups) {
-    cfg.pricing_groups = pricingGroups
-  }
-
   const upstreamPlatformID = Number(form.upstream_platform_id || '0')
   if (upstreamPlatformID > 0) {
     cfg.upstream_platform_id = upstreamPlatformID
@@ -644,10 +479,9 @@ function buildFormFromChannel(row: AdminChannel, isCopy = false): ChannelForm {
     query_method: row.query_method ?? 'GET',
     timeout_ms: String(row.timeout_ms ?? 60000),
     query_timeout_ms: String(row.query_timeout_ms ?? 30000),
-    billing_type: row.billing_type ?? 'token',
+    billing_type: row.billing_type === 'custom' ? 'token' : row.billing_type ?? 'token',
     headers_text: prettyJson(row.headers),
     billing_config_text: buildAdvancedBillingConfigText(billingConfig),
-    pricing_groups: extractPricingGroups(billingConfig),
     upstream_platform_id: getConfigString(billingConfig, 'upstream_platform_id'),
     upstream_model: getConfigString(billingConfig, 'upstream_model') || row.model || row.routing_model || '',
     upstream_group: getConfigString(billingConfig, 'upstream_group'),
@@ -967,29 +801,6 @@ export function AdminChannelsPage() {
     } finally {
       setUpstreamSyncing(false)
     }
-  }
-
-  function updatePricingGroup(index: number, patch: Partial<PricingGroupForm>) {
-    setForm((current) => ({
-      ...current,
-      pricing_groups: current.pricing_groups.map((group, groupIndex) =>
-        groupIndex === index ? { ...group, ...patch } : group
-      ),
-    }))
-  }
-
-  function addPricingGroup() {
-    setForm((current) => ({
-      ...current,
-      pricing_groups: [...current.pricing_groups, createEmptyPricingGroup()],
-    }))
-  }
-
-  function removePricingGroup(index: number) {
-    setForm((current) => ({
-      ...current,
-      pricing_groups: current.pricing_groups.filter((_, groupIndex) => groupIndex !== index),
-    }))
   }
 
   async function uploadChannelIcon(file: File | undefined) {
@@ -1364,8 +1175,8 @@ export function AdminChannelsPage() {
                           <span>{formatBillingCost(row)}</span>
                         </div>
                         <div>
-                          <span className="text-muted-foreground">分组价：</span>
-                          <span>{formatGroupPricing(row)}</span>
+                          <span className="text-muted-foreground">VIP：</span>
+                          <span>按用户 VIP 折扣自动计算</span>
                         </div>
                       </div>
                     </TableCell>
@@ -1784,7 +1595,6 @@ export function AdminChannelsPage() {
                     <option value="video">video — 按视频秒数计费</option>
                     <option value="audio">audio — 按音频秒数计费</option>
                     <option value="count">count — 按调用次数计费</option>
-                    <option value="custom">custom — 自定义脚本计费</option>
                   </NativeSelect>
                 </div>
 
@@ -1901,168 +1711,9 @@ export function AdminChannelsPage() {
                   </>
                 )}
 
-                {form.billing_type !== 'custom' ? (
-                  <div className="space-y-3 md:col-span-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="space-y-1">
-                        <label className="text-sm font-medium">分组定价（pricing_groups）</label>
-                        <p className="text-xs text-muted-foreground">按用户分组覆盖默认售价，不影响上游进价。组名必须与用户 group 完全一致，例如 vip、premium。</p>
-                      </div>
-                      <Button type="button" size="sm" variant="outline" onClick={addPricingGroup}>
-                        <PlusIcon data-icon="inline-start" />
-                        新增分组
-                      </Button>
-                    </div>
-
-                    {form.pricing_groups.length === 0 ? (
-                      <div className="rounded-lg border border-dashed px-4 py-5 text-xs text-muted-foreground">
-                        暂无分组定价。需要 VIP 或其他用户组差异化售价时，点击“新增分组”进行配置。
-                      </div>
-                    ) : (
-                      <div className="flex flex-col gap-4">
-                        {form.pricing_groups.map((group, index) => (
-                          <Card key={`${group.group || 'group'}-${index}`} size="sm">
-                            <CardHeader>
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="space-y-1">
-                                  <CardTitle className="text-base">分组覆盖 #{index + 1}</CardTitle>
-                                  <CardDescription>仅覆盖用户侧售价字段，保存后会写入 billing_config.pricing_groups。</CardDescription>
-                                </div>
-                                <Button type="button" size="sm" variant="outline" onClick={() => removePricingGroup(index)}>
-                                  移除
-                                </Button>
-                              </div>
-                            </CardHeader>
-                            <CardContent className="grid gap-5 md:grid-cols-2">
-                              <div className="space-y-2 md:col-span-2">
-                                <label className="text-sm font-medium">用户分组名</label>
-                                <Input
-                                  value={group.group}
-                                  onChange={(event) => updatePricingGroup(index, { group: event.target.value })}
-                                  placeholder="如 vip"
-                                />
-                              </div>
-
-                              {form.billing_type === 'token' ? (
-                                <>
-                                  <div className="space-y-2">
-                                    <label className="text-sm font-medium">输入售价（CNY / 百万 token）</label>
-                                    <Input
-                                      type="number"
-                                      value={group.input_price_per_1m_tokens}
-                                      onChange={(event) => updatePricingGroup(index, { input_price_per_1m_tokens: event.target.value })}
-                                      placeholder="如 8"
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <label className="text-sm font-medium">输出售价（CNY / 百万 token）</label>
-                                    <Input
-                                      type="number"
-                                      value={group.output_price_per_1m_tokens}
-                                      onChange={(event) => updatePricingGroup(index, { output_price_per_1m_tokens: event.target.value })}
-                                      placeholder="如 32"
-                                    />
-                                  </div>
-                                </>
-                              ) : null}
-
-                              {form.billing_type === 'image' ? (
-                                <>
-                                  <div className="space-y-2">
-                                    <label className="text-sm font-medium">基础售价（CNY）</label>
-                                    <Input
-                                      type="number"
-                                      value={group.base_price}
-                                      onChange={(event) => updatePricingGroup(index, { base_price: event.target.value })}
-                                      placeholder="如 5"
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <label className="text-sm font-medium">兜底尺寸售价（CNY）</label>
-                                    <Input
-                                      type="number"
-                                      value={group.default_size_price}
-                                      onChange={(event) => updatePricingGroup(index, { default_size_price: event.target.value })}
-                                      placeholder="如 5"
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <label className="text-sm font-medium">1k 售价（CNY / 张）</label>
-                                    <Input
-                                      type="number"
-                                      value={group.size_price_1k}
-                                      onChange={(event) => updatePricingGroup(index, { size_price_1k: event.target.value })}
-                                      placeholder="如 3"
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <label className="text-sm font-medium">2k 售价（CNY / 张）</label>
-                                    <Input
-                                      type="number"
-                                      value={group.size_price_2k}
-                                      onChange={(event) => updatePricingGroup(index, { size_price_2k: event.target.value })}
-                                      placeholder="如 5"
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <label className="text-sm font-medium">3k 售价（CNY / 张）</label>
-                                    <Input
-                                      type="number"
-                                      value={group.size_price_3k}
-                                      onChange={(event) => updatePricingGroup(index, { size_price_3k: event.target.value })}
-                                      placeholder="如 7"
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <label className="text-sm font-medium">4k 售价（CNY / 张）</label>
-                                    <Input
-                                      type="number"
-                                      value={group.size_price_4k}
-                                      onChange={(event) => updatePricingGroup(index, { size_price_4k: event.target.value })}
-                                      placeholder="如 9"
-                                    />
-                                  </div>
-                                </>
-                              ) : null}
-
-                              {(form.billing_type === 'video' || form.billing_type === 'audio') ? (
-                                <div className="space-y-2 md:col-span-2">
-                                  <label className="text-sm font-medium">售价（CNY / 秒）</label>
-                                  <Input
-                                    type="number"
-                                    value={group.price_per_second}
-                                    onChange={(event) => updatePricingGroup(index, { price_per_second: event.target.value })}
-                                    placeholder="如 0.006"
-                                  />
-                                </div>
-                              ) : null}
-
-                              {form.billing_type === 'count' ? (
-                                <div className="space-y-2 md:col-span-2">
-                                  <label className="text-sm font-medium">售价（CNY / 次）</label>
-                                  <Input
-                                    type="number"
-                                    value={group.price_per_call}
-                                    onChange={(event) => updatePricingGroup(index, { price_per_call: event.target.value })}
-                                    placeholder="如 0.001"
-                                  />
-                                </div>
-                              ) : null}
-                            </CardContent>
-                          </Card>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-dashed px-4 py-5 text-xs text-muted-foreground md:col-span-2">
-                    `custom` 计费依赖脚本返回 credits 数值，当前不支持通过 pricing_groups 做可视化分组定价覆盖。
-                  </div>
-                )}
-
                 <div className="space-y-2 md:col-span-2">
                   <label className="text-sm font-medium">高级配置（JSON）</label>
-                  <p className="text-xs text-muted-foreground">用于配置 metric_paths、resolution_tiers 等高级参数；结构化价格字段和分组定价会在保存时覆盖同名键。</p>
+                  <p className="text-xs text-muted-foreground">用于配置 metric_paths、resolution_tiers 等高级参数；结构化价格字段会在保存时覆盖同名键。VIP 折扣请在“VIP 分组”页面统一配置。</p>
                   <Textarea
                     value={form.billing_config_text}
                     onChange={(event) => setForm((current) => ({ ...current, billing_config_text: event.target.value }))}
@@ -2070,19 +1721,7 @@ export function AdminChannelsPage() {
                     className="font-mono text-xs"
                     placeholder={'{\n  "metric_paths": {\n    "input_tokens": "response.usage.prompt_tokens",\n    "output_tokens": "response.usage.completion_tokens"\n  },\n  "resolution_tiers": [\n    { "max_pixels": 1048576, "multiplier": 1.0 }\n  ]\n}'}
                   />
-                  <p className="text-xs text-muted-foreground">分组定价已改为上方可视化编辑；这里建议只放 metric_paths、resolution_tiers 等非价格字段。</p>
-                </div>
-
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-sm font-medium">自定义计费脚本</label>
-                  <p className="text-xs text-muted-foreground">billing_type=custom 时生效，脚本需返回 credits 数值。</p>
-                  <Textarea
-                    value={form.billing_script}
-                    onChange={(event) => setForm((current) => ({ ...current, billing_script: event.target.value }))}
-                    rows={8}
-                    className="font-mono text-xs"
-                    placeholder="function calcBilling(request) { return 1000 }"
-                  />
+                  <p className="text-xs text-muted-foreground">这里建议只放 metric_paths、resolution_tiers 等非价格字段。</p>
                 </div>
               </div>
             </TabsContent>

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	billingcalc "fanapi/internal/billing"
 	"fanapi/internal/cache"
 	"fanapi/internal/db"
 	"fanapi/internal/model"
@@ -267,6 +268,9 @@ func hasOpenAIReasoningModelPrefix(value string) bool {
 }
 
 func CreateChannel(ctx context.Context, ch *model.Channel) error {
+	if ch.BillingType == "custom" {
+		return fmt.Errorf("custom 自定义脚本计费已停用")
+	}
 	_, err := db.Engine.Insert(ch)
 	if err == nil {
 		invalidateChannelRouteCaches(ctx, *ch)
@@ -320,6 +324,9 @@ func PatchChannelActive(ctx context.Context, id int64, isActive bool) error {
 // 改名/改模型场景下，旧 name/model 对应的缓存键也必须失效，否则将残留 stale
 // 数据直至 TTL 过期（最多 channelCacheTTL）。
 func UpdateChannel(ctx context.Context, ch *model.Channel) error {
+	if ch.BillingType == "custom" {
+		return fmt.Errorf("custom 自定义脚本计费已停用")
+	}
 	// 先读旧记录，用于失效旧 name/model/display_name 缓存键
 	var old model.Channel
 	_, _ = db.Engine.ID(ch.ID).Cols("id", "name", "model", "display_name").Get(&old)
@@ -458,7 +465,7 @@ func channelBasePrice(ch model.Channel) float64 {
 }
 
 func channelBasePriceForGroup(ch model.Channel, userGroup string) float64 {
-	cfg := applyChannelGroupPricing(map[string]interface{}(ch.BillingConfig), userGroup)
+	cfg := billingcalc.EffectivePricingConfig(map[string]interface{}(ch.BillingConfig), userGroup)
 	switch ch.BillingType {
 	case "token":
 		return mapFloat64(cfg, "input_price_per_1m_tokens") + mapFloat64(cfg, "output_price_per_1m_tokens")

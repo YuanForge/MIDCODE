@@ -75,6 +75,7 @@ export type AdminUser = {
   email?: string
   role?: string
   group?: string
+  vip_recharge_baseline?: number
   balance_credits?: number
   balance?: number
   is_active?: boolean
@@ -83,6 +84,21 @@ export type AdminUser = {
   created_at?: string
   invite_count?: number
   total_spent?: number
+}
+
+export type AdminVIPGroup = {
+  id?: number
+  code?: string
+  name?: string
+  recharge_threshold?: number
+  discount_bps?: number
+  discount_percent?: number
+  sort_order?: number
+  description?: string
+  is_active?: boolean
+  user_count?: number
+  created_at?: string
+  updated_at?: string
 }
 
 export type AdminReferralUser = {
@@ -610,6 +626,10 @@ export const adminApi = {
     http.put<Record<string, unknown>>(`/admin/users/${id}/password`, { password }),
   setUserGroup: (id: number, group: string) =>
     http.put<Record<string, unknown>>(`/admin/users/${id}/group`, { group }),
+  setUserVipGroup: (id: number, group: string) =>
+    http.put<Record<string, unknown>>(`/admin/users/${id}/vip-group`, { group }),
+  refreshUserVipGroup: (id: number) =>
+    http.post<Record<string, unknown>>(`/admin/users/${id}/refresh-vip`, {}),
   setUserRole: (id: number, role: string) =>
     http.put<Record<string, unknown>>(`/admin/users/${id}/role`, { role }),
   freezeUser: (id: number, freeze: boolean, reason?: string) =>
@@ -821,6 +841,17 @@ export const adminApi = {
     http.delete<Record<string, unknown>>(`/admin/coupons/${id}`),
   listCouponUses: (id: number) =>
     http.get<{ uses: { id?: number; coupon_id?: number; user_id?: number; discount?: number; created_at?: string }[] }>(`/admin/coupons/${id}/uses`),
+  // VIP 分组
+  listVipGroups: (includeInactive = true) =>
+    http.get<{ groups: AdminVIPGroup[] }>('/admin/vip-groups', { params: { include_inactive: includeInactive } }),
+  createVipGroup: (payload: Partial<AdminVIPGroup>) =>
+    http.post<AdminVIPGroup>('/admin/vip-groups', payload),
+  refreshAllVipUsers: () =>
+    http.post<{ ok: boolean; refreshed: number }>('/admin/vip-groups/refresh-users', {}),
+  updateVipGroup: (id: number, payload: Partial<AdminVIPGroup>) =>
+    http.put<AdminVIPGroup>(`/admin/vip-groups/${id}`, payload),
+  deleteVipGroup: (id: number) =>
+    http.delete<Record<string, unknown>>(`/admin/vip-groups/${id}`),
   // 客户充值明细
   listPaymentOrders: (params: Record<string, unknown> = {}) =>
     http.get<{ orders: AdminPaymentOrder[]; total: number; summary?: AdminPaymentSummary; daily?: AdminPaymentDailySummary[] }>('/admin/payments', { params }),

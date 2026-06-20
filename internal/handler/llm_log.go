@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	billingcalc "fanapi/internal/billing"
 	"fanapi/internal/db"
 	"fanapi/internal/model"
 	"fanapi/internal/service"
@@ -41,10 +42,7 @@ func resolveTokenPriceMeta(ch *model.Channel, userGroup string) tokenPriceMeta {
 		return tokenPriceMeta{}
 	}
 
-	cfg := ch.BillingConfig
-	if userGroup != "" {
-		cfg = applyGroupPricingMap(map[string]interface{}(ch.BillingConfig), userGroup)
-	}
+	cfg := model.JSON(billingcalc.EffectivePricingConfig(map[string]interface{}(ch.BillingConfig), userGroup))
 
 	return tokenPriceMeta{
 		InputPricePer1MTokens:  configInt64Ptr(cfg, "input_price_per_1m_tokens"),
@@ -62,6 +60,52 @@ func coalesceTokenPrice(stored *int64, fallback *int64) *int64 {
 		return stored
 	}
 	return fallback
+}
+
+func displayTokenPriceMeta(ch *model.Channel, stored tokenPriceMeta, historicalGroup string, fallbackGroup string) tokenPriceMeta {
+	if strings.TrimSpace(historicalGroup) != "" {
+		basePrice := resolveTokenPriceMeta(ch, "")
+		legacyGroupPrice := resolveLegacyGroupTokenPriceMeta(ch, historicalGroup)
+		groupPrice := resolveTokenPriceMeta(ch, historicalGroup)
+		return tokenPriceMeta{
+			InputPricePer1MTokens:  replaceStoredLegacyTokenPrice(stored.InputPricePer1MTokens, basePrice.InputPricePer1MTokens, legacyGroupPrice.InputPricePer1MTokens, groupPrice.InputPricePer1MTokens),
+			OutputPricePer1MTokens: replaceStoredLegacyTokenPrice(stored.OutputPricePer1MTokens, basePrice.OutputPricePer1MTokens, legacyGroupPrice.OutputPricePer1MTokens, groupPrice.OutputPricePer1MTokens),
+		}
+	}
+
+	fallbackPrice := resolveTokenPriceMeta(ch, fallbackGroup)
+	return tokenPriceMeta{
+		InputPricePer1MTokens:  coalesceTokenPrice(stored.InputPricePer1MTokens, fallbackPrice.InputPricePer1MTokens),
+		OutputPricePer1MTokens: coalesceTokenPrice(stored.OutputPricePer1MTokens, fallbackPrice.OutputPricePer1MTokens),
+	}
+}
+
+func resolveLegacyGroupTokenPriceMeta(ch *model.Channel, userGroup string) tokenPriceMeta {
+	if ch == nil || ch.BillingType != "token" || ch.BillingConfig == nil {
+		return tokenPriceMeta{}
+	}
+	cfg := model.JSON(applyGroupPricingMap(map[string]interface{}(ch.BillingConfig), userGroup))
+	return tokenPriceMeta{
+		InputPricePer1MTokens:  configInt64Ptr(cfg, "input_price_per_1m_tokens"),
+		OutputPricePer1MTokens: configInt64Ptr(cfg, "output_price_per_1m_tokens"),
+	}
+}
+
+func replaceStoredLegacyTokenPrice(stored *int64, base *int64, legacyGroup *int64, group *int64) *int64 {
+	if stored == nil {
+		return group
+	}
+	if (int64PtrEqual(stored, base) || int64PtrEqual(stored, legacyGroup)) && !int64PtrEqual(stored, group) {
+		return group
+	}
+	return stored
+}
+
+func int64PtrEqual(left *int64, right *int64) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return *left == *right
 }
 
 func loadChannelPricingMap(channelIDs []int64) map[int64]model.Channel {
@@ -94,6 +138,35 @@ func collectChannelIDs(logs []model.LLMLog) []int64 {
 		channelIDs = append(channelIDs, l.ChannelID)
 	}
 	return channelIDs
+}
+
+func loadLogUserGroupMap(logs []model.LLMLog) map[string]string {
+	groupMap := map[string]string{}
+	if len(logs) == 0 {
+		return groupMap
+	}
+	corrIDFilter, args := billingCorrIDFilter(logs)
+	if corrIDFilter == "" {
+		return groupMap
+	}
+
+	type txGroupRow struct {
+		CorrID    string `xorm:"corr_id"`
+		UserGroup string `xorm:"user_group"`
+	}
+	var rows []txGroupRow
+	sqlStr := `SELECT corr_id, COALESCE(MAX(metrics->>'user_group'), '') AS user_group
+		FROM billing_transactions WHERE ` + corrIDFilter + ` GROUP BY corr_id`
+	if err := db.Engine.SQL(sqlStr, args...).Find(&rows); err != nil {
+		return groupMap
+	}
+	for _, row := range rows {
+		if row.CorrID == "" || strings.TrimSpace(row.UserGroup) == "" {
+			continue
+		}
+		groupMap[row.CorrID] = strings.TrimSpace(row.UserGroup)
+	}
+	return groupMap
 }
 
 // GET /admin/llm-logs
@@ -395,6 +468,7 @@ func UserListLLMLogs(c *gin.Context) {
 	}
 
 	channelMap := loadChannelPricingMap(collectChannelIDs(logs))
+	logGroupMap := loadLogUserGroupMap(logs)
 
 	// 查询每条日志对应的净扣费积分（hold/charge/settle 扣除 refund 后的实际消耗）
 	creditsMap := map[string]int64{}
@@ -426,9 +500,12 @@ func UserListLLMLogs(c *gin.Context) {
 			l.ErrorMsg = service.UserFacingErrorMessage(l.ErrorMsg)
 		}
 		ch := channelMap[l.ChannelID]
-		fallbackPrice := resolveTokenPriceMeta(&ch, groupName)
-		l.InputPricePer1MTokens = coalesceTokenPrice(l.InputPricePer1MTokens, fallbackPrice.InputPricePer1MTokens)
-		l.OutputPricePer1MTokens = coalesceTokenPrice(l.OutputPricePer1MTokens, fallbackPrice.OutputPricePer1MTokens)
+		displayPrice := displayTokenPriceMeta(&ch, tokenPriceMeta{
+			InputPricePer1MTokens:  l.InputPricePer1MTokens,
+			OutputPricePer1MTokens: l.OutputPricePer1MTokens,
+		}, logGroupMap[l.CorrID], groupName)
+		l.InputPricePer1MTokens = displayPrice.InputPricePer1MTokens
+		l.OutputPricePer1MTokens = displayPrice.OutputPricePer1MTokens
 		result[i] = logWithCredits{
 			LLMLog:         l,
 			CreditsCharged: creditsMap[l.CorrID],
@@ -481,7 +558,11 @@ func UserGetLLMLog(c *gin.Context) {
 	}
 	channelMap := loadChannelPricingMap([]int64{log.ChannelID})
 	channel := channelMap[log.ChannelID]
-	fallbackPrice := resolveTokenPriceMeta(&channel, groupName)
+	logGroupMap := loadLogUserGroupMap([]model.LLMLog{log})
+	displayPrice := displayTokenPriceMeta(&channel, tokenPriceMeta{
+		InputPricePer1MTokens:  log.InputPricePer1MTokens,
+		OutputPricePer1MTokens: log.OutputPricePer1MTokens,
+	}, logGroupMap[log.CorrID], groupName)
 	c.JSON(http.StatusOK, userLogDetail{
 		ID:             log.ID,
 		CorrID:         log.CorrID,
@@ -499,7 +580,7 @@ func UserGetLLMLog(c *gin.Context) {
 		}(),
 		CreatedAt:              log.CreatedAt.Format("2006-01-02 15:04:05"),
 		UpdatedAt:              log.UpdatedAt.Format("2006-01-02 15:04:05"),
-		InputPricePer1MTokens:  coalesceTokenPrice(log.InputPricePer1MTokens, fallbackPrice.InputPricePer1MTokens),
-		OutputPricePer1MTokens: coalesceTokenPrice(log.OutputPricePer1MTokens, fallbackPrice.OutputPricePer1MTokens),
+		InputPricePer1MTokens:  displayPrice.InputPricePer1MTokens,
+		OutputPricePer1MTokens: displayPrice.OutputPricePer1MTokens,
 	})
 }

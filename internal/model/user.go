@@ -8,7 +8,8 @@ type User struct {
 	Email           *string   `xorm:"unique 'email' null" json:"email"`  // 绑定邮箱（可空，用于找回密码）
 	PasswordHash    string    `xorm:"notnull 'password_hash'" json:"-"`
 	Role            string    `xorm:"notnull default('user') 'role'" json:"role"`
-	Group           string    `xorm:"notnull default('') 'group'" json:"group"` // 用户分组，用于差异化定价（空=默认定价）
+	Group           string    `xorm:"notnull default('') 'group'" json:"group"`                                // 用户分组，用于差异化定价（空=默认定价）
+	VIPRechargeBase int64     `xorm:"notnull default(0) 'vip_recharge_baseline'" json:"vip_recharge_baseline"` // VIP 升档重新累计起点
 	IsActive        bool      `xorm:"notnull default(true) 'is_active'" json:"is_active"`
 	FrozenReason    string    `xorm:"notnull default('') 'frozen_reason'" json:"frozen_reason,omitempty"` // 冻结原因（解冻后清空）
 	Balance         int64     `xorm:"notnull default(0) 'balance'" json:"balance"`

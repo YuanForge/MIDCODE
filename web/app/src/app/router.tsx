@@ -21,6 +21,7 @@ const UserDashboardPage = lazy(() => import('@/pages/user/UserDashboardPage').th
 const UserModelsPage = lazy(() => import('@/pages/user/UserModelsPage').then((m) => ({ default: m.UserModelsPage })))
 const UserKeysPage = lazy(() => import('@/pages/user/UserKeysPage').then((m) => ({ default: m.UserKeysPage })))
 const UserPlaygroundPage = lazy(() => import('@/pages/user/UserPlaygroundPage').then((m) => ({ default: m.UserPlaygroundPage })))
+const UserCreationPage = lazy(() => import('@/pages/user/UserCreationPage').then((m) => ({ default: m.UserCreationPage })))
 const UserImageGenPage = lazy(() => import('@/pages/user/UserImageGenPage').then((m) => ({ default: m.UserImageGenPage })))
 const UserVideoGenPage = lazy(() => import('@/pages/user/UserVideoGenPage').then((m) => ({ default: m.UserVideoGenPage })))
 const UserMusicGenPage = lazy(() => import('@/pages/user/UserMusicGenPage').then((m) => ({ default: m.UserMusicGenPage })))
@@ -56,6 +57,7 @@ const AdminNotificationsPage = lazy(() => import('@/pages/admin/AdminNotificatio
 const AdminApiKeysPage = lazy(() => import('@/pages/admin/AdminApiKeysPage').then((m) => ({ default: m.AdminApiKeysPage })))
 const AdminRolesPage = lazy(() => import('@/pages/admin/AdminRolesPage').then((m) => ({ default: m.AdminRolesPage })))
 const AdminCouponsPage = lazy(() => import('@/pages/admin/AdminCouponsPage').then((m) => ({ default: m.AdminCouponsPage })))
+const AdminVipGroupsPage = lazy(() => import('@/pages/admin/AdminVipGroupsPage').then((m) => ({ default: m.AdminVipGroupsPage })))
 
 const VendorLoginPage = lazy(() => import('@/pages/vendor/VendorLoginPage').then((m) => ({ default: m.VendorLoginPage })))
 const VendorRegisterPage = lazy(() => import('@/pages/vendor/VendorRegisterPage').then((m) => ({ default: m.VendorRegisterPage })))
@@ -153,6 +155,7 @@ export const router = createBrowserRouter([
         element: renderLazy(<UserLayout />),
         children: [
           { path: '/playground', element: renderLazy(<UserPlaygroundPage />) },
+          { path: '/creation', element: renderLazy(<UserCreationPage />) },
           { path: '/image-gen', element: renderLazy(<UserImageGenPage />) },
           { path: '/video-gen', element: renderLazy(<UserVideoGenPage />) },
           { path: '/music-gen', element: renderLazy(<UserMusicGenPage />) },
@@ -208,6 +211,7 @@ export const router = createBrowserRouter([
           { path: 'api-keys', element: renderLazy(<AdminApiKeysPage />) },
           { path: 'roles', element: renderLazy(<AdminRolesPage />) },
           { path: 'coupons', element: renderLazy(<AdminCouponsPage />) },
+          { path: 'vip-groups', element: renderLazy(<AdminVipGroupsPage />) },
         ],
       },
     ],
