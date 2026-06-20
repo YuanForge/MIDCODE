@@ -18,11 +18,9 @@ type ChatCompletionResponse = {
 async function chat(
   model: string,
   messages: ChatMessage[],
-  authHeaders: Record<string, string>,
-  channelId?: number
+  authHeaders: Record<string, string>
 ): Promise<string> {
-  const url = channelId ? `/v1/chat/completions?channel_id=${channelId}` : '/v1/chat/completions'
-  const resp = await fetch(url, {
+  const resp = await fetch('/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: JSON.stringify({ model, messages, stream: false }),
@@ -50,7 +48,6 @@ export async function optimizePrompt(opts: {
   prompt: string
   model: string
   authHeaders: Record<string, string>
-  channelId?: number
 }): Promise<string> {
   return chat(
     opts.model,
@@ -58,8 +55,7 @@ export async function optimizePrompt(opts: {
       { role: 'system', content: OPTIMIZE_SYSTEM[opts.mode] },
       { role: 'user', content: opts.prompt },
     ],
-    opts.authHeaders,
-    opts.channelId
+    opts.authHeaders
   )
 }
 
@@ -78,7 +74,6 @@ export async function analyzeImages(opts: {
   images: string[]
   model: string
   authHeaders: Record<string, string>
-  channelId?: number
 }): Promise<string> {
   const content: ChatContent = [
     { type: 'text', text: ANALYZE_INSTRUCTION[opts.mode] },
@@ -87,7 +82,6 @@ export async function analyzeImages(opts: {
   return chat(
     opts.model,
     [{ role: 'user', content }],
-    opts.authHeaders,
-    opts.channelId
+    opts.authHeaders
   )
 }

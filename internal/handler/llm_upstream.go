@@ -68,6 +68,7 @@ func sendLLMRequest(c *gin.Context, ch *model.Channel, reqData map[string]interf
 		// 跳过这些头：Authorization（由渠道 Headers 覆盖）、逐跳传输头、路由元数据头
 		passthroughSkip := map[string]bool{
 			"Authorization":     true,
+			"Accept-Encoding":   true,
 			"Host":              true,
 			"Content-Length":    true,
 			"Transfer-Encoding": true,

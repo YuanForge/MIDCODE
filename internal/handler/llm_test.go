@@ -1,10 +1,15 @@
 package handler
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"fanapi/internal/model"
 	"fanapi/internal/protocol"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestShouldConvertRequestBodyResponsesToResponsesWithMessages(t *testing.T) {
@@ -129,6 +134,45 @@ func TestResolveLLMTargetURLGeminiStreamUnchanged(t *testing.T) {
 	got := resolveLLMTargetURL("https://generativelanguage.googleapis.com/v1beta/models/{model}:{stream_action}", "gemini-test", true, "")
 	if !strings.Contains(got, "/gemini-test:streamGenerateContent") || !strings.HasSuffix(got, "?alt=sse") {
 		t.Fatalf("unexpected Gemini stream URL: %q", got)
+	}
+}
+
+func TestSendLLMRequestDoesNotForwardClientAcceptEncoding(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var upstreamAcceptEncoding string
+	var upstreamUserAgent string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamAcceptEncoding = r.Header.Get("Accept-Encoding")
+		upstreamUserAgent = r.Header.Get("User-Agent")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer server.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-test"}`))
+	req.Header.Set("Accept-Encoding", "br, zstd")
+	req.Header.Set("User-Agent", "fanapi-test-client")
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = req
+
+	ch := &model.Channel{
+		BaseURL:            server.URL,
+		PassthroughHeaders: true,
+		TimeoutMs:          1000,
+	}
+
+	_, resp, err := sendLLMRequest(c, ch, map[string]interface{}{"model": "gpt-test"}, nil, protocolOpenAI, "gpt-test", false)
+	if err != nil {
+		t.Fatalf("sendLLMRequest failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if strings.Contains(upstreamAcceptEncoding, "br") || strings.Contains(upstreamAcceptEncoding, "zstd") {
+		t.Fatalf("client Accept-Encoding was forwarded upstream: %q", upstreamAcceptEncoding)
+	}
+	if upstreamUserAgent != "fanapi-test-client" {
+		t.Fatalf("expected ordinary passthrough header to remain, got User-Agent %q", upstreamUserAgent)
 	}
 }
 

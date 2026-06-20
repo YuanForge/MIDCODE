@@ -34,7 +34,7 @@ export function useCreationLlm({
       toast.error('没有可用的 LLM 渠道')
       return null
     }
-    return { authHeaders, model: llm.routing_model || llm.name || '', channelId: llm.id }
+    return { authHeaders, model: llm.routing_model || llm.name || '' }
   }, [apiKeys, selectedKeyId, llm])
 
   const optimize = useCallback(
@@ -47,7 +47,7 @@ export function useCreationLlm({
       if (!ctx) return null
       setOptimizing(true)
       try {
-        const result = await optimizePrompt({ mode, prompt, model: ctx.model, authHeaders: ctx.authHeaders, channelId: ctx.channelId })
+        const result = await optimizePrompt({ mode, prompt, model: ctx.model, authHeaders: ctx.authHeaders })
         toast.success('提示词已优化')
         return result
       } catch (err) {
@@ -68,7 +68,7 @@ export function useCreationLlm({
       try {
         const { url } = await userApi.uploadImage(file, 'reference')
         if (!url) throw new Error('图片上传失败')
-        const result = await analyzeImages({ mode, images: [url], model: ctx.model, authHeaders: ctx.authHeaders, channelId: ctx.channelId })
+        const result = await analyzeImages({ mode, images: [url], model: ctx.model, authHeaders: ctx.authHeaders })
         toast.success('图片解析完成')
         return result
       } catch (err) {
