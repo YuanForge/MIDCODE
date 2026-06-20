@@ -20,6 +20,10 @@ type SettingsMap = Record<string, string>
 type PlanRow = { credits: number; bonus: number; amount: number; origin_amount: number; desc: string }
 type ProxyRule = { from: string; to: string }
 
+const compactTextareaClass = '[field-sizing:fixed] max-h-36 min-h-24 resize-y overflow-auto'
+const codeTextareaClass = `${compactTextareaClass} font-mono text-xs`
+const largeMarkdownTextareaClass = '[field-sizing:fixed] h-64 max-h-80 min-h-40 resize-y overflow-auto font-mono text-xs'
+
 function totalPlanCredits(plan: PlanRow) {
   return Number(plan.credits || 0) + Number(plan.bonus || 0)
 }
@@ -353,6 +357,25 @@ export function AdminSettingsPage() {
                     </div>
                     <Tip>配置多个上游资源域名→反代前缀的替换规则，用户端和管理端任务结果统一生效。留空则不替换。</Tip>
                   </FieldRow>
+                  <FieldRow label="用户协议地址">
+                    <Input
+                      type="url"
+                      value={form.user_agreement_url ?? ''}
+                      onChange={(e) => set('user_agreement_url', e.target.value)}
+                      placeholder="https://example.com/terms"
+                    />
+                    <Tip>登录页的「用户协议」外链地址；若下方填写了本地协议内容，登录页将优先弹窗展示本地内容。</Tip>
+                  </FieldRow>
+                  <FieldRow label="本地用户协议内容">
+                    <Textarea
+                      value={form.user_agreement_content ?? ''}
+                      onChange={(e) => set('user_agreement_content', e.target.value)}
+                      rows={10}
+                      className={largeMarkdownTextareaClass}
+                      placeholder={`# 用户协议\n\n在这里编辑登录页展示的用户协议内容，支持 Markdown。`}
+                    />
+                    <Tip>支持 Markdown；留空时登录页使用上方协议地址，若两者都为空则仅显示确认文字。</Tip>
+                  </FieldRow>
                   <FieldRow label="显示低价密钥类型">
                     <ToggleField
                       checked={form.show_low_price_key !== 'false'}
@@ -377,7 +400,7 @@ export function AdminSettingsPage() {
                       value={form.header_html ?? ''}
                       onChange={(e) => set('header_html', e.target.value)}
                       rows={6}
-                      className="font-mono text-xs"
+                      className={codeTextareaClass}
                       placeholder='<div style="text-align:center;padding:8px;background:#1677ff;color:#fff">公告：系统维护中</div>'
                     />
                     <Tip>留空则不显示页眉；支持 HTML 和内联样式</Tip>
@@ -387,7 +410,7 @@ export function AdminSettingsPage() {
                       value={form.footer_html ?? ''}
                       onChange={(e) => set('footer_html', e.target.value)}
                       rows={6}
-                      className="font-mono text-xs"
+                      className={codeTextareaClass}
                       placeholder='<div style="text-align:center;padding:16px;color:#888">© 2025 MidCode</div>'
                     />
                     <Tip>留空则不显示页脚；支持 HTML 和内联样式</Tip>
@@ -510,7 +533,7 @@ export function AdminSettingsPage() {
                         <Input type="password" value={form.shouqianba_terminal_key ?? ''} onChange={(e) => set('shouqianba_terminal_key', e.target.value)} placeholder="收钱吧终端密钥" />
                       </FieldRow>
                       <FieldRow label="收钱吧公钥">
-                        <Textarea value={form.shouqianba_public_key ?? ''} onChange={(e) => set('shouqianba_public_key', e.target.value)} rows={4} placeholder="-----BEGIN PUBLIC KEY----- ... -----END PUBLIC KEY-----" className="font-mono text-xs" />
+                        <Textarea value={form.shouqianba_public_key ?? ''} onChange={(e) => set('shouqianba_public_key', e.target.value)} rows={4} placeholder="-----BEGIN PUBLIC KEY----- ... -----END PUBLIC KEY-----" className={codeTextareaClass} />
                         <Tip>用于验证收钱吧回调签名（SHA256WithRSA）</Tip>
                       </FieldRow>
                       <FieldRow label="异步通知地址">
@@ -552,7 +575,7 @@ export function AdminSettingsPage() {
                     <Tip>显示在用户数据看板右侧，留空则不显示公告模块</Tip>
                   </FieldRow>
                   <FieldRow label="公告内容">
-                    <Textarea value={form.notice_content ?? ''} onChange={(e) => set('notice_content', e.target.value)} rows={5} placeholder="支持换行，每行一条公告内容" />
+                    <Textarea value={form.notice_content ?? ''} onChange={(e) => set('notice_content', e.target.value)} rows={5} placeholder="支持换行，每行一条公告内容" className={compactTextareaClass} />
                     <Tip>纯文本，每行作为一条，不支持 HTML</Tip>
                   </FieldRow>
                   <FieldRow label="联系方式">
@@ -560,6 +583,7 @@ export function AdminSettingsPage() {
                       value={form.contact_info ?? ''}
                       onChange={(e) => set('contact_info', e.target.value)}
                       rows={4}
+                      className={compactTextareaClass}
                       placeholder={`微信：fanapi\nQQ群：123456789\n邮箱：support@example.com`}
                     />
                     <Tip>纯文本，每行一条联系方式，显示在数据看板公告区域</Tip>
@@ -569,7 +593,7 @@ export function AdminSettingsPage() {
                       value={form.tutorial_markdown ?? ''}
                       onChange={(e) => set('tutorial_markdown', e.target.value)}
                       rows={16}
-                      className="font-mono text-xs"
+                      className={largeMarkdownTextareaClass}
                       placeholder={`# 新手教程\n\n在这里粘贴完整的 Markdown 教程文档。`}
                     />
                     <Tip>用户端左侧「新手教程」页面会直接展示这里的 Markdown 内容。</Tip>

@@ -29,6 +29,8 @@ export type SiteSettings = {
   headerHtml: string
   footerHtml: string
   showLowPriceKey: boolean
+  userAgreementUrl: string
+  userAgreementContent: string
 }
 
 const defaultSettings: SiteSettings = {
@@ -51,6 +53,8 @@ const defaultSettings: SiteSettings = {
   headerHtml: '',
   footerHtml: '',
   showLowPriceKey: true,
+  userAgreementUrl: '',
+  userAgreementContent: '',
 }
 
 export function useSiteSettings() {
@@ -88,6 +92,8 @@ export function useSiteSettings() {
           headerHtml: record.header_html || '',
           footerHtml: record.footer_html || '',
           showLowPriceKey: record.show_low_price_key !== 'false',
+          userAgreementUrl: record.user_agreement_url || '',
+          userAgreementContent: record.user_agreement_content || '',
         })
       } catch {
         setSettings(defaultSettings)
