@@ -83,7 +83,6 @@ func main() {
 
 	// 启动 OCPC 定时上报调度器
 	service.StartOcpcScheduler(ctx)
-	service.StartPendingResellerSiteBuildJobs(ctx, cfg)
 
 	m := mailer.New(&cfg.SMTP)
 	authH := handler.NewAuthHandler(&cfg.Server, m)

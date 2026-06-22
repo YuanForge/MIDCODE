@@ -57,8 +57,6 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         nginx \
         supervisor \
-        docker.io \
-        docker-compose \
         curl \
         ca-certificates \
         tzdata && \
