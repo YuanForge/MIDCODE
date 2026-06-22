@@ -377,6 +377,39 @@ func CreateResellerSite(ctx context.Context, resellerID int64, input CreateResel
 	return &ResellerSiteBuildResult{Site: *site, Job: *job}, nil
 }
 
+func StartPendingResellerSiteBuildJobs(ctx context.Context, cfg *config.Config) {
+	if !cfg.ResellerBuilder.AutoBuild {
+		log.Printf("[reseller-build] auto build disabled; pending reseller site jobs will stay queued")
+		return
+	}
+
+	var jobs []model.ResellerSiteBuildJob
+	if err := db.Engine.Context(ctx).
+		Where("status = ?", "pending").
+		Asc("id").
+		Find(&jobs); err != nil {
+		log.Printf("[reseller-build] load pending jobs failed: %v", err)
+		return
+	}
+	if len(jobs) == 0 {
+		return
+	}
+	log.Printf("[reseller-build] starting %d pending reseller site build job(s)", len(jobs))
+	for _, job := range jobs {
+		jobID := job.ID
+		go func() {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			if err := BuildResellerSite(ctx, jobID, cfg); err != nil {
+				log.Printf("[reseller-build] job=%d failed: %v", jobID, err)
+			}
+		}()
+	}
+}
+
 func pickResellerAPIKey(ctx context.Context, userID, requestedID int64) (*model.APIKey, error) {
 	apiKey := &model.APIKey{}
 	var found bool
@@ -515,6 +548,11 @@ func BuildResellerSite(ctx context.Context, jobID int64, cfg *config.Config) err
 	if !found {
 		return fmt.Errorf("site not found")
 	}
+
+	if err := claimResellerBuildJob(ctx, &job, &site); err != nil {
+		return err
+	}
+
 	var apiKey model.APIKey
 	found, err = db.Engine.Context(ctx).
 		Where("id = ? AND user_id = ? AND is_active = true", site.APIKeyID, site.UserID).
@@ -529,17 +567,6 @@ func BuildResellerSite(ctx context.Context, jobID int64, cfg *config.Config) err
 	if err != nil {
 		return markBuildFailed(ctx, &job, &site, "validate_key", err)
 	}
-
-	now := time.Now()
-	job.Status = "building"
-	job.StartedAt = &now
-	job.Error = ""
-	if _, err := db.Engine.Context(ctx).ID(job.ID).Cols("status", "started_at", "error").Update(&job); err != nil {
-		return err
-	}
-	site.Status = "building"
-	site.LastError = ""
-	db.Engine.Context(ctx).ID(site.ID).Cols("status", "last_error").Update(&site) //nolint:errcheck
 
 	createdDB := false
 	copiedCode := false
@@ -565,6 +592,9 @@ func BuildResellerSite(ctx context.Context, jobID int64, cfg *config.Config) err
 	if err := writeResellerSiteConfig(site, rawKey, cfg); err != nil {
 		return failAndCleanup(ctx, &job, &site, "write_config", err, createdDB, copiedCode, cfg)
 	}
+	if err := writeResellerSiteEnv(site); err != nil {
+		return failAndCleanup(ctx, &job, &site, "write_env", err, createdDB, copiedCode, cfg)
+	}
 
 	if err := updateBuildStep(ctx, job.ID, "start_service"); err != nil {
 		return err
@@ -585,6 +615,40 @@ func BuildResellerSite(ctx context.Context, jobID int64, cfg *config.Config) err
 	}
 	_, err = db.Engine.Context(ctx).ID(site.ID).Cols("status", "last_error").Update(&site)
 	return err
+}
+
+func claimResellerBuildJob(ctx context.Context, job *model.ResellerSiteBuildJob, site *model.ResellerSite) error {
+	if job.Status == "success" {
+		return fmt.Errorf("build job already succeeded")
+	}
+	now := time.Now()
+	update := &model.ResellerSiteBuildJob{
+		Status:     "building",
+		Step:       "prepare",
+		Error:      "",
+		StartedAt:  &now,
+		FinishedAt: nil,
+	}
+	affected, err := db.Engine.Context(ctx).
+		Where("id = ? AND status IN (?, ?)", job.ID, "pending", "failed").
+		Cols("status", "step", "error", "started_at", "finished_at").
+		Update(update)
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return fmt.Errorf("build job is %s and cannot be started", job.Status)
+	}
+	job.Status = update.Status
+	job.Step = update.Step
+	job.Error = update.Error
+	job.StartedAt = update.StartedAt
+	job.FinishedAt = nil
+
+	site.Status = "building"
+	site.LastError = ""
+	db.Engine.Context(ctx).ID(site.ID).Cols("status", "last_error").Update(site) //nolint:errcheck
+	return nil
 }
 
 func updateBuildStep(ctx context.Context, jobID int64, step string) error {
@@ -614,6 +678,11 @@ func failAndCleanup(ctx context.Context, job *model.ResellerSiteBuildJob, site *
 		}
 	}
 	if copiedCode {
+		if step == "start_service" {
+			if err := cleanupDockerCompose(ctx, site.CodePath, site.SiteCode); err != nil {
+				cleanupErrors = append(cleanupErrors, "docker compose down: "+err.Error())
+			}
+		}
 		if err := removeCodePathSafely(cfg.ResellerBuilder.BasePath, site.CodePath); err != nil {
 			cleanupErrors = append(cleanupErrors, "remove code path: "+err.Error())
 		}
@@ -639,11 +708,14 @@ func copyDir(src, dst string) error {
 		if err != nil {
 			return err
 		}
-		target := filepath.Join(dst, rel)
-		if d.IsDir() {
-			if rel == ".git" || strings.Contains(rel, string(filepath.Separator)+".git"+string(filepath.Separator)) {
+		if shouldSkipResellerCopy(rel, d.IsDir()) {
+			if d.IsDir() {
 				return filepath.SkipDir
 			}
+			return nil
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
 			return os.MkdirAll(target, 0755)
 		}
 		info, err := d.Info()
@@ -655,6 +727,30 @@ func copyDir(src, dst string) error {
 		}
 		return copyFile(pathValue, target, info.Mode())
 	})
+}
+
+func shouldSkipResellerCopy(rel string, isDir bool) bool {
+	normalized := filepath.ToSlash(filepath.Clean(rel))
+	if normalized == "." {
+		return false
+	}
+	base := path.Base(normalized)
+	if isDir {
+		switch base {
+		case ".git", "node_modules", "dist":
+			return true
+		}
+		switch normalized {
+		case "uploads", "web/app/dist":
+			return true
+		}
+		return false
+	}
+	switch base {
+	case "config.yaml", "config.local.yaml", ".env":
+		return true
+	}
+	return strings.HasPrefix(base, ".env.")
 }
 
 func copyFile(src, dst string, mode os.FileMode) error {
@@ -729,7 +825,7 @@ reseller_site:
   logo_url: %q
   profit_ratio: %.6f
 `,
-		site.AppPort, cfg.Server.JWTSecret, cfg.Server.JWTExpireHours,
+		8080, cfg.Server.JWTSecret, cfg.Server.JWTExpireHours,
 		cfg.DB.Host, cfg.DB.Port, cfg.DB.User, cfg.DB.Password, site.DBName, cfg.DB.SSLMode,
 		cfg.Redis.Addr, cfg.Redis.Password, site.RedisDB,
 		cfg.NATS.URL, site.NATSNamespace, "TASKS_"+site.NATSNamespace, site.NATSNamespace+".task.>", "RESULTS_"+site.NATSNamespace, site.NATSNamespace+".result.>",
@@ -740,16 +836,42 @@ reseller_site:
 	return os.WriteFile(filepath.Join(site.CodePath, "config.yaml"), []byte(content), 0600)
 }
 
+func writeResellerSiteEnv(site model.ResellerSite) error {
+	content := fmt.Sprintf("FANAPI_HTTP_BIND=127.0.0.1:%d\n", site.AppPort)
+	return os.WriteFile(filepath.Join(site.CodePath, ".env"), []byte(content), 0600)
+}
+
 func runDockerCompose(ctx context.Context, dir, projectName string) error {
 	cmdCtx, cancel := context.WithTimeout(ctx, 20*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(cmdCtx, "docker", "compose", "-p", projectName, "up", "-d", "--build")
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("docker compose failed: %w: %s", err, strings.TrimSpace(string(out)))
+	return runComposeCommand(cmdCtx, dir, projectName, "up", "-d", "--build")
+}
+
+func cleanupDockerCompose(ctx context.Context, dir, projectName string) error {
+	cmdCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	return runComposeCommand(cmdCtx, dir, projectName, "down", "--remove-orphans")
+}
+
+func runComposeCommand(ctx context.Context, dir, projectName string, args ...string) error {
+	candidates := []struct {
+		name string
+		args []string
+	}{
+		{name: "docker", args: append([]string{"compose", "-p", projectName}, args...)},
+		{name: "docker-compose", args: append([]string{"-p", projectName}, args...)},
 	}
-	return nil
+	failures := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		cmd := exec.CommandContext(ctx, candidate.name, candidate.args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			return nil
+		}
+		failures = append(failures, fmt.Sprintf("%s %s: %v: %s", candidate.name, strings.Join(candidate.args, " "), err, strings.TrimSpace(string(out))))
+	}
+	return fmt.Errorf("compose command failed: %s", strings.Join(failures, "; "))
 }
 
 func removeCodePathSafely(basePath, codePath string) error {

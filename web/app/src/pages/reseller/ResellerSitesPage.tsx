@@ -193,7 +193,7 @@ export function ResellerSitesPage() {
       <PageHeader
         eyebrow="Reseller"
         title="代理站点"
-        description="创建代理站记录并生成独立数据库、Redis DB、NATS namespace 等资源信息。"
+        description="创建后自动复制代码、创建独立数据库、分配 Redis DB 和 NATS namespace，并启动代理站服务。"
         actions={
           <>
             {error ? <Button size="sm" variant="outline" onClick={reload}>重试</Button> : null}
@@ -278,7 +278,7 @@ export function ResellerSitesPage() {
         <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>搭建代理站</DialogTitle>
-            <DialogDescription>创建成功后会生成独立资源信息；如果自动搭建未开启，需要管理员按记录人工配置外层 Nginx 和后续发布。</DialogDescription>
+            <DialogDescription>提交后系统会自动搭建代理站；代理商解析域名后，由管理员配置宿主机 Nginx 和证书。</DialogDescription>
           </DialogHeader>
           <div className="grid max-h-[70vh] gap-4 overflow-y-auto pr-1 md:grid-cols-2">
             <div className="flex flex-col gap-2">
@@ -331,7 +331,7 @@ export function ResellerSitesPage() {
           {created ? (
             <Alert>
               <AlertDescription className="space-y-2">
-                <span className="block">代理站记录已创建。</span>
+                <span className="block">代理站搭建任务已创建，系统正在自动搭建。</span>
                 <span className="block font-mono text-xs">DB: {created.site?.db_name ?? '-'}</span>
                 <span className="block font-mono text-xs">Redis DB: {created.site?.redis_db ?? '-'}</span>
                 <span className="block font-mono text-xs">NATS: {created.site?.nats_namespace ?? '-'}</span>

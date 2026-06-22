@@ -96,6 +96,7 @@ func Load() (*Config, error) {
 	viper.AddConfigPath(".")
 	viper.AddConfigPath("/app")
 	viper.AutomaticEnv()
+	viper.SetDefault("reseller_builder.auto_build", true)
 
 	if err := viper.ReadInConfig(); err != nil {
 		return nil, err

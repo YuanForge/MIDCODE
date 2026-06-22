@@ -33,10 +33,12 @@ services:
     image: fanapi-api:latest
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8088:80"
+      - "${FANAPI_HTTP_BIND:-127.0.0.1:8088}:80"
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./uploads:/app/uploads
+      - /data/code:/data/code
+      - /var/run/docker.sock:/var/run/docker.sock
     extra_hosts:
       - "host-gateway:host-gateway"
       - "host.docker.internal:host-gateway"
