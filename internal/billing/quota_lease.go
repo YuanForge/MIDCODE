@@ -352,6 +352,11 @@ func ensureQuota(ctx context.Context, userID, credits int64) error {
 	if credits <= 0 {
 		return nil
 	}
+	if reclaimed, amount, err := ReclaimExpiredQuotaLeasesForUser(ctx, userID); err != nil {
+		log.Printf("[quota] reclaim expired quota before charge failed user=%d err=%v", userID, err)
+	} else if reclaimed > 0 && amount > 0 {
+		log.Printf("[quota] reclaimed expired quota before charge user=%d leases=%d credits=%d", userID, reclaimed, amount)
+	}
 	remaining, err := quotaRemaining(ctx, userID)
 	if err != nil {
 		return err
@@ -547,6 +552,12 @@ RETURNING remaining_credits`, generalCredits, expiresAt, userID)
 // current Redis quota bucket exists, it is used instead of the DB lease sum so
 // the balance shown to users tracks what Charge can actually spend.
 func SpendableBalance(ctx context.Context, userID int64) (int64, error) {
+	if reclaimed, amount, err := ReclaimExpiredQuotaLeasesForUser(ctx, userID); err != nil {
+		log.Printf("[quota] reclaim expired quota before balance failed user=%d err=%v", userID, err)
+	} else if reclaimed > 0 && amount > 0 {
+		log.Printf("[quota] reclaimed expired quota before balance user=%d leases=%d credits=%d", userID, reclaimed, amount)
+	}
+
 	var row struct {
 		Balance     int64 `xorm:"balance"`
 		ActiveLease int64 `xorm:"active_lease"`
@@ -673,4 +684,78 @@ func reclaimQuotaLease(ctx context.Context, leaseID int64) error {
 	clearQuotaCache(ctx, lease.UserID)
 	InvalidateBalanceCache(ctx, lease.UserID)
 	return nil
+}
+
+// ReclaimExpiredQuotaLeasesForUser returns all expired quota leases for a user
+// to the durable DB balance. It is intentionally cheap to call on read/charge
+// paths so a stalled background syncer cannot strand spendable credits.
+func ReclaimExpiredQuotaLeasesForUser(ctx context.Context, userID int64) (int, int64, error) {
+	if userID <= 0 {
+		return 0, 0, nil
+	}
+	cutoff := time.Now().Add(-quotaLeaseReclaimGrace)
+	sess := db.Engine.NewSession()
+	defer sess.Close()
+	if err := sess.Begin(); err != nil {
+		return 0, 0, err
+	}
+	if _, err := sess.Exec("SELECT pg_advisory_xact_lock($1, $2)", quotaLeaseLockNamespace, userID); err != nil {
+		_ = sess.Rollback()
+		return 0, 0, err
+	}
+
+	rows, err := sess.QueryString(`
+WITH target AS (
+    SELECT id, remaining_credits
+    FROM billing_quota_leases
+    WHERE user_id = $1 AND status = 'active' AND expires_at < $2
+    FOR UPDATE
+),
+summed AS (
+    SELECT COUNT(*)::bigint AS lease_count,
+           COALESCE(SUM(remaining_credits), 0)::bigint AS reclaim_amount
+    FROM target
+),
+updated_user AS (
+    UPDATE users
+    SET balance = balance + (SELECT reclaim_amount FROM summed)
+    WHERE id = $1 AND (SELECT reclaim_amount FROM summed) > 0
+    RETURNING id
+),
+updated_leases AS (
+    UPDATE billing_quota_leases l
+    SET remaining_credits = 0,
+        status = 'expired',
+        updated_at = NOW()
+    FROM target t
+    WHERE l.id = t.id
+    RETURNING l.id
+)
+SELECT
+    (SELECT COUNT(*) FROM updated_leases) AS lease_count,
+    (SELECT reclaim_amount FROM summed) AS reclaim_amount,
+    (SELECT COUNT(*) FROM updated_user) AS updated_user_count`, userID, cutoff)
+	if err != nil {
+		_ = sess.Rollback()
+		return 0, 0, err
+	}
+	if len(rows) == 0 {
+		_ = sess.Rollback()
+		return 0, 0, nil
+	}
+	reclaimed, _ := strconv.ParseInt(rows[0]["lease_count"], 10, 64)
+	amount, _ := strconv.ParseInt(rows[0]["reclaim_amount"], 10, 64)
+	updatedUsers, _ := strconv.ParseInt(rows[0]["updated_user_count"], 10, 64)
+	if amount > 0 && updatedUsers == 0 {
+		_ = sess.Rollback()
+		return 0, 0, fmt.Errorf("user %d not found while reclaiming expired quota", userID)
+	}
+	if err := sess.Commit(); err != nil {
+		return 0, 0, err
+	}
+	if reclaimed > 0 {
+		clearQuotaCache(ctx, userID)
+		InvalidateBalanceCache(ctx, userID)
+	}
+	return int(reclaimed), amount, nil
 }
