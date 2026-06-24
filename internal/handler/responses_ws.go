@@ -13,6 +13,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -58,6 +59,8 @@ func ResponsesWSProxy(c *gin.Context) {
 
 	// 从查询参数获取默认模型（客户端也可在每条 response.create 消息中覆盖）
 	defaultModel := c.Query("model")
+	upstreamSession := &responsesWSUpstreamSession{}
+	defer upstreamSession.close()
 
 	for {
 		_, msgBytes, err := conn.ReadMessage()
@@ -92,9 +95,11 @@ func ResponsesWSProxy(c *gin.Context) {
 			if _, hasModel := responseData["model"]; !hasModel && defaultModel != "" {
 				responseData["model"] = defaultModel
 			}
-			if handleErr := handleWSResponseCreate(c, conn, responseData); handleErr != nil {
+			if handleErr := handleWSResponseCreate(c, conn, responseData, upstreamSession); handleErr != nil {
 				log.Printf("[ws-responses] response.create error: %v", handleErr)
-				sendWSResponseError(conn, "server_error", handleErr.Error())
+				if !isWSClientErrorAlreadySent(handleErr) {
+					sendWSResponseError(conn, "server_error", handleErr.Error())
+				}
 			}
 		default:
 			sendWSResponseError(conn, "unknown_event_type", "未知事件类型: "+msgType)
@@ -109,7 +114,7 @@ func ResponsesWSProxy(c *gin.Context) {
 //   - 上游流式请求
 //   - SSE → Responses API WS 事件推送
 //   - 结算
-func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData map[string]interface{}) error {
+func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData map[string]interface{}, upstreamSession *responsesWSUpstreamSession) error {
 	userID := c.MustGet("user_id").(int64)
 	var apiKeyIDVal int64
 	if apiKeyID, ok := c.Get("api_key_id"); ok && apiKeyID != nil {
@@ -119,9 +124,6 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 	if raw, ok := c.Get("user_group"); ok {
 		userGroup, _ = raw.(string)
 	}
-
-	// 始终启用流式（WS 模式仅支持 stream）
-	responseData["stream"] = true
 
 	// 渠道选择
 	routingKey, _ := responseData["model"].(string)
@@ -183,14 +185,7 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 		}
 	} else {
 		// 上游 WS 直连：保持 Responses API 格式，必要时仅覆盖 model
-		openAIReq = make(map[string]interface{}, len(responseData)+1)
-		for k, v := range responseData {
-			openAIReq[k] = v
-		}
-		openAIReq["stream"] = true
-		if resolvedModel != "" {
-			openAIReq["model"] = resolvedModel
-		}
+		openAIReq = prepareResponsesWSRequest(responseData, resolvedModel)
 	}
 
 	// 保存原始请求（用于计费估算）
@@ -286,7 +281,7 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 
 	var usageForSettle map[string]interface{}
 	if useUpstreamWS {
-		usageWS, rawWSMessages, clientResp, wsErr := forwardResponsesWS(c.Request.Context(), conn, c, ch, poolKey, upstreamWSURL, openAIReq)
+		usageWS, rawWSMessages, clientResp, wsErr := forwardResponsesWSWithSession(c.Request.Context(), upstreamSession, conn, c, ch, poolKey, upstreamWSURL, openAIReq)
 		if wsErr != nil {
 			service.RecordChannelError(c.Request.Context(), ch.ID)
 			refunded, mcRefunded := refundHold("upstream_error")
@@ -562,10 +557,332 @@ func forwardResponsesWS(ctx context.Context, clientConn *websocket.Conn, c *gin.
 	return usage, rawMessages, toWSClientResp(textBuf.String()), nil
 }
 
+type responsesWSUpstreamSession struct {
+	conn        *websocket.Conn
+	key         string
+	targetURL   string
+	sentHeaders map[string]string
+}
+
+func (s *responsesWSUpstreamSession) close() {
+	if s == nil || s.conn == nil {
+		return
+	}
+	_ = s.conn.Close()
+	s.conn = nil
+	s.key = ""
+	s.targetURL = ""
+	s.sentHeaders = nil
+}
+
+func (s *responsesWSUpstreamSession) ensure(ctx context.Context, c *gin.Context, ch *model.Channel, poolKey *model.PoolKey, upstreamWSURL string, timeout time.Duration) (*websocket.Conn, string, map[string]string, error) {
+	if s == nil {
+		return nil, "", nil, fmt.Errorf("missing responses upstream session")
+	}
+
+	poolKeyVal := ""
+	poolKeyID := int64(0)
+	if poolKey != nil {
+		poolKeyVal = poolKey.Value
+		poolKeyID = poolKey.ID
+	}
+
+	targetURL := normalizeResponsesWSURL(script.ResolveHeaderValue(upstreamWSURL, poolKeyVal))
+	targetURL, authErr := applyRealtimeQueryAuth(targetURL, ch, poolKeyVal)
+	if authErr != nil {
+		return nil, "", nil, authErr
+	}
+	parsed, parseErr := url.Parse(targetURL)
+	if parseErr != nil {
+		return nil, "", nil, parseErr
+	}
+	if parsed.Scheme != "ws" && parsed.Scheme != "wss" {
+		return nil, "", nil, fmt.Errorf("上游 URL 不是 WebSocket: %s", targetURL)
+	}
+
+	targetURL = parsed.String()
+	sessionKey := fmt.Sprintf("%d:%d:%s", ch.ID, poolKeyID, targetURL)
+	if s.conn != nil && s.key == sessionKey {
+		return s.conn, s.targetURL, s.sentHeaders, nil
+	}
+
+	s.close()
+	dialHeader, sentHeaders, headerErr := buildUpstreamWSHeaders(
+		c.Request.Header,
+		ch,
+		poolKeyVal,
+		ch.PassthroughHeaders,
+		map[string]bool{
+			"x-upstream-responses-ws-url": true,
+			"x-upstream-responses-url":    true,
+			"x-upstream-ws-url":           true,
+		},
+		nil,
+	)
+	if headerErr != nil {
+		return nil, "", nil, headerErr
+	}
+
+	dialer := websocket.Dialer{HandshakeTimeout: timeout}
+	upConn, _, dialErr := dialer.DialContext(ctx, targetURL, dialHeader)
+	if dialErr != nil {
+		return nil, "", nil, dialErr
+	}
+
+	s.conn = upConn
+	s.key = sessionKey
+	s.targetURL = targetURL
+	s.sentHeaders = sentHeaders
+	return s.conn, s.targetURL, s.sentHeaders, nil
+}
+
+func forwardResponsesWSWithSession(ctx context.Context, session *responsesWSUpstreamSession, clientConn *websocket.Conn, c *gin.Context, ch *model.Channel, poolKey *model.PoolKey, upstreamWSURL string, responseReq map[string]interface{}) (map[string]interface{}, []string, model.JSON, error) {
+	timeout := time.Duration(ch.TimeoutMs) * time.Millisecond
+	if timeout <= 0 {
+		timeout = 60 * time.Second
+	}
+	if session == nil {
+		session = &responsesWSUpstreamSession{}
+	}
+
+	upConn, _, _, err := session.ensure(ctx, c, ch, poolKey, upstreamWSURL, timeout)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	createMsg := map[string]interface{}{
+		"type":     "response.create",
+		"response": responseReq,
+	}
+	createBytes, _ := json.Marshal(createMsg)
+	if err := upConn.WriteMessage(websocket.TextMessage, createBytes); err != nil {
+		session.close()
+		return nil, nil, nil, err
+	}
+
+	const maxWSLogBytes = 200 * 1024
+	var rawMessages []string
+	rawBytes := 0
+	var textBuf strings.Builder
+	var usage map[string]interface{}
+	var terminalErr error
+	var terminalSeen bool
+
+	for {
+		msgType, msgBytes, readErr := upConn.ReadMessage()
+		if readErr != nil {
+			session.close()
+			if websocket.IsCloseError(readErr, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseNoStatusReceived) && terminalSeen {
+				break
+			}
+			if websocket.IsCloseError(readErr, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseNoStatusReceived) {
+				return usage, rawMessages, toWSClientResp(textBuf.String()), fmt.Errorf("upstream websocket closed before response.completed")
+			}
+			return usage, rawMessages, toWSClientResp(textBuf.String()), readErr
+		}
+		if msgType != websocket.TextMessage {
+			continue
+		}
+
+		msgStr := string(msgBytes)
+		if rawBytes < maxWSLogBytes {
+			rawMessages = append(rawMessages, msgStr)
+			rawBytes += len(msgStr) + 1
+		}
+
+		var event map[string]interface{}
+		if json.Unmarshal(msgBytes, &event) == nil {
+			typeVal, _ := event["type"].(string)
+			switch typeVal {
+			case "response.output_text.delta":
+				if delta, _ := event["delta"].(string); delta != "" {
+					textBuf.WriteString(delta)
+				}
+			case "response.output_text.done":
+				if textBuf.Len() == 0 {
+					if doneText, _ := event["text"].(string); doneText != "" {
+						textBuf.WriteString(doneText)
+					}
+				}
+			case "response.completed", "response.incomplete":
+				terminalSeen = true
+				if respObj, ok := event["response"].(map[string]interface{}); ok {
+					if usg := responsesUsageFromEvent(respObj); usg != nil {
+						usage = usg
+					}
+				}
+			case "response.failed":
+				terminalSeen = true
+				terminalErr = responsesWSFailureError(event)
+				if respObj, ok := event["response"].(map[string]interface{}); ok {
+					if usg := responsesUsageFromEvent(respObj); usg != nil {
+						usage = usg
+					}
+				}
+			case "error":
+				terminalSeen = true
+				terminalErr = responsesWSFailureError(event)
+			}
+		}
+
+		if writeErr := clientConn.WriteMessage(websocket.TextMessage, msgBytes); writeErr != nil {
+			session.close()
+			return usage, rawMessages, toWSClientResp(textBuf.String()), writeErr
+		}
+
+		if terminalSeen {
+			break
+		}
+	}
+
+	if terminalErr != nil {
+		return usage, rawMessages, toWSClientResp(textBuf.String()), &wsClientErrorAlreadySent{err: terminalErr}
+	}
+
+	if usage == nil {
+		prompt := billing.EstimateTokensFromRequest(responseReq)
+		completion := int64(textBuf.Len()/4 + 1)
+		if textBuf.Len() == 0 {
+			completion = 0
+		}
+		usage = map[string]interface{}{
+			"prompt_tokens":     prompt,
+			"completion_tokens": completion,
+			"total_tokens":      prompt + completion,
+			"estimated":         true,
+		}
+	}
+
+	return usage, rawMessages, toWSClientResp(textBuf.String()), nil
+}
+
+func prepareResponsesWSRequest(responseData map[string]interface{}, resolvedModel string) map[string]interface{} {
+	out := make(map[string]interface{}, len(responseData)+1)
+	for k, v := range responseData {
+		if strings.EqualFold(k, "stream") || strings.EqualFold(k, "background") || strings.EqualFold(k, "stream_options") {
+			continue
+		}
+		out[k] = v
+	}
+	if resolvedModel != "" {
+		out["model"] = resolvedModel
+	}
+	return out
+}
+
+func responsesUsageFromEvent(respObj map[string]interface{}) map[string]interface{} {
+	usageObj, _ := respObj["usage"].(map[string]interface{})
+	if usageObj == nil {
+		return nil
+	}
+	inputTokens := int64FromAny(usageObj["input_tokens"])
+	outputTokens := int64FromAny(usageObj["output_tokens"])
+	totalTokens := int64FromAny(usageObj["total_tokens"])
+	if totalTokens == 0 {
+		totalTokens = inputTokens + outputTokens
+	}
+	usage := map[string]interface{}{
+		"prompt_tokens":     inputTokens,
+		"completion_tokens": outputTokens,
+		"total_tokens":      totalTokens,
+	}
+	if details, ok := usageObj["input_token_details"].(map[string]interface{}); ok {
+		if cached := int64FromAny(details["cached_tokens"]); cached > 0 {
+			usage["cache_read_tokens"] = cached
+		}
+	}
+	return usage
+}
+
+func responsesWSFailureError(event map[string]interface{}) error {
+	if errObj, ok := event["error"].(map[string]interface{}); ok {
+		if msg, _ := errObj["message"].(string); msg != "" {
+			return fmt.Errorf("upstream error: %s", msg)
+		}
+	}
+	if respObj, ok := event["response"].(map[string]interface{}); ok {
+		if errObj, ok := respObj["error"].(map[string]interface{}); ok {
+			if msg, _ := errObj["message"].(string); msg != "" {
+				return fmt.Errorf("upstream error: %s", msg)
+			}
+		}
+	}
+	eventType, _ := event["type"].(string)
+	if eventType == "" {
+		eventType = "unknown"
+	}
+	return fmt.Errorf("upstream event %s", eventType)
+}
+
+type wsClientErrorAlreadySent struct {
+	err error
+}
+
+func (e *wsClientErrorAlreadySent) Error() string {
+	return e.err.Error()
+}
+
+func (e *wsClientErrorAlreadySent) Unwrap() error {
+	return e.err
+}
+
+func isWSClientErrorAlreadySent(err error) bool {
+	var sent *wsClientErrorAlreadySent
+	return errors.As(err, &sent)
+}
+
+func normalizeResponsesWSURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	lower := strings.ToLower(raw)
+	if strings.HasPrefix(lower, "https://") {
+		raw = "wss://" + raw[len("https://"):]
+	} else if strings.HasPrefix(lower, "http://") {
+		raw = "ws://" + raw[len("http://"):]
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	path := strings.TrimRight(parsed.Path, "/")
+	switch {
+	case path == "":
+		parsed.Path = "/v1/responses"
+	case strings.HasSuffix(path, "/responses"):
+		parsed.Path = path
+	case strings.HasSuffix(path, "/chat/completions"):
+		parsed.Path = strings.TrimSuffix(path, "/chat/completions") + "/responses"
+	case strings.HasSuffix(path, "/v1"):
+		parsed.Path = path + "/responses"
+	case strings.Contains(path, "/v1/"):
+		idx := strings.Index(path, "/v1/")
+		parsed.Path = path[:idx+len("/v1")] + "/responses"
+	}
+	return parsed.String()
+}
+
 func resolveUpstreamWSURL(ch *model.Channel, resolvedModel string, poolKey *model.PoolKey) string {
 	poolKeyVal := ""
 	if poolKey != nil {
 		poolKeyVal = poolKey.Value
+	}
+
+	for k, v := range ch.Headers {
+		if !strings.EqualFold(k, "x-upstream-responses-ws-url") && !strings.EqualFold(k, "x-upstream-responses-url") {
+			continue
+		}
+		s, ok := v.(string)
+		if !ok || strings.TrimSpace(s) == "" {
+			continue
+		}
+		u := strings.TrimSpace(script.ResolveHeaderValue(s, poolKeyVal))
+		if resolvedModel != "" {
+			u = strings.ReplaceAll(u, "{model}", resolvedModel)
+		}
+		lower := strings.ToLower(u)
+		if strings.HasPrefix(lower, "ws://") || strings.HasPrefix(lower, "wss://") || strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+			return normalizeResponsesWSURL(u)
+		}
 	}
 
 	// 允许在渠道 Headers 中显式指定上游 WS 地址：x-upstream-ws-url
