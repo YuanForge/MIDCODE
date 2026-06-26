@@ -219,7 +219,7 @@ func RealtimeWSProxy(c *gin.Context) {
 		service.RecordChannelError(c.Request.Context(), ch.ID)
 		if totalHold > 0 {
 			refunded, mcRefunded := llmRefundCredits(c, userID, totalHold)
-			recordLLMRefundTx(c.Request.Context(), c, userID, ch.ID, apiKeyIDVal, poolKeyIDVal, corrID, refunded, scaleRefundCost(upstreamCostHold, refunded, totalHold), mcRefunded, model.JSON{"reason": "realtime_ws_error"})
+			recordLLMRefundTxDetached(c, userID, ch.ID, apiKeyIDVal, poolKeyIDVal, corrID, refunded, scaleRefundCost(upstreamCostHold, refunded, totalHold), mcRefunded, model.JSON{"reason": "realtime_ws_error"})
 		}
 		enqueueLLMLogPatch(corrID, []string{"status", "error_msg", "upstream_response", "client_response"}, model.LLMLog{
 			Status:           "error",

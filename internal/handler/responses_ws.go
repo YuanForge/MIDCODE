@@ -229,14 +229,20 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 			return 0, 0
 		}
 		if generalCreditCharged > 0 {
-			if err := billing.Refund(c.Request.Context(), userID, generalCreditCharged); err != nil {
+			refundCtx, refundCancel := newLLMBillingContext()
+			err := billing.Refund(refundCtx, userID, generalCreditCharged)
+			refundCancel()
+			if err != nil {
 				log.Printf("[responses-ws] refund general hold failed user_id=%d credits=%d err=%v", userID, generalCreditCharged, err)
 			} else {
 				refunded += generalCreditCharged
 			}
 		}
 		if modelCreditCharged > 0 {
-			if err := billing.RefundModelCredit(c.Request.Context(), userID, routingKey, modelCreditCharged); err != nil {
+			refundCtx, refundCancel := newLLMBillingContext()
+			err := billing.RefundModelCredit(refundCtx, userID, routingKey, modelCreditCharged)
+			refundCancel()
+			if err != nil {
 				log.Printf("[responses-ws] refund model hold failed user_id=%d routing_key=%s credits=%d err=%v", userID, routingKey, modelCreditCharged, err)
 			} else {
 				refunded += modelCreditCharged
@@ -286,7 +292,7 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 			service.RecordChannelError(c.Request.Context(), ch.ID)
 			refunded, mcRefunded := refundHold("upstream_error")
 			if totalHold > 0 {
-				recordLLMRefundTx(c.Request.Context(), c, userID, ch.ID, apiKeyIDVal, poolKeyIDVal, corrID, refunded, scaleRefundCost(upstreamCostHold, refunded, totalHold), mcRefunded, model.JSON{"reason": "upstream_error"})
+				recordLLMRefundTxDetached(c, userID, ch.ID, apiKeyIDVal, poolKeyIDVal, corrID, refunded, scaleRefundCost(upstreamCostHold, refunded, totalHold), mcRefunded, model.JSON{"reason": "upstream_error"})
 			}
 			enqueueLLMLogPatch(corrID, []string{"status", "error_msg"}, model.LLMLog{Status: "error", ErrorMsg: wsErr.Error()})
 			return wsErr
@@ -305,7 +311,7 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 			service.RecordChannelError(c.Request.Context(), ch.ID)
 			refunded, mcRefunded := refundHold("upstream_error")
 			if totalHold > 0 {
-				recordLLMRefundTx(c.Request.Context(), c, userID, ch.ID, apiKeyIDVal, poolKeyIDVal, corrID, refunded, scaleRefundCost(upstreamCostHold, refunded, totalHold), mcRefunded, model.JSON{"reason": "upstream_error"})
+				recordLLMRefundTxDetached(c, userID, ch.ID, apiKeyIDVal, poolKeyIDVal, corrID, refunded, scaleRefundCost(upstreamCostHold, refunded, totalHold), mcRefunded, model.JSON{"reason": "upstream_error"})
 			}
 			enqueueLLMLogPatch(corrID, []string{"status", "error_msg"}, model.LLMLog{Status: "error", ErrorMsg: reqErr.Error()})
 			return reqErr
@@ -317,7 +323,7 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 			service.RecordChannelError(c.Request.Context(), ch.ID)
 			refunded, mcRefunded := refundHold("upstream_error")
 			if totalHold > 0 {
-				recordLLMRefundTx(c.Request.Context(), c, userID, ch.ID, apiKeyIDVal, poolKeyIDVal, corrID, refunded, scaleRefundCost(upstreamCostHold, refunded, totalHold), mcRefunded, model.JSON{"reason": "upstream_error"})
+				recordLLMRefundTxDetached(c, userID, ch.ID, apiKeyIDVal, poolKeyIDVal, corrID, refunded, scaleRefundCost(upstreamCostHold, refunded, totalHold), mcRefunded, model.JSON{"reason": "upstream_error"})
 			}
 			enqueueLLMLogPatch(corrID, []string{"status", "upstream_status", "error_msg"}, model.LLMLog{Status: "error", UpstreamStatus: resp.StatusCode, ErrorMsg: string(bodyErr)})
 			return fmt.Errorf("上游返回 %d: %s", resp.StatusCode, string(bodyErr))
@@ -377,7 +383,7 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 			service.RecordChannelError(c.Request.Context(), ch.ID)
 			refunded, mcRefunded := refundHold("upstream_stream_read_error")
 			if totalHold > 0 {
-				recordLLMRefundTx(c.Request.Context(), c, userID, ch.ID, apiKeyIDVal, poolKeyIDVal, corrID, refunded, scaleRefundCost(upstreamCostHold, refunded, totalHold), mcRefunded, model.JSON{"reason": "upstream_stream_read_error"})
+				recordLLMRefundTxDetached(c, userID, ch.ID, apiKeyIDVal, poolKeyIDVal, corrID, refunded, scaleRefundCost(upstreamCostHold, refunded, totalHold), mcRefunded, model.JSON{"reason": "upstream_stream_read_error"})
 			}
 			enqueueLLMLogPatch(corrID, []string{"status", "error_msg"}, model.LLMLog{Status: "error", ErrorMsg: scanErr.Error()})
 			return fmt.Errorf("读取上游流失败: %w", scanErr)

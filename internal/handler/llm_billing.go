@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"fanapi/internal/billing"
 	"fanapi/internal/model"
@@ -14,12 +15,19 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const llmBillingTimeout = 30 * time.Second
+
+func newLLMBillingContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), llmBillingTimeout)
+}
+
 // llmSettle 执行结算：与预扣金额对比，退还多扣或补扣差额，并写计费流水。
 // usageData 为精确或估算的 {prompt_tokens, completion_tokens}；
 // 为 nil 时（连接在任何输出前断开）全额退款。
 func llmSettle(c *gin.Context, ch *model.Channel, reqData, usageData map[string]interface{},
 	totalHold, userID, channelID, apiKeyIDVal, poolKeyIDVal int64, corrID string, userGroup string) {
-	ctx := c.Request.Context()
+	ctx, cancel := newLLMBillingContext()
+	defer cancel()
 	upstreamCostHold, _ := billing.CalcUpstreamCost(ch, reqData)
 
 	// 非 token 计费（image/video/audio/count/custom）：预扣即精确值，上游成功即结算完毕，不依赖 usageData。
@@ -205,7 +213,8 @@ func llmChargeExtra(c *gin.Context, userID, amount int64) (modelExtraCharged, ge
 	if amount <= 0 {
 		return 0, 0, nil
 	}
-	ctx := c.Request.Context()
+	ctx, cancel := newLLMBillingContext()
+	defer cancel()
 
 	if rk, ok := c.Get("model_credit_routing_key"); ok {
 		if routingKey, ok := rk.(string); ok && routingKey != "" {
@@ -255,7 +264,8 @@ func llmRefundCredits(c *gin.Context, userID, amount int64) (refunded, modelRefu
 	if amount <= 0 {
 		return 0, 0
 	}
-	ctx := c.Request.Context()
+	ctx, cancel := newLLMBillingContext()
+	defer cancel()
 
 	// 读取本次请求的扣款记录
 	modelCharged := int64(0)
@@ -332,6 +342,12 @@ func recordLLMRefundTx(ctx context.Context, c *gin.Context, userID, channelID, a
 		return false
 	}
 	return true
+}
+
+func recordLLMRefundTxDetached(c *gin.Context, userID, channelID, apiKeyIDVal, poolKeyIDVal int64, corrID string, credits, upstreamCost, modelRefunded int64, metrics model.JSON) bool {
+	ctx, cancel := newLLMBillingContext()
+	defer cancel()
+	return recordLLMRefundTx(ctx, c, userID, channelID, apiKeyIDVal, poolKeyIDVal, corrID, credits, upstreamCost, modelRefunded, metrics)
 }
 
 func scaleRefundCost(cost, refunded, requested int64) int64 {
@@ -413,7 +429,7 @@ func refundLLMHoldForRetry(c *gin.Context, userID, channelID, apiKeyIDVal, poolK
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "重试前退款失败，请稍后重试"})
 		return false
 	}
-	if !recordLLMRefundTx(c.Request.Context(), c, userID, channelID, apiKeyIDVal, poolKeyIDVal, corrID, refunded, scaleRefundCost(upstreamCostHold, refunded, totalHold), mcRefunded, model.JSON{"reason": reason}) {
+	if !recordLLMRefundTxDetached(c, userID, channelID, apiKeyIDVal, poolKeyIDVal, corrID, refunded, scaleRefundCost(upstreamCostHold, refunded, totalHold), mcRefunded, model.JSON{"reason": reason}) {
 		log.Printf("[llm-billing] retry refund tx failed corr_id=%s user_id=%d refunded=%d hold=%d", corrID, userID, refunded, totalHold)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "重试前退款流水写入失败，请稍后重试"})
 		return false
@@ -433,7 +449,7 @@ func llmRefundAndAbort(c *gin.Context, corrID string, userID, credits, upstreamC
 	}
 	if credits > 0 {
 		refunded, mcRefunded := llmRefundCredits(c, userID, credits)
-		recordLLMRefundTx(c.Request.Context(), c, userID, 0, 0, poolKeyIDVal, corrID, refunded, scaleRefundCost(upstreamCost, refunded, credits), mcRefunded, model.JSON{"reason": "upstream_error"})
+		recordLLMRefundTxDetached(c, userID, 0, 0, poolKeyIDVal, corrID, refunded, scaleRefundCost(upstreamCost, refunded, credits), mcRefunded, model.JSON{"reason": "upstream_error"})
 	}
 	if corrID != "" {
 		enqueueLLMLogPatch(corrID, []string{"status", "upstream_status", "error_msg"}, model.LLMLog{Status: "error", UpstreamStatus: upstreamStatus, ErrorMsg: errMsg})
