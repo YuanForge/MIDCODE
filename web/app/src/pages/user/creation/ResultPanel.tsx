@@ -1,4 +1,4 @@
-import { DownloadIcon, FilmIcon, ImageIcon, RotateCcwIcon, VideoIcon } from 'lucide-react'
+import { DownloadIcon, FilmIcon, ImageIcon, Loader2Icon, RotateCcwIcon, VideoIcon } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -46,11 +46,29 @@ export function ResultPanel({
         </div>
 
         {status === 'polling' ? (
-          <Alert>
-            <AlertDescription>
-              {taskId ? <>生成中，任务 ID：<span className="font-mono">{taskId}</span>，完成后自动展示。</> : '提交中…'}
-            </AlertDescription>
-          </Alert>
+          <div className="flex flex-1 flex-col items-center justify-center gap-5 py-12 text-center">
+            <div className="grid size-16 place-items-center rounded-full bg-primary/10 text-primary">
+              <Loader2Icon className="size-7 animate-spin" />
+            </div>
+            <div className="space-y-1">
+              <div className="text-sm font-medium text-foreground">
+                {taskId ? '生成中' : '提交中'}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {mode === 'image' ? '图片结果' : '视频结果'}完成后会自动展示
+              </div>
+              {taskId ? <div className="text-[11px] text-muted-foreground">任务 ID：<span className="font-mono">{taskId}</span></div> : null}
+            </div>
+            {mode === 'image' ? (
+              <div className="grid w-full max-w-md grid-cols-2 gap-3">
+                {Array.from({ length: 2 }).map((_, index) => (
+                  <div key={index} className="aspect-square animate-pulse rounded-lg bg-muted" />
+                ))}
+              </div>
+            ) : (
+              <div className="aspect-video w-full max-w-lg animate-pulse rounded-lg bg-muted" />
+            )}
+          </div>
         ) : null}
 
         {status === 'failed' && taskError ? (

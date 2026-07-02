@@ -235,7 +235,12 @@ export function UserCreationPage() {
               <HistoryPanel
                 mode={mode}
                 tasks={history.tasks}
-                onRefresh={() => void history.load()}
+                loading={history.loading}
+                loadingMore={history.loadingMore}
+                hasMore={history.hasMore}
+                total={history.total}
+                onRefresh={() => void history.load({ reset: true })}
+                onLoadMore={() => void history.loadMore()}
                 onClear={() => void history.clear()}
                 onReuse={reuse}
                 onMakeVideo={makeVideo}
