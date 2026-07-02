@@ -233,8 +233,5 @@ func PayApplyNotify(c *gin.Context) {
 		return
 	}
 
-	// 记录 OCPC 订单转化
-	service.MarkOcpcOrder(rechargeCtx, order.UserID, order.Amount)
-
 	c.JSON(http.StatusOK, gin.H{"status": true, "msg": "处理成功"})
 }

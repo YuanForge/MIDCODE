@@ -232,7 +232,7 @@ func CreateUser(c *gin.Context) {
 	if role == "" {
 		role = "user"
 	}
-	allowedRoles := map[string]bool{"user": true, "agent": true, "admin": true, "operator": true}
+	allowedRoles := map[string]bool{"user": true, "admin": true, "operator": true}
 	if !allowedRoles[role] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "角色值无效"})
 		return
@@ -268,6 +268,57 @@ func CreateUser(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"id": user.ID, "username": user.Username, "email": user.Email})
+}
+
+// PUT /admin/users/:id/role - set a user's platform role.
+func SetUserRole(c *gin.Context) {
+	targetID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID 鏍煎紡閿欒"})
+		return
+	}
+	var req struct {
+		Role string `json:"role" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	allowed := map[string]bool{"user": true, "admin": true, "operator": true}
+	if !allowed[req.Role] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "角色值无效，允许: user / admin / operator"})
+		return
+	}
+	if _, err := db.Engine.ID(targetID).Cols("role").Update(&model.User{Role: req.Role}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "角色已更新"})
+}
+
+// SetUserRebateRatio sets a user-specific invite rebate ratio.
+func SetUserRebateRatio(c *gin.Context) {
+	targetID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID 鏍煎紡閿欒"})
+		return
+	}
+	var req struct {
+		RebateRatio *float64 `json:"rebate_ratio"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.RebateRatio != nil && (*req.RebateRatio < 0 || *req.RebateRatio > 1) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "rebate_ratio 必须在 0~1 之间"})
+		return
+	}
+	if _, err := db.Engine.ID(targetID).Cols("rebate_ratio").Update(&model.User{RebateRatio: req.RebateRatio}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "返佣比例已更新"})
 }
 
 // DELETE /admin/users/:id — 管理员硬删除用户（同时删除其所有 API Key）

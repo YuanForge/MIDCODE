@@ -32,11 +32,6 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		Code       string `json:"code" binding:"required"`
 		Password   string `json:"password" binding:"required,min=8,max=128"`
 		InviteCode string `json:"invite_code"` // 邀请码（可选）
-		// 广告追踪参数（可选，用于 OCPC 转化上报）
-		PlatformID int64  `json:"platform_id"` // ocpc_platforms.id（落地页 URL 中的 ocpc_id）
-		BdVid      string `json:"bd_vid"`
-		QhClickID  string `json:"qh_click_id"`
-		SourceID   string `json:"source_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": formatBindError(err)})
@@ -57,11 +52,6 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	}
-
-	// 记录广告追踪参数（用于 OCPC 转化上报）
-	ip := clientIP(c)
-	ua := c.GetHeader("User-Agent")
-	service.CreateOrUpdateOcpcRecord(c.Request.Context(), user.ID, req.PlatformID, req.BdVid, req.QhClickID, req.SourceID, ip, ua)
 
 	// 注册后自动登录
 	token, _, tokenErr := service.Login(c.Request.Context(), req.Username, req.Password, h.cfg)

@@ -62,8 +62,6 @@ func Init(cfg *config.DBConfig, migrate bool) error {
 		new(model.LLMLog),
 		new(model.SystemSetting),
 		new(model.PaymentOrder),
-		new(model.OcpcRecord),
-		new(model.OcpcPlatform),
 		new(model.Vendor),
 		new(model.WithdrawRequest),
 		new(model.UserModelCredit),

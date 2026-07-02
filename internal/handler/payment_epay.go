@@ -162,9 +162,6 @@ func EpayCallback(c *gin.Context) {
 		return
 	}
 
-	// 记录 OCPC 订单转化
-	service.MarkOcpcOrder(ctx, order.UserID, order.Amount)
-
 	c.String(http.StatusOK, "success")
 }
 

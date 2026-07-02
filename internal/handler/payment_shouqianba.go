@@ -284,7 +284,6 @@ func ShouqianbaNotify(c *gin.Context) {
 		return
 	}
 
-	service.MarkOcpcOrder(rechargeCtx, order.UserID, order.Amount)
 	log.Printf("[shouqianba notify] success: order_id=%d client_sn=%s user_id=%d payway=%s", order.ID, req.ClientSN, order.UserID, req.Payway)
 	c.String(http.StatusOK, "success")
 }

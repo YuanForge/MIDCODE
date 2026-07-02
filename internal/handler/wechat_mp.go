@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -36,7 +35,6 @@ func NewWechatMPHandler(cfg *config.ServerConfig) *WechatMPHandler {
 
 const (
 	mpSessionPrefix     = "wechat_mp:session:"
-	mpTrackPrefix       = "wechat_mp:track:"
 	mpAccessTokenPrefix = "wechat_mp:access_token:"
 	mpSessionTTL        = 10 * time.Minute
 	mpSuccessSessionTTL = 5 * time.Minute
@@ -75,23 +73,6 @@ func (h *WechatMPHandler) GetQRCode(c *gin.Context) {
 	// 将会话状态写入 Redis，等待用户扫码
 	ctx := context.Background()
 	cache.Client.Set(ctx, mpSessionPrefix+sceneStr, "pending", mpSessionTTL)
-
-	// 保存广告追踪参数（可选），供扫码后上报 OCPC 使用
-	bdVid := c.Query("bd_vid")
-	qhClickID := c.Query("qh_click_id")
-	sourceID := c.Query("source_id")
-	ocpcID := c.Query("ocpc_id") // 对应 ocpc_platforms.id
-	if bdVid != "" || qhClickID != "" || sourceID != "" || ocpcID != "" {
-		trackData, _ := json.Marshal(map[string]string{
-			"bd_vid":      bdVid,
-			"qh_click_id": qhClickID,
-			"source_id":   sourceID,
-			"ocpc_id":     ocpcID,
-			"ip":          clientIP(c),
-			"ua":          c.GetHeader("User-Agent"),
-		})
-		cache.Client.Set(ctx, mpTrackPrefix+sceneStr, string(trackData), mpSessionTTL)
-	}
 
 	c.JSON(http.StatusOK, gin.H{"uuid": sceneStr, "qr_img": imgBase64})
 }
@@ -176,22 +157,10 @@ func (h *WechatMPHandler) Event(c *gin.Context) {
 	}
 
 	// 通过 openid 登录或自动注册用户
-	token, user, err := service.LoginOrRegisterWithOpenID(ctx, event.FromUserName, nickname, nil, h.cfg)
+	token, _, err := service.LoginOrRegisterWithOpenID(ctx, event.FromUserName, nickname, nil, h.cfg)
 	if err != nil {
 		c.String(http.StatusOK, "")
 		return
-	}
-
-	// 上报 OCPC 注册转化（若本次扫码携带了广告追踪参数）
-	if trackRaw, trackErr := cache.Client.Get(ctx, mpTrackPrefix+sceneStr).Result(); trackErr == nil && trackRaw != "" {
-		var track map[string]string
-		if json.Unmarshal([]byte(trackRaw), &track) == nil {
-			platformID, _ := strconv.ParseInt(track["ocpc_id"], 10, 64)
-			service.CreateOrUpdateOcpcRecord(ctx, user.ID, platformID,
-				track["bd_vid"], track["qh_click_id"], track["source_id"],
-				track["ip"], track["ua"])
-		}
-		cache.Client.Del(ctx, mpTrackPrefix+sceneStr)
 	}
 
 	// 将 token 写入 Redis，前端轮询时取走
