@@ -423,6 +423,106 @@ func createTask(c *gin.Context, taskType string, reqData map[string]interface{})
 	c.JSON(http.StatusAccepted, gin.H{"task_id": task.ID})
 }
 
+func estimateTaskCost(c *gin.Context, taskType string, reqData map[string]interface{}) {
+	var userGroup string
+	if raw, ok := c.Get("user_group"); ok {
+		userGroup, _ = raw.(string)
+	}
+	channelIDStr := c.Query("channel_id")
+
+	var ch *model.Channel
+	if channelIDStr != "" {
+		channelID, parseErr := strconv.ParseInt(channelIDStr, 10, 64)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "channel_id 格式错误"})
+			return
+		}
+		var chErr error
+		ch, chErr = service.GetChannel(c.Request.Context(), channelID)
+		if chErr != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": chErr.Error()})
+			return
+		}
+	} else {
+		routingModel, _ := reqData["model"].(string)
+		if routingModel == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "请指定 model 或 channel_id"})
+			return
+		}
+		keyType, _ := c.Get("key_type")
+		if keyType == "stable" {
+			stableChannels, chErr := service.SelectChannelStableForUser(c.Request.Context(), routingModel, userGroup)
+			if chErr != nil {
+				chSingle, nameErr := service.GetChannelByName(c.Request.Context(), routingModel)
+				if nameErr != nil {
+					c.JSON(http.StatusNotFound, gin.H{"error": "渠道不存在: " + routingModel})
+					return
+				}
+				ch = chSingle
+			} else {
+				ch = &stableChannels[0]
+			}
+		} else {
+			var chErr error
+			ch, chErr = service.SelectChannel(c.Request.Context(), routingModel)
+			if chErr != nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "渠道不存在: " + routingModel})
+				return
+			}
+		}
+	}
+
+	if ch.Model != "" {
+		reqData["model"] = ch.Model
+	}
+	cost, _, calcErr := billing.CalcForUser(ch, reqData, userGroup)
+	if calcErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "计费计算失败，请稍后重试"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"type":         taskType,
+		"channel_id":   ch.ID,
+		"channel_name": ch.Name,
+		"credits":      cost,
+		"amount":       float64(cost) / 1000000.0,
+		"currency":     "CNY",
+	})
+}
+
+// EstimateGenerationCost 预估图片/视频生成费用，不创建任务、不扣费。
+func EstimateGenerationCost(c *gin.Context) {
+	taskType := strings.ToLower(strings.TrimSpace(c.Query("type")))
+	if taskType == "" {
+		taskType = strings.ToLower(strings.TrimSpace(c.Query("mode")))
+	}
+	bodyBytes, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "读取请求体失败"})
+		return
+	}
+
+	switch taskType {
+	case "image":
+		req, err := bindImageRequest(bodyBytes)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		estimateTaskCost(c, "image", req.ToMap())
+	case "video":
+		req, err := bindVideoRequest(bodyBytes)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		estimateTaskCost(c, "video", req.ToMap())
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "type 仅支持 image 或 video"})
+	}
+}
+
 // CreateImageTask 创建图片生成任务
 // @Summary      创建图片生成任务
 // @Description  异步任务，提交后返回 task_id；通过 GET /v1/tasks/:id 轮询结果。

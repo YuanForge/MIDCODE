@@ -19,6 +19,15 @@ type GenerateArgs = {
   channelId?: number
 }
 
+export type CostEstimate = {
+  type?: CreationMode
+  channel_id?: number
+  channel_name?: string
+  credits?: number
+  amount?: number
+  currency?: string
+}
+
 /**
  * 负责提交生成请求 + 任务轮询。
  * 同步返回结果时直接展示；返回 task_id 时每 POLL_INTERVAL_MS 轮询一次 /v1/tasks/:id。
@@ -30,6 +39,8 @@ export function useCreationTask({ apiKeys, selectedKeyId, onDone }: Params) {
   const [images, setImages] = useState<string[]>([])
   const [videoUrl, setVideoUrl] = useState('')
   const [running, setRunning] = useState(false)
+  const [estimating, setEstimating] = useState(false)
+  const [estimate, setEstimate] = useState<CostEstimate | null>(null)
   const modeRef = useRef<CreationMode>('image')
 
   const reset = useCallback(() => {
@@ -38,7 +49,44 @@ export function useCreationTask({ apiKeys, selectedKeyId, onDone }: Params) {
     setTaskError('')
     setImages([])
     setVideoUrl('')
+    setEstimate(null)
   }, [])
+
+  const estimateCost = useCallback(
+    async ({ mode, body, channelId }: Omit<GenerateArgs, 'endpoint'>) => {
+      const authHeaders = buildUserInvokeHeaders(apiKeys, selectedKeyId)
+      if (!authHeaders) {
+        throw new Error('请选择可用的 API 密钥')
+      }
+      setEstimating(true)
+      try {
+        const query = new URLSearchParams({ type: mode })
+        if (channelId) query.set('channel_id', String(channelId))
+        const response = await fetch(`/v1/estimate?${query.toString()}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
+          body: JSON.stringify(body),
+        })
+        if (!response.ok) {
+          const text = await response.text()
+          let message = text
+          try {
+            const parsed = JSON.parse(text) as { error?: string }
+            message = parsed.error || message
+          } catch {
+            // 保持原始文本错误
+          }
+          throw new Error(message || `预估失败 (${response.status})`)
+        }
+        const data = (await response.json()) as CostEstimate
+        setEstimate(data)
+        return data
+      } finally {
+        setEstimating(false)
+      }
+    },
+    [apiKeys, selectedKeyId]
+  )
 
   const generate = useCallback(
     async ({ mode, endpoint, body, channelId }: GenerateArgs) => {
@@ -147,5 +195,5 @@ export function useCreationTask({ apiKeys, selectedKeyId, onDone }: Params) {
     return () => { cancelled = true; clearInterval(timer) }
   }, [taskId, status, apiKeys, selectedKeyId, onDone])
 
-  return { status, taskId, taskError, images, videoUrl, running, generate, reset }
+  return { status, taskId, taskError, images, videoUrl, running, estimating, estimate, estimateCost, generate, reset }
 }

@@ -1,5 +1,5 @@
 import { createHttpClient } from '@/lib/api/http'
-import { uploadAuthedImage, type UploadImageCategory } from '@/lib/api/upload'
+import { uploadAuthedImage, uploadAuthedVideo, type UploadImageCategory, type UploadVideoCategory } from '@/lib/api/upload'
 
 const http = createHttpClient('admin')
 
@@ -954,4 +954,6 @@ export const adminApi = {
     http.put<{ ok: boolean }>(`/admin/admins/${id}/roles`, { role_ids: roleIds }),
   uploadImage: (file: File, category: UploadImageCategory) =>
     uploadAuthedImage('admin', file, category),
+  uploadVideo: (file: File, category: UploadVideoCategory) =>
+    uploadAuthedVideo('admin', file, category),
 }

@@ -4,8 +4,10 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { publicApi } from '@/lib/api/public'
 import { cn } from '@/lib/utils'
-import { GALLERY_ITEMS, type GalleryItem } from './inspiration'
+import { INSPIRATION_GALLERY_SETTING_KEY, parseGalleryItems, type GalleryItem } from './inspiration'
+import { useAsync } from '@/hooks/use-async'
 
 type Filter = 'all' | 'image' | 'video'
 
@@ -13,20 +15,25 @@ export function InspirationGallery({ onUse }: { onUse: (item: GalleryItem) => vo
   const [filter, setFilter] = useState<Filter>('all')
   const [category, setCategory] = useState('全部')
   const [query, setQuery] = useState('')
+  const { data: items } = useAsync(async () => {
+    const res = await publicApi.getSettings()
+    const settings = (res as { settings?: Record<string, string> }).settings ?? (res as Record<string, string>)
+    return parseGalleryItems(settings[INSPIRATION_GALLERY_SETTING_KEY])
+  }, parseGalleryItems(), [])
 
   const categories = useMemo(
-    () => ['全部', ...Array.from(new Set(GALLERY_ITEMS.map((it) => it.category)))],
-    []
+    () => ['全部', ...Array.from(new Set(items.map((it) => it.category)))],
+    [items]
   )
 
   const list = useMemo(() => {
-    let items = GALLERY_ITEMS
-    if (filter !== 'all') items = items.filter((it) => it.type === filter)
-    if (category !== '全部') items = items.filter((it) => it.category === category)
+    let next = items
+    if (filter !== 'all') next = next.filter((it) => it.type === filter)
+    if (category !== '全部') next = next.filter((it) => it.category === category)
     const q = query.trim()
-    if (q) items = items.filter((it) => it.text.includes(q) || it.category.includes(q))
-    return items
-  }, [filter, category, query])
+    if (q) next = next.filter((it) => it.text.includes(q) || it.category.includes(q))
+    return next
+  }, [items, filter, category, query])
 
   return (
     <div className="flex flex-col gap-4">
@@ -75,7 +82,14 @@ export function InspirationGallery({ onUse }: { onUse: (item: GalleryItem) => vo
             const isVideo = it.type === 'video'
             return (
               <div key={it.id} className="group overflow-hidden rounded-xl border border-border bg-card transition-shadow hover:shadow-lg">
-                <div className="relative" style={{ aspectRatio: isVideo ? '16/9' : '4/3', background: it.gradient }}>
+                <div className="relative overflow-hidden" style={{ aspectRatio: isVideo ? '16/9' : '4/3', background: it.gradient }}>
+                  {it.mediaUrl ? (
+                    isVideo ? (
+                      <video src={it.mediaUrl} className="h-full w-full object-cover" muted playsInline preload="metadata" />
+                    ) : (
+                      <img src={it.mediaUrl} alt={it.category} className="h-full w-full object-cover" />
+                    )
+                  ) : null}
                   {isVideo ? (
                     <div className="absolute inset-0 grid place-items-center">
                       <div className="grid size-12 place-items-center rounded-full bg-white/25 text-white backdrop-blur transition-colors group-hover:bg-white/35">

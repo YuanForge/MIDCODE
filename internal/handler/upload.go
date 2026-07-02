@@ -17,12 +17,14 @@ import (
 var uploadImageCategories = map[string]string{
 	"reference":    "reference",
 	"channel-icon": "channel-icons",
+	"inspiration":  "inspiration",
 	"site-setting": "site-settings",
 	"payment-qr":   "payment-qr",
 }
 
 var uploadVideoCategories = map[string]string{
-	"reference-video": "reference-videos",
+	"reference-video":   "reference-videos",
+	"inspiration-video": "inspiration-videos",
 }
 
 type uploadRule struct {

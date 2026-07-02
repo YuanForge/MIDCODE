@@ -43,7 +43,7 @@ export const IMAGE_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', 
 
 export const VIDEO_RESOLUTIONS = ['480p', '720p', '1080p']
 export const VIDEO_RATIOS = ['16:9', '9:16', '1:1']
-export const VIDEO_DURATIONS = ['5', '10']
+export const VIDEO_DURATIONS = ['5', '10', '15']
 
 export const POLL_INTERVAL_MS = 3000
 export const HISTORY_PAGE_SIZE = 20

@@ -423,6 +423,7 @@ export const adminNavItems: NavItem[] = [
   { label: '代理商管理', href: '/admin/resellers', icon: BriefcaseBusinessIcon },
   { label: '提现管理', href: '/admin/withdraw', icon: WalletIcon },
   { label: '通知中心', href: '/admin/notifications', icon: MessageCircleIcon },
+  { label: '灵感库', href: '/admin/inspiration', icon: SparklesIcon },
   { label: '告警中心', href: '/admin/alerts', icon: BlocksIcon },
   { label: '数据导出', href: '/admin/exports', icon: ShareIcon },
   { label: '操作审计', href: '/admin/audit', icon: ShoppingCartIcon },

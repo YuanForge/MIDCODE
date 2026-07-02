@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { NativeSelect } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { formatCredits } from '@/lib/formatters/credits'
 import type { ApiKeyRecord, UserChannel } from '@/lib/api/user'
 import {
   IMAGE_RATIOS,
@@ -35,6 +36,8 @@ export function ParamPanel({
   carryOver,
   onClearCarryOver,
   running,
+  estimating,
+  estimateCredits,
   canInvoke,
   onGenerate,
   promptToolbar,
@@ -55,12 +58,14 @@ export function ParamPanel({
   carryOver: CarryOver | null
   onClearCarryOver: () => void
   running: boolean
+  estimating?: boolean
+  estimateCredits?: number | null
   canInvoke: boolean
   onGenerate: () => void
   promptToolbar?: ReactNode
 }) {
   const noChannel = channels.length === 0
-  const disabled = running || !prompt.trim() || !canInvoke || noChannel
+  const disabled = running || !!estimating || !prompt.trim() || !canInvoke || noChannel
 
   return (
     <div className="space-y-4">
@@ -212,10 +217,10 @@ export function ParamPanel({
       </Card>
 
       <Button className="w-full" size="lg" disabled={disabled} onClick={onGenerate}>
-        {running ? (
+        {running || estimating ? (
           <>
             <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-            生成中...
+            {estimating ? '预估费用...' : '生成中...'}
           </>
         ) : (
           <>
@@ -224,6 +229,11 @@ export function ParamPanel({
           </>
         )}
       </Button>
+      {estimateCredits != null ? (
+        <p className="text-center text-xs text-muted-foreground">
+          本次预估金额 <span className="font-semibold text-foreground">¥{formatCredits(estimateCredits)}</span>
+        </p>
+      ) : null}
     </div>
   )
 }

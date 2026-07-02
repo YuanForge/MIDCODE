@@ -35,6 +35,7 @@ const PERMISSION_REQUIRED: Record<string, string> = {
   // 系统设置（超管才能访问）
   '/admin/roles':         'settings:write',
   '/admin/settings':      'settings:write',
+  '/admin/inspiration':   'settings:write',
   '/admin/notifications': 'settings:announce',
 }
 

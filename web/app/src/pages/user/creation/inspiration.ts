@@ -10,9 +10,12 @@ export type GalleryItem = {
   category: string
   text: string
   gradient: string
+  mediaUrl?: string
   hot?: boolean
   likes?: string
 }
+
+export const INSPIRATION_GALLERY_SETTING_KEY = 'creation_inspiration_gallery'
 
 export const PROMPT_LIBRARY: Record<CreationMode, PromptItem[]> = {
   image: [
@@ -74,6 +77,29 @@ export const GALLERY_ITEMS: GalleryItem[] = [
     gradient: G[(i + 2) % G.length], hot: i % 4 === 0, likes: `${(i + 5) * 211}`,
   })),
 ]
+
+export function parseGalleryItems(value?: string): GalleryItem[] {
+  if (!value?.trim()) return GALLERY_ITEMS
+  try {
+    const parsed = JSON.parse(value) as Partial<GalleryItem>[]
+    if (!Array.isArray(parsed)) return GALLERY_ITEMS
+    return parsed
+      .filter((item) => item.type === 'image' || item.type === 'video')
+      .map((item, index) => ({
+        id: String(item.id || `${item.type}-${index}`),
+        type: item.type as CreationMode,
+        category: String(item.category || '未分类'),
+        text: String(item.text || ''),
+        gradient: String(item.gradient || G[index % G.length]),
+        mediaUrl: typeof item.mediaUrl === 'string' ? item.mediaUrl : '',
+        hot: Boolean(item.hot),
+        likes: item.likes ? String(item.likes) : '',
+      }))
+      .filter((item) => item.text.trim())
+  } catch {
+    return GALLERY_ITEMS
+  }
+}
 
 export function appendToPrompt(current: string, addition: string) {
   if (!current.trim()) return addition

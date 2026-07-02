@@ -47,6 +47,7 @@ const AdminOcpcPage = lazy(() => import('@/pages/admin/AdminOcpcPage').then((m) 
 const AdminTasksPage = lazy(() => import('@/pages/admin/AdminTasksPage').then((m) => ({ default: m.AdminTasksPage })))
 const AdminLogsPage = lazy(() => import('@/pages/admin/AdminLogsPage').then((m) => ({ default: m.AdminLogsPage })))
 const AdminSettingsPage = lazy(() => import('@/pages/admin/AdminSettingsPage').then((m) => ({ default: m.AdminSettingsPage })))
+const AdminInspirationPage = lazy(() => import('@/pages/admin/AdminInspirationPage').then((m) => ({ default: m.AdminInspirationPage })))
 const AdminVendorsPage = lazy(() => import('@/pages/admin/AdminVendorsPage').then((m) => ({ default: m.AdminVendorsPage })))
 const AdminResellersPage = lazy(() => import('@/pages/admin/AdminResellersPage').then((m) => ({ default: m.AdminResellersPage })))
 const AdminWithdrawPage = lazy(() => import('@/pages/admin/AdminWithdrawPage').then((m) => ({ default: m.AdminWithdrawPage })))
@@ -207,6 +208,7 @@ export const router = createBrowserRouter([
           { path: 'tasks', element: renderLazy(<AdminTasksPage />) },
           { path: 'llm-logs', element: renderLazy(<AdminLogsPage />) },
           { path: 'settings', element: renderLazy(<AdminSettingsPage />) },
+          { path: 'inspiration', element: renderLazy(<AdminInspirationPage />) },
           { path: 'vendors', element: renderLazy(<AdminVendorsPage />) },
           { path: 'resellers', element: renderLazy(<AdminResellersPage />) },
           { path: 'withdraw', element: renderLazy(<AdminWithdrawPage />) },

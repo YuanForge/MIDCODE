@@ -29,6 +29,7 @@ func registerV1Routes(authed *gin.RouterGroup, deps Dependencies) {
 		v1.GET("/responses", handler.ResponsesWSProxy)
 		v1.GET("/realtime", handler.RealtimeWSProxy)
 		v1.POST("/gemini", handler.GeminiProxy)
+		v1.POST("/estimate", handler.EstimateGenerationCost)
 		v1.POST("/image", handler.CreateImageTask)
 		v1.POST("/video", handler.CreateVideoTask)
 		v1.POST("/audio", handler.CreateAudioTask)

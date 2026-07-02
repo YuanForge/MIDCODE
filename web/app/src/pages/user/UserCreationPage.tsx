@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { formatCredits } from '@/lib/formatters/credits'
 import { ImageIcon, HistoryIcon, SparklesIcon, VideoIcon } from 'lucide-react'
 import type { CreationMode } from './creation/constants'
 import type { CarryOver, ImageParamsState, ReusePayload, VideoParamsState } from './creation/types'
@@ -75,16 +76,23 @@ export function UserCreationPage() {
     if (next === 'image' || next === 'video') task.reset()
   }
 
-  function handleGenerate() {
+  async function handleGenerate() {
     if (!prompt.trim()) return
     const channel = resources.currentChannel
     const model = channel?.routing_model || channel?.name
-    promptHistory.add(prompt, mode)
 
     if (mode === 'image') {
       const refs = splitLines(imageParams.referenceImages)
       const body: Record<string, unknown> = { model, prompt, size: imageParams.size, aspect_ratio: imageParams.aspectRatio }
       if (refs.length > 0) body.refer_images = refs
+      try {
+        const estimate = await task.estimateCost({ mode, body, channelId: channel?.id })
+        toast.info(`本次预估金额 ¥${formatCredits(estimate.credits ?? 0)}`)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : '费用预估失败')
+        return
+      }
+      promptHistory.add(prompt, mode)
       void task.generate({ mode, endpoint: '/v1/image', body, channelId: channel?.id })
     } else {
       const refImgs = splitLines(videoParams.referenceImages)
@@ -94,6 +102,14 @@ export function UserCreationPage() {
       }
       if (refImgs.length > 0) body.refer_images = refImgs
       if (refVids.length > 0) body.refer_videos = refVids
+      try {
+        const estimate = await task.estimateCost({ mode, body, channelId: channel?.id })
+        toast.info(`本次预估金额 ¥${formatCredits(estimate.credits ?? 0)}`)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : '费用预估失败')
+        return
+      }
+      promptHistory.add(prompt, mode)
       void task.generate({ mode, endpoint: '/v1/video', body, channelId: channel?.id })
     }
   }
@@ -202,8 +218,10 @@ export function UserCreationPage() {
               carryOver={carryOver}
               onClearCarryOver={() => setCarryOver(null)}
               running={task.running}
+              estimating={task.estimating}
+              estimateCredits={task.estimate?.credits ?? null}
               canInvoke={resources.canInvoke}
-              onGenerate={handleGenerate}
+              onGenerate={() => void handleGenerate()}
               promptToolbar={
                 <PromptToolbar
                   mode={mode}
@@ -227,7 +245,7 @@ export function UserCreationPage() {
               images={task.images}
               videoUrl={task.videoUrl}
               prompt={prompt}
-              onRegenerate={handleGenerate}
+              onRegenerate={() => void handleGenerate()}
               onMakeVideo={(url) => makeVideo(url, prompt)}
             />
 

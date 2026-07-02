@@ -2,8 +2,8 @@ import { createHttpClient } from '@/lib/api/http'
 
 type Role = 'user' | 'admin' | 'vendor' | 'reseller'
 
-export type UploadImageCategory = 'reference' | 'channel-icon' | 'site-setting' | 'payment-qr'
-export type UploadVideoCategory = 'reference-video'
+export type UploadImageCategory = 'reference' | 'channel-icon' | 'inspiration' | 'site-setting' | 'payment-qr'
+export type UploadVideoCategory = 'reference-video' | 'inspiration-video'
 
 const clients: Record<Role, ReturnType<typeof createHttpClient>> = {
   user: createHttpClient('user'),
