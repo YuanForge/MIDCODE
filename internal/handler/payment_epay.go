@@ -8,9 +8,11 @@ import (
 	"fanapi/internal/service"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -140,25 +142,27 @@ func EpayCallback(c *gin.Context) {
 		return
 	}
 
-	// 原子更新订单状态：仅当 status='pending' 时才成功，防止并发回调双重充値
+	paidAmount, err := strconv.ParseFloat(strings.TrimSpace(params["money"]), 64)
+	if err != nil || paidAmount <= 0 {
+		c.String(http.StatusOK, "fail")
+		return
+	}
+	paidFen := int64(math.Round(paidAmount * 100))
+	expectedFen := int64(math.Round(order.Amount * 100))
+	if paidFen != expectedFen {
+		c.String(http.StatusOK, "fail")
+		return
+	}
+
 	now := time.Now()
-	order.Status = "paid"
-	order.TradeNo = tradeNo
-	order.PaidAt = &now
-	affected, err := db.Engine.ID(order.ID).Where("status = 'pending'").Cols("status", "trade_no", "paid_at").Update(order)
+	ctx := context.Background()
+	settled, err := service.SettlePaymentOrderRecharge(ctx, order, tradeNo, -1, "", now)
 	if err != nil {
 		c.String(http.StatusOK, "fail")
 		return
 	}
-	if affected == 0 {
+	if !settled {
 		c.String(http.StatusOK, "success") // 并发处理，已完成，幂等返回
-		return
-	}
-
-	// 给用户充值
-	ctx := context.Background()
-	if err := service.Recharge(ctx, order.UserID, 0, order.Credits); err != nil {
-		c.String(http.StatusOK, "fail")
 		return
 	}
 

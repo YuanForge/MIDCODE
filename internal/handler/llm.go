@@ -573,8 +573,8 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 	}
 
 	// 3b. 流式注入 include_usage（OpenAI 协议专用）
-	// passthrough_body=true 时跳过，避免修改原始请求体。
-	if !ch.PassthroughBody && isStream && proto == protocolOpenAI {
+	// 即使 passthrough_body=true 也要注入，否则流式响应缺少 usage 会导致无法按实际 token 结算。
+	if isStream && proto == protocolOpenAI {
 		mappedReq["stream"] = true
 		if _, hasOpts := mappedReq["stream_options"]; !hasOpts {
 			mappedReq["stream_options"] = map[string]interface{}{"include_usage": true}

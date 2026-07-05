@@ -216,7 +216,26 @@ func AdminApproveWithdrawal(c *gin.Context) {
 		return
 	}
 
-	// 原子扣减冻结余额
+	// 先用状态 CAS 抢占审批权，避免并发 approve/reject 重复处理同一笔。
+	now := time.Now()
+	record.Status = "approved"
+	record.ReviewStage = "completed"
+	record.AdminRemark = req.Remark
+	record.FinanceReviewerID = adminID
+	record.FinanceReviewedAt = &now
+	affected, err := sess.ID(id).Where("status = 'pending'").Cols("status", "admin_remark", "review_stage", "finance_reviewer_id", "finance_reviewed_at").Update(&record)
+	if err != nil {
+		_ = sess.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新状态失败"})
+		return
+	}
+	if affected == 0 {
+		_ = sess.Rollback()
+		c.JSON(http.StatusConflict, gin.H{"error": "申请已处理"})
+		return
+	}
+
+	// 原子扣减冻结余额；失败时回滚上面的状态推进。
 	n, err := sess.Exec(
 		"UPDATE users SET frozen_balance = frozen_balance - $1 WHERE id = $2 AND frozen_balance >= $1",
 		record.Amount, record.UserID,
@@ -226,23 +245,10 @@ func AdminApproveWithdrawal(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "扣减积分失败"})
 		return
 	}
-	affected, _ := n.RowsAffected()
-	if affected == 0 {
+	userAffected, _ := n.RowsAffected()
+	if userAffected == 0 {
 		_ = sess.Rollback()
 		c.JSON(http.StatusConflict, gin.H{"error": "用户冻结积分不足，无法划扣"})
-		return
-	}
-
-	// 更新申请状态
-	now := time.Now()
-	record.Status = "approved"
-	record.ReviewStage = "completed"
-	record.AdminRemark = req.Remark
-	record.FinanceReviewerID = adminID
-	record.FinanceReviewedAt = &now
-	if _, err := sess.ID(id).Cols("status", "admin_remark", "review_stage", "finance_reviewer_id", "finance_reviewed_at").Update(&record); err != nil {
-		_ = sess.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新状态失败"})
 		return
 	}
 	if err := sess.Commit(); err != nil {
@@ -277,8 +283,13 @@ func AdminRejectWithdrawal(c *gin.Context) {
 
 	record.Status = "rejected"
 	record.AdminRemark = req.Remark
-	if _, err := db.Engine.ID(id).Cols("status", "admin_remark").Update(&record); err != nil {
+	affected, err := db.Engine.ID(id).Where("status = 'pending'").Cols("status", "admin_remark").Update(&record)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新状态失败"})
+		return
+	}
+	if affected == 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "申请已处理"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
@@ -312,8 +323,13 @@ func AdminCsApproveWithdrawal(c *gin.Context) {
 	record.ReviewStage = "finance_review"
 	record.CsReviewerID = adminID
 	record.CsReviewedAt = &now
-	if _, err := db.Engine.ID(id).Cols("review_stage", "cs_reviewer_id", "cs_reviewed_at").Update(&record); err != nil {
+	affected, err := db.Engine.ID(id).Where("status = 'pending' AND review_stage = 'cs_review'").Cols("review_stage", "cs_reviewer_id", "cs_reviewed_at").Update(&record)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+		return
+	}
+	if affected == 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "当前状态不可初审"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "review_stage": "finance_review"})

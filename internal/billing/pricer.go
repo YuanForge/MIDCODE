@@ -101,6 +101,40 @@ func EffectivePricingConfig(cfg map[string]interface{}, group string) map[string
 	return applyVIPDiscount(applyGroupPricing(cfg, group), group)
 }
 
+func modelNameForPricing(ch *model.Channel, req map[string]interface{}) string {
+	if req != nil {
+		if v, ok := req["model"].(string); ok && strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	if ch == nil {
+		return ""
+	}
+	if strings.TrimSpace(ch.Model) != "" {
+		return ch.Model
+	}
+	return ch.DisplayName
+}
+
+func defaultCacheReadRatio(proto, modelName string) float64 {
+	switch strings.ToLower(strings.TrimSpace(proto)) {
+	case "claude":
+		return 0.10
+	case "gemini":
+		return 0.10
+	}
+
+	modelName = strings.ToLower(strings.TrimSpace(modelName))
+	switch {
+	case strings.Contains(modelName, "gpt-5"):
+		return 0.10
+	case strings.Contains(modelName, "gpt-4.1"):
+		return 0.25
+	default:
+		return 0.50
+	}
+}
+
 func applyVIPDiscount(cfg map[string]interface{}, group string) map[string]interface{} {
 	if group == "" || cfg == nil {
 		return cfg
@@ -254,6 +288,7 @@ func CalcActualCostForUser(ch *model.Channel, req, resp map[string]interface{}, 
 	if proto == "" {
 		proto = "openai"
 	}
+	pricingModel := modelNameForPricing(ch, req)
 	// openaiStyleCache 表示输入 token 已将缓存命中计入其中，需先扣除 cacheReadTokens
 	// 再计算基础输入费用。
 	// OpenAI Chat Completions: prompt_tokens 包含 cached_tokens
@@ -272,15 +307,7 @@ func CalcActualCostForUser(ch *model.Channel, req, resp map[string]interface{}, 
 		//   Claude  : 0.10x（$0.30/$3，缓存读取大幅折扣）
 		//   Gemini  : 0.25x（Context Caching 官方折扣）
 		//   OpenAI  : 0.50x（Prompt Caching 官方折扣，如 gpt-4o）
-		var cacheReadRatio float64
-		switch proto {
-		case "claude":
-			cacheReadRatio = 0.10
-		case "gemini":
-			cacheReadRatio = 0.25
-		default: // openai
-			cacheReadRatio = 0.50
-		}
+		cacheReadRatio := defaultCacheReadRatio(proto, pricingModel)
 		cacheReadPricePer1m = int64(math.Ceil(float64(inputPricePer1m) * cacheReadRatio))
 	}
 	cacheCreateTokens, _ := getInt64FromData(data, "response.usage.cache_creation_tokens")
@@ -657,6 +684,7 @@ func CalcActualUpstreamCost(ch *model.Channel, req, resp map[string]interface{})
 	if proto == "" {
 		proto = "openai"
 	}
+	pricingModel := modelNameForPricing(ch, req)
 	openaiStyleCache := proto == "openai" || proto == "gemini" || proto == "responses"
 
 	// 缓存 token 进价（与售价逻辑相同，字段名用 _cost_ 替代 _price_）
@@ -666,15 +694,7 @@ func CalcActualUpstreamCost(ch *model.Channel, req, resp map[string]interface{})
 	}
 	cacheReadCostPer1m := getInt64Val(cfg, "cache_read_cost_per_1m_tokens")
 	if cacheReadCostPer1m == 0 && inputCostPer1m > 0 {
-		var cacheReadRatio float64
-		switch proto {
-		case "claude":
-			cacheReadRatio = 0.10
-		case "gemini":
-			cacheReadRatio = 0.25
-		default:
-			cacheReadRatio = 0.50
-		}
+		cacheReadRatio := defaultCacheReadRatio(proto, pricingModel)
 		cacheReadCostPer1m = int64(math.Ceil(float64(inputCostPer1m) * cacheReadRatio))
 	}
 	cacheCreateTokens, _ := getInt64FromData(data, "response.usage.cache_creation_tokens")

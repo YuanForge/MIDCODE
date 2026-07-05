@@ -39,7 +39,7 @@ export function VendorRegisterPage() {
       <CardContent>
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <Input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="用户名（3-32 字符）" minLength={3} maxLength={32} required />
-          <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="密码（至少 6 位）" minLength={6} required />
+          <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="密码（至少 8 位）" minLength={8} required />
           {error ? <div className="text-sm text-destructive">{error}</div> : null}
           <Button className="w-full" type="submit">注册并进入 Vendor 端</Button>
           <p className="text-center text-sm text-muted-foreground">

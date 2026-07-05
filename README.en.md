@@ -55,16 +55,15 @@ After startup:
 - Admin panel: `http://localhost:3000/admin`
 - API docs: `http://localhost:8080/docs`
 
-### 3. Default accounts
+### 3. Initial admin
 
-On first startup the database is seeded with:
+On first startup, if the database has no admin user, the server creates one bootstrap admin:
 
-| Role | Username | Email | Password | Notes |
-|------|----------|-------|----------|-------|
-| Admin | `admin` | `admin@fanapi.dev` | `Admin@2026!` | Full admin access |
-| Test user | `test` | `test@fanapi.dev` | `Test@2026!` | Regular user, for API testing |
+- Default email: `admin@local.invalid`
+- Default username: `admin`
+- Password source: `FANAPI_BOOTSTRAP_ADMIN_PASSWORD`, or a random password printed once in the startup log
 
-> **Change default passwords before deploying to production.**
+> **Save the generated password from the first startup log and change the admin profile after first login.**
 
 ### 4. Seed data (optional)
 

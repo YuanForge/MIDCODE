@@ -26,7 +26,7 @@ func (h *AuthHandler) CreateAPIKey(c *gin.Context) {
 		req.KeyType = "low_price"
 	}
 	userID := c.MustGet("user_id").(int64)
-	rawKey, err := service.GenerateAPIKey(c.Request.Context(), userID, req.Name, req.KeyType, h.cfg.JWTSecret)
+	rawKey, err := service.GenerateAPIKey(c.Request.Context(), userID, req.Name, req.KeyType, h.cfg.APIKeySecret)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -70,7 +70,7 @@ func (h *AuthHandler) ListAPIKeys(c *gin.Context) {
 		rawKey := ""
 		viewable := false
 		if k.RawKeyEnc != "" {
-			if decrypted, err := service.DecryptAPIKey(k.RawKeyEnc, h.cfg.JWTSecret); err == nil {
+			if decrypted, err := service.DecryptAPIKey(k.RawKeyEnc, h.cfg.APIKeySecret); err == nil {
 				rawKey = decrypted
 				viewable = true
 			}

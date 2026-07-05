@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 
 	"fanapi/internal/db"
 	"fanapi/internal/model"
@@ -38,6 +39,20 @@ var publicSettingKeys = map[string]bool{
 	"creation_inspiration_gallery": true,
 }
 
+var sensitiveSettingKeywords = []string{
+	"secret",
+	"password",
+	"token",
+	"private",
+	"merchant",
+	"app_id",
+	"app_secret",
+	"pro_key",
+	"public_key",
+	"api_key",
+	"webhook",
+}
+
 // GetSettings returns all settings (admin only).
 func GetSettings(c *gin.Context) {
 	var settings []model.SystemSetting
@@ -47,7 +62,7 @@ func GetSettings(c *gin.Context) {
 	}
 	result := make(map[string]string, len(settings))
 	for _, s := range settings {
-		result[s.Key] = s.Value
+		result[s.Key] = maskSettingValue(s.Key, s.Value)
 	}
 	c.JSON(http.StatusOK, gin.H{"settings": result})
 }
@@ -96,6 +111,26 @@ func GetPublicSettings(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"settings": result})
+}
+
+func maskSettingValue(key, value string) string {
+	if value == "" || !isSensitiveSettingKey(key) {
+		return value
+	}
+	if len(value) <= 8 {
+		return "********"
+	}
+	return value[:4] + "********" + value[len(value)-4:]
+}
+
+func isSensitiveSettingKey(key string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(key))
+	for _, keyword := range sensitiveSettingKeywords {
+		if strings.Contains(normalized, keyword) {
+			return true
+		}
+	}
+	return false
 }
 
 // AdminVerifyPassword verifies the current admin's password for sensitive operations.

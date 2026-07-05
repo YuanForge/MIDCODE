@@ -1,6 +1,11 @@
 package config
 
-import "github.com/spf13/viper"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/spf13/viper"
+)
 
 type Config struct {
 	App             AppConfig             `mapstructure:"app"`
@@ -19,9 +24,11 @@ type AppConfig struct {
 }
 
 type ServerConfig struct {
-	Port           int    `mapstructure:"port"`
-	JWTSecret      string `mapstructure:"jwt_secret"`
-	JWTExpireHours int    `mapstructure:"jwt_expire_hours"`
+	Port           int      `mapstructure:"port"`
+	JWTSecret      string   `mapstructure:"jwt_secret"`
+	APIKeySecret   string   `mapstructure:"api_key_secret"`
+	JWTExpireHours int      `mapstructure:"jwt_expire_hours"`
+	TrustedProxies []string `mapstructure:"trusted_proxies"`
 }
 
 type DBConfig struct {
@@ -106,6 +113,9 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	cfg.applyDefaults()
+	if err := cfg.validateSecrets(); err != nil {
+		return nil, err
+	}
 	return &cfg, nil
 }
 
@@ -127,5 +137,43 @@ func (c *Config) applyDefaults() {
 	}
 	if c.ResellerBuilder.DefaultProfitRatio <= 0 {
 		c.ResellerBuilder.DefaultProfitRatio = 1.7
+	}
+}
+
+func (c *Config) validateSecrets() error {
+	mode := strings.ToLower(strings.TrimSpace(c.App.Mode))
+	jwtSecret := strings.TrimSpace(c.Server.JWTSecret)
+	apiKeySecret := strings.TrimSpace(c.Server.APIKeySecret)
+	if mode == "reseller_site" {
+		if jwtSecret == "" {
+			return fmt.Errorf("server.jwt_secret is required")
+		}
+		return nil
+	}
+	if !strongSecret(jwtSecret) || isPlaceholderSecret(jwtSecret) {
+		return fmt.Errorf("server.jwt_secret must be a non-placeholder secret of at least 32 characters")
+	}
+	if !strongSecret(apiKeySecret) || isPlaceholderSecret(apiKeySecret) {
+		return fmt.Errorf("server.api_key_secret must be a non-placeholder secret of at least 32 characters")
+	}
+	if apiKeySecret == jwtSecret {
+		return fmt.Errorf("server.api_key_secret must be different from server.jwt_secret")
+	}
+	return nil
+}
+
+func strongSecret(secret string) bool {
+	return len(strings.TrimSpace(secret)) >= 32
+}
+
+func isPlaceholderSecret(secret string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(secret))
+	switch normalized {
+	case "", "change-me", "change-me-in-production", "replace-me", "changeme":
+		return true
+	default:
+		return strings.Contains(normalized, "change-me") ||
+			strings.Contains(normalized, "replace-me") ||
+			strings.Contains(normalized, "replace-with")
 	}
 }

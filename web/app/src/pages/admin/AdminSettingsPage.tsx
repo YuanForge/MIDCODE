@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { adminApi, type AdminAuditLog } from '@/lib/api/admin'
 import { useAsync } from '@/hooks/use-async'
+import { sanitizeHtml } from '@/lib/sanitize-html'
 
 type SettingsMap = Record<string, string>
 type PlanRow = { credits: number; bonus: number; amount: number; origin_amount: number; desc: string }
@@ -420,11 +421,11 @@ export function AdminSettingsPage() {
                       <div className="rounded-lg border overflow-hidden">
                         <div className="bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground">页眉预览</div>
                         {/* eslint-disable-next-line react/no-danger */}
-                        <div dangerouslySetInnerHTML={{ __html: form.header_html || '<span style="color:#aaa">（空）</span>' }} />
+                        <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(form.header_html || '<span style="color:#aaa">（空）</span>') }} />
                         <Separator />
                         <div className="bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground">页脚预览</div>
                         {/* eslint-disable-next-line react/no-danger */}
-                        <div dangerouslySetInnerHTML={{ __html: form.footer_html || '<span style="color:#aaa">（空）</span>' }} />
+                        <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(form.footer_html || '<span style="color:#aaa">（空）</span>') }} />
                       </div>
                     </FieldRow>
                   ) : null}

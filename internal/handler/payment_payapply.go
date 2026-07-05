@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"io"
+	"math"
 	"math/rand"
 	"net/http"
 	"strings"
@@ -51,7 +52,7 @@ func CreatePayApplyOrder(c *gin.Context) {
 		time.Now().Format("20060102150405"),
 		rand.Intn(10000),
 	)
-	payMoneyFen := int64(req.Amount * 100) // 转换为分
+	payMoneyFen := int64(math.Round(req.Amount * 100)) // 转换为分
 	credits := planCredits(req.Amount)
 
 	// 今日0点时间戳（幂等去重：同用户同金额同产品已有 pending 订单则复用）
@@ -96,14 +97,7 @@ func CreatePayApplyOrder(c *gin.Context) {
 	}
 
 	// 获取客户端 IP
-	ip := c.GetHeader("X-Forwarded-For")
-	if idx := strings.Index(ip, ","); idx != -1 {
-		ip = ip[:idx]
-	}
-	ip = strings.TrimSpace(ip)
-	if ip == "" {
-		ip = c.ClientIP()
-	}
+	ip := c.ClientIP()
 
 	// 调用中台获取支付链接
 	applyURL := strings.TrimRight(applyURLRoot, "/") + "/api/pay/apply/"
@@ -206,30 +200,21 @@ func PayApplyNotify(c *gin.Context) {
 		return
 	}
 
-	// 校验金额（允许±1分误差应对浮点）
-	expectedFen := int64(order.Amount * 100)
+	expectedFen := int64(math.Round(order.Amount * 100))
 	if req.PayMoney != expectedFen {
 		c.JSON(http.StatusOK, gin.H{"status": false, "msg": fmt.Sprintf("金额不匹配: expected %d, got %d", expectedFen, req.PayMoney)})
 		return
 	}
 
-	// 更新订单状态
 	paidAt := time.Now()
-	_, err = db.Engine.ID(order.ID).Cols("status", "trade_no", "pay_flat", "paid_at").Update(&model.PaymentOrder{
-		Status:  "paid",
-		TradeNo: req.AlipayNo,
-		PayFlat: req.PayFlat,
-		PaidAt:  &paidAt,
-	})
+	rechargeCtx := context.Background()
+	settled, err := service.SettlePaymentOrderRecharge(rechargeCtx, order, req.AlipayNo, req.PayFlat, "", paidAt)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"status": false, "msg": "更新订单失败: " + err.Error()})
+		c.JSON(http.StatusOK, gin.H{"status": false, "msg": "处理订单失败: " + err.Error()})
 		return
 	}
-
-	// 给用户充值
-	rechargeCtx := context.Background()
-	if err := service.Recharge(rechargeCtx, order.UserID, 0, order.Credits); err != nil {
-		c.JSON(http.StatusOK, gin.H{"status": false, "msg": "充值失败: " + err.Error()})
+	if !settled {
+		c.JSON(http.StatusOK, gin.H{"status": true, "msg": "已处理"})
 		return
 	}
 

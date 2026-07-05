@@ -82,8 +82,8 @@ if curl -sf http://localhost:8080/health >/dev/null 2>&1; then
     echo "  管理端:        http://localhost:3000/admin"
     fi
     echo ""
-    echo "  管理账号:      admin@fanapi.dev   / Admin@2026!"
-  echo "  测试账号:      test@fanapi.dev    / Test@2026!"
+    echo "  初始管理员:    admin@local.invalid"
+    echo "  初始密码:      查看首次启动 server 日志，或设置 FANAPI_BOOTSTRAP_ADMIN_PASSWORD"
     echo ""
     echo "  server 日志:   tail -f /tmp/server.log"
     echo "  worker 日志:   tail -f /tmp/script.log"

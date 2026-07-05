@@ -258,29 +258,16 @@ func ShouqianbaNotify(c *gin.Context) {
 	}
 
 	now := time.Now()
-	update := &model.PaymentOrder{
-		Status:     "paid",
-		TradeNo:    req.TradeNo,
-		PayFlat:    payFlat,
-		PayChannel: payChannel,
-		PaidAt:     &now,
-	}
-	affected, err := db.Engine.ID(order.ID).Where("status = 'pending'").Cols("status", "trade_no", "pay_flat", "pay_channel", "paid_at").Update(update)
+	rechargeCtx := context.Background()
+	settled, err := service.SettlePaymentOrderRecharge(rechargeCtx, order, req.TradeNo, payFlat, payChannel, now)
 	if err != nil {
-		log.Printf("[shouqianba notify] update order failed: id=%d client_sn=%s err=%v", order.ID, req.ClientSN, err)
+		log.Printf("[shouqianba notify] settle order failed: id=%d client_sn=%s err=%v", order.ID, req.ClientSN, err)
 		c.String(http.StatusOK, "fail")
 		return
 	}
-	if affected == 0 {
+	if !settled {
 		log.Printf("[shouqianba notify] idempotent race handled: id=%d client_sn=%s", order.ID, req.ClientSN)
 		c.String(http.StatusOK, "success")
-		return
-	}
-
-	rechargeCtx := context.Background()
-	if err := service.Recharge(rechargeCtx, order.UserID, 0, order.Credits); err != nil {
-		log.Printf("[shouqianba notify] recharge failed: order_id=%d user_id=%d err=%v", order.ID, order.UserID, err)
-		c.String(http.StatusOK, "fail")
 		return
 	}
 

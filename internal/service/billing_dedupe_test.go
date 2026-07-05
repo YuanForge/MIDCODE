@@ -32,13 +32,27 @@ func TestEnsureBillingDedupeKeyStableForSameBillingIdentity(t *testing.T) {
 	}
 }
 
-func TestIsConsumptionTx(t *testing.T) {
+func TestIsDedupeProtectedTx(t *testing.T) {
 	for _, txType := range []string{"charge", "hold", "settle"} {
-		if !isConsumptionTx(txType) {
-			t.Fatalf("%s should be a consumption transaction", txType)
+		if !isDedupeProtectedTx(txType) {
+			t.Fatalf("%s should be protected by automatic billing dedupe", txType)
 		}
 	}
-	if isConsumptionTx("refund") {
-		t.Fatal("refund should not be a consumption transaction")
+	for _, txType := range []string{"refund", "recharge"} {
+		if isDedupeProtectedTx(txType) {
+			t.Fatalf("%s should not be protected by automatic billing dedupe", txType)
+		}
+	}
+}
+
+func TestHasExplicitRechargeDedupeKey(t *testing.T) {
+	if !hasExplicitRechargeDedupeKey("recharge", model.JSON{"billing_dedupe_key": "card-1-2"}) {
+		t.Fatal("recharge with explicit billing_dedupe_key should be dedupe protected")
+	}
+	if hasExplicitRechargeDedupeKey("recharge", model.JSON{}) {
+		t.Fatal("recharge without explicit billing_dedupe_key should not be dedupe protected")
+	}
+	if hasExplicitRechargeDedupeKey("charge", model.JSON{"billing_dedupe_key": "manual"}) {
+		t.Fatal("explicit recharge dedupe helper should only apply to recharge transactions")
 	}
 }

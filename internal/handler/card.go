@@ -3,6 +3,7 @@ package handler
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -181,7 +182,19 @@ func RedeemCard(c *gin.Context) {
 
 	// 写充值流水并加余额
 	corrID := fmt.Sprintf("card-%d-%d", card.ID, userID)
-	if err := service.WriteTx(c.Request.Context(), userID, 0, 0, 0, corrID, "recharge", card.Credits, 0, 0, nil); err != nil {
+	metrics := model.JSON{
+		"source":             "card",
+		"card_id":            card.ID,
+		"billing_dedupe_key": corrID,
+	}
+	if err := service.WriteTx(c.Request.Context(), userID, 0, 0, 0, corrID, "recharge", card.Credits, 0, 0, metrics); err != nil {
+		if errors.Is(err, service.ErrDuplicateBillingTransaction) {
+			c.JSON(http.StatusOK, gin.H{
+				"credits": card.Credits,
+				"message": fmt.Sprintf("鍏戞崲鎴愬姛锛屽凡鍏呭€?楼%.4f", float64(card.Credits)/1e6),
+			})
+			return
+		}
 		// 回滚卡密状态，让用户可以重试
 		db.Engine.Where("id = ? AND status = 'used' AND used_by = ?", card.ID, userID).
 			Cols("status", "used_by", "used_at").

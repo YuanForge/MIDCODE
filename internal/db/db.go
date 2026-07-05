@@ -1,9 +1,13 @@
 package db
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 	"time"
 
 	"fanapi/internal/config"
@@ -50,6 +54,7 @@ func Init(cfg *config.DBConfig, migrate bool) error {
 	}
 
 	if err := Engine.Sync2(
+		new(model.SchemaMigration),
 		new(model.User),
 		new(model.EmailVerification),
 		new(model.APIKey),
@@ -68,6 +73,7 @@ func Init(cfg *config.DBConfig, migrate bool) error {
 		new(model.BalanceSyncJob),
 		new(model.BillingQuotaLease),
 		new(model.BillingRefundJob),
+		new(model.BillingPostBillingJob),
 		new(model.ChatConversation),
 		new(model.VIPGroup),
 		new(model.Reseller),
@@ -100,10 +106,30 @@ func Init(cfg *config.DBConfig, migrate bool) error {
 	if err := ensureIndexes(); err != nil {
 		return err
 	}
+	if err := recordSchemaMigration("20260705_ensure_indexes", "runtime index creation"); err != nil {
+		return err
+	}
 	if err := ensureVIPSchemaCompatibility(); err != nil {
 		return err
 	}
-	return ensureBillingConstraints()
+	if err := recordSchemaMigration("20260705_vip_schema_compatibility", "vip schema compatibility backfill"); err != nil {
+		return err
+	}
+	if err := ensureBillingConstraints(); err != nil {
+		return err
+	}
+	return recordSchemaMigration("20260705_billing_constraints", "billing safety constraints")
+}
+
+func recordSchemaMigration(version, description string) error {
+	_, err := Engine.InsertOne(&model.SchemaMigration{
+		Version:     version,
+		Description: description,
+	})
+	if err != nil && strings.Contains(err.Error(), "duplicate key") {
+		return nil
+	}
+	return err
 }
 
 func ensureVIPSchemaCompatibility() error {
@@ -238,6 +264,24 @@ func ensureIndexes() error {
 			`CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_billing_refund_jobs_dedupe
 			ON billing_refund_jobs (dedupe_key)
 			WHERE dedupe_key != ''`,
+		},
+		{
+			"idx_billing_post_jobs_pending",
+			`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_billing_post_jobs_pending
+			ON billing_post_billing_jobs (next_run_at, id)
+			WHERE status = 'pending'`,
+		},
+		{
+			"idx_billing_transactions_refund_dedupe",
+			`CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_billing_transactions_refund_dedupe
+			ON billing_transactions ((metrics->>'refund_dedupe_key'))
+			WHERE type = 'refund' AND COALESCE(metrics->>'refund_dedupe_key', '') != ''`,
+		},
+		{
+			"idx_billing_transactions_recharge_dedupe",
+			`CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_billing_transactions_recharge_dedupe
+			ON billing_transactions ((metrics->>'billing_dedupe_key'))
+			WHERE type = 'recharge' AND COALESCE(metrics->>'billing_dedupe_key', '') != ''`,
 		},
 		{
 			"idx_llm_logs_user_id_desc",
@@ -513,63 +557,64 @@ END $$;`,
 	return nil
 }
 
-const (
-	defaultAdminEmail    = "admin@fanapi.dev"
-	defaultAdminPassword = "Admin@2026!"
-	defaultTestEmail     = "test@fanapi.dev"
-	defaultTestPassword  = "Test@2026!"
-)
-
-// seedAdmin creates default admin and test accounts on first startup.
-// Safe to call on every startup — uses INSERT ... WHERE NOT EXISTS.
+// seedAdmin creates one bootstrap admin only when the database has no admins.
+// The password is taken from FANAPI_BOOTSTRAP_ADMIN_PASSWORD, or generated and
+// printed once. No fixed default credentials are embedded in the binary.
 func seedAdmin() error {
-	accounts := []struct {
-		username string
-		email    string
-		password string
-		role     string
-	}{
-		{"admin", defaultAdminEmail, defaultAdminPassword, "admin"},
-		{"test", defaultTestEmail, defaultTestPassword, "user"},
+	adminCount, err := Engine.Where("role = ?", "admin").Count(&model.User{})
+	if err != nil {
+		return fmt.Errorf("seed admin count: %w", err)
 	}
-	for _, a := range accounts {
-		exists, err := Engine.Where("email = ?", a.email).Exist(&model.User{})
+	if adminCount > 0 {
+		return nil
+	}
+
+	username := strings.TrimSpace(os.Getenv("FANAPI_BOOTSTRAP_ADMIN_USERNAME"))
+	if username == "" {
+		username = "admin"
+	}
+	email := strings.TrimSpace(os.Getenv("FANAPI_BOOTSTRAP_ADMIN_EMAIL"))
+	if email == "" {
+		email = "admin@local.invalid"
+	}
+	password := os.Getenv("FANAPI_BOOTSTRAP_ADMIN_PASSWORD")
+	generated := false
+	if password == "" {
+		var err error
+		password, err = randomBootstrapPassword()
 		if err != nil {
-			return fmt.Errorf("seed check %s: %w", a.email, err)
+			return fmt.Errorf("generate bootstrap admin password: %w", err)
 		}
-		if exists {
-			// Ensure correct role and backfill username (for accounts seeded before username field was added).
-			patch := &model.User{}
-			cols := []string{}
-			if a.role == "admin" {
-				patch.Role = "admin"
-				patch.IsActive = true
-				cols = append(cols, "role", "is_active")
-			}
-			patch.Username = a.username
-			cols = append(cols, "username")
-			if len(cols) > 0 {
-				Engine.Where("email = ? AND (username IS NULL OR username = '')", a.email).
-					Cols(cols...).Update(patch)
-			}
-			continue
-		}
-		hash, err := bcrypt.GenerateFromPassword([]byte(a.password), bcrypt.DefaultCost)
-		if err != nil {
-			return fmt.Errorf("seed hash %s: %w", a.email, err)
-		}
-		if _, err := Engine.Insert(&model.User{
-			Username:     a.username,
-			Email:        &a.email,
-			PasswordHash: string(hash),
-			Role:         a.role,
-			IsActive:     true,
-		}); err != nil {
-			return fmt.Errorf("seed insert %s: %w", a.email, err)
-		}
-		log.Printf("[db] seeded account: %s (role=%s)", a.email, a.role)
+		generated = true
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("seed admin hash: %w", err)
+	}
+	if _, err := Engine.Insert(&model.User{
+		Username:     username,
+		Email:        &email,
+		PasswordHash: string(hash),
+		Role:         "admin",
+		IsActive:     true,
+	}); err != nil {
+		return fmt.Errorf("seed admin insert: %w", err)
+	}
+	if generated {
+		log.Printf("[db] bootstrap admin created email=%s password=%s (save this password; it is shown once)", email, password)
+	} else {
+		log.Printf("[db] bootstrap admin created email=%s password_source=FANAPI_BOOTSTRAP_ADMIN_PASSWORD", email)
 	}
 	return nil
+}
+
+func randomBootstrapPassword() (string, error) {
+	buf := make([]byte, 24)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
 // seedChannels inserts default test channels on first startup (only when the

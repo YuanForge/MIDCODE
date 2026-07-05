@@ -19,7 +19,10 @@ import (
 
 var ErrDuplicateBillingTransaction = errors.New("duplicate billing transaction")
 
-const billingRefundJobRunningTimeout = 10 * time.Minute
+const (
+	billingRefundJobRunningTimeout = 10 * time.Minute
+	billingPostJobRunningTimeout   = 10 * time.Minute
+)
 
 // WriteTx 写入一条计费流水，并在需要时同步余额。
 // poolKeyID 为本次请求使用的号池 Key ID（0 表示未使用号池）。
@@ -44,7 +47,7 @@ func WriteTx(ctx context.Context, userID, channelID, apiKeyID, poolKeyID int64, 
 		refundDedupeKey = ensureRefundDedupeKey(userID, corrID, credits, cost, modelCreditCharged, metrics)
 	}
 	consumptionDedupeKey := ""
-	if isConsumptionTx(txType) {
+	if isDedupeProtectedTx(txType) || hasExplicitRechargeDedupeKey(txType, metrics) {
 		consumptionDedupeKey = ensureBillingDedupeKey(userID, corrID, txType, credits, cost, modelCreditCharged, taskID, llmLogID, metrics)
 	}
 	tx := &model.BillingTransaction{
@@ -233,6 +236,15 @@ func WriteTx(ctx context.Context, userID, channelID, apiKeyID, poolKeyID int64, 
 		}
 	}
 
+	if postJob := postBillingJobForTx(userID, poolKeyID, txType, credits, cost); postJob != nil {
+		if _, err := sess.Insert(postJob); err != nil {
+			if rbErr := sess.Rollback(); rbErr != nil {
+				log.Printf("[billing] rollback failed: %v", rbErr)
+			}
+			return err
+		}
+	}
+
 	if err := sess.Commit(); err != nil {
 		return handlePreAppliedFailure("commit", err)
 	}
@@ -260,11 +272,8 @@ func WriteTx(ctx context.Context, userID, channelID, apiKeyID, poolKeyID int64, 
 	//   settle  — 输出费或差额补扣
 	//   charge  — 图片/视频/音频一次性扣费
 	//   refund  — 退款时反向扣回已发放的返佣/收益（传负值）
-	switch txType {
-	case "charge", "settle", "hold":
-		go applyPostBillingHooks(userID, poolKeyID, credits, cost)
-	case "refund":
-		go applyPostBillingHooks(userID, poolKeyID, -credits, -cost)
+	if isPostBillingTx(txType) {
+		go processBillingPostBillingJobs(context.Background())
 	}
 	return nil
 }
@@ -309,6 +318,37 @@ func metricBool(metrics model.JSON, key string) bool {
 		return v
 	case string:
 		return v == "true" || v == "1"
+	default:
+		return false
+	}
+}
+
+func postBillingJobForTx(userID, poolKeyID int64, txType string, credits, cost int64) *model.BillingPostBillingJob {
+	switch txType {
+	case "charge", "settle", "hold":
+	case "refund":
+		credits = -credits
+		cost = -cost
+	default:
+		return nil
+	}
+	if credits == 0 && (poolKeyID <= 0 || cost == 0) {
+		return nil
+	}
+	return &model.BillingPostBillingJob{
+		UserID:    userID,
+		PoolKeyID: poolKeyID,
+		Credits:   credits,
+		Cost:      cost,
+		Status:    "pending",
+		NextRunAt: time.Now(),
+	}
+}
+
+func isPostBillingTx(txType string) bool {
+	switch txType {
+	case "charge", "settle", "hold", "refund":
+		return true
 	default:
 		return false
 	}
@@ -448,6 +488,116 @@ func Recharge(ctx context.Context, userID, adminID, credits int64) error {
 	return WriteTx(ctx, userID, 0, 0, 0, "", "recharge", credits, 0, 0, nil)
 }
 
+// SettlePaymentOrderRecharge atomically marks a pending payment order as paid
+// and credits the user's balance. It returns false when another callback has
+// already settled the order.
+func SettlePaymentOrderRecharge(ctx context.Context, order *model.PaymentOrder, tradeNo string, payFlat int, payChannel string, paidAt time.Time) (bool, error) {
+	if order == nil || order.ID == 0 {
+		return false, fmt.Errorf("payment order is required")
+	}
+	if order.UserID == 0 || order.Credits <= 0 {
+		return false, fmt.Errorf("invalid payment order")
+	}
+
+	sess := db.Engine.NewSession()
+	defer sess.Close()
+	if err := sess.Begin(); err != nil {
+		return false, err
+	}
+	if _, err := sess.Exec("SELECT pg_advisory_xact_lock($1, $2)", int64(20260705), order.UserID); err != nil {
+		_ = sess.Rollback()
+		return false, err
+	}
+
+	update := &model.PaymentOrder{
+		Status:  "paid",
+		TradeNo: tradeNo,
+		PaidAt:  &paidAt,
+	}
+	cols := []string{"status", "trade_no", "paid_at"}
+	if payFlat >= 0 {
+		update.PayFlat = payFlat
+		cols = append(cols, "pay_flat")
+	}
+	if payChannel != "" {
+		update.PayChannel = payChannel
+		cols = append(cols, "pay_channel")
+	}
+	affected, err := sess.ID(order.ID).Where("status = 'pending'").Cols(cols...).Update(update)
+	if err != nil {
+		_ = sess.Rollback()
+		return false, err
+	}
+	if affected == 0 {
+		_ = sess.Rollback()
+		return false, nil
+	}
+
+	rows, err := sess.QueryString(
+		"UPDATE users SET balance = balance + $1 WHERE id = $2 RETURNING balance",
+		order.Credits, order.UserID,
+	)
+	if err != nil {
+		_ = sess.Rollback()
+		return false, err
+	}
+	if len(rows) == 0 {
+		_ = sess.Rollback()
+		return false, fmt.Errorf("用户不存在")
+	}
+	balanceAfter, _ := strconv.ParseInt(rows[0]["balance"], 10, 64)
+
+	metrics := model.JSON{
+		"payment_order_id": order.ID,
+		"out_trade_no":     order.OutTradeNo,
+		"trade_no":         tradeNo,
+	}
+	if payChannel != "" {
+		metrics["pay_channel"] = payChannel
+	}
+	tx := &model.BillingTransaction{
+		UserID:       order.UserID,
+		CorrID:       order.OutTradeNo,
+		Type:         "recharge",
+		Credits:      order.Credits,
+		BalanceAfter: balanceAfter,
+		Metrics:      metrics,
+	}
+	if _, err := sess.Insert(tx); err != nil {
+		_ = sess.Rollback()
+		return false, err
+	}
+	if _, _, err := refreshUserVIPGroupTx(sess, order.UserID); err != nil {
+		_ = sess.Rollback()
+		return false, err
+	}
+
+	balanceSyncJob := &model.BalanceSyncJob{
+		UserID: order.UserID,
+		Delta:  order.Credits,
+		Reason: "recharge",
+		CorrID: order.OutTradeNo,
+		Status: "pending",
+	}
+	if _, err := sess.Insert(balanceSyncJob); err != nil {
+		_ = sess.Rollback()
+		return false, err
+	}
+	if err := sess.Commit(); err != nil {
+		return false, err
+	}
+
+	billing.InvalidateBalanceCache(context.Background(), order.UserID)
+	if err := billing.ApplyBalanceSyncJob(ctx, *balanceSyncJob); err != nil {
+		log.Printf("[billing] apply payment recharge to redis failed order_id=%d user=%d credits=%d err=%v",
+			order.ID, order.UserID, order.Credits, err)
+	} else if _, err := db.Engine.ID(balanceSyncJob.ID).Cols("status").Update(&model.BalanceSyncJob{Status: "done"}); err != nil {
+		log.Printf("[billing] mark payment balance sync done failed order_id=%d job_id=%d err=%v",
+			order.ID, balanceSyncJob.ID, err)
+	}
+	return true, nil
+}
+
 // GrantModelCredit 为用户赠送指定模型的专属积分（管理员操作）。
 // modelName 为渠道的路由键（display_name 非空时为 display_name，否则为 model）。
 func GrantModelCredit(ctx context.Context, userID int64, modelName string, credits int64) error {
@@ -499,13 +649,21 @@ func CountTransactions(ctx context.Context, userID int64, corrID, taskID string)
 	return count, err
 }
 
-func isConsumptionTx(txType string) bool {
+func isDedupeProtectedTx(txType string) bool {
 	switch txType {
 	case "charge", "hold", "settle":
 		return true
 	default:
 		return false
 	}
+}
+
+func hasExplicitRechargeDedupeKey(txType string, metrics model.JSON) bool {
+	if txType != "recharge" || metrics == nil {
+		return false
+	}
+	key, _ := metrics["billing_dedupe_key"].(string)
+	return strings.TrimSpace(key) != ""
 }
 
 func ensureBillingDedupeKey(userID int64, corrID, txType string, credits, cost, modelCreditCharged, taskID, llmLogID int64, metrics model.JSON) string {
@@ -598,7 +756,7 @@ func billingTxExistsByDedupeKey(sess interface {
 		return false, nil
 	}
 	rows, err := sess.QueryString(
-		"SELECT id FROM billing_transactions WHERE type IN ('charge','hold','settle') AND metrics->>'billing_dedupe_key' = $1 LIMIT 1",
+		"SELECT id FROM billing_transactions WHERE type IN ('charge','hold','settle','recharge') AND metrics->>'billing_dedupe_key' = $1 LIMIT 1",
 		dedupeKey,
 	)
 	if err != nil {
@@ -696,6 +854,222 @@ func enqueueRefundJob(ctx context.Context, userID, channelID, apiKeyID, poolKeyI
 		}
 	}
 	return err
+}
+
+// StartBillingPostBillingJobWorker retries post-billing money movements such as
+// inviter rebates and vendor earnings.
+func StartBillingPostBillingJobWorker(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		log.Println("[billing-post] post-billing worker started")
+		processBillingPostBillingJobs(ctx)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				processBillingPostBillingJobs(ctx)
+			}
+		}
+	}()
+}
+
+func processBillingPostBillingJobs(ctx context.Context) {
+	if n, err := ProcessBillingPostBillingJobs(ctx, 100); err != nil {
+		log.Printf("[billing-post] process post-billing jobs failed after %d jobs: %v", n, err)
+	}
+}
+
+func ProcessBillingPostBillingJobs(ctx context.Context, limit int) (int, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if _, err := reclaimStaleBillingPostBillingJobs(ctx, time.Now().Add(-billingPostJobRunningTimeout)); err != nil {
+		return 0, err
+	}
+	var jobs []model.BillingPostBillingJob
+	if err := db.Engine.Context(ctx).
+		Where("status = ? AND next_run_at <= ?", "pending", time.Now()).
+		Asc("id").
+		Limit(limit).
+		Find(&jobs); err != nil {
+		return 0, err
+	}
+
+	processed := 0
+	for _, job := range jobs {
+		claimed, err := claimBillingPostBillingJob(ctx, job.ID)
+		if err != nil {
+			return processed, err
+		}
+		if !claimed {
+			continue
+		}
+		if err := processBillingPostBillingJob(ctx, job); err != nil {
+			if releaseErr := releaseBillingPostBillingJob(ctx, job, err); releaseErr != nil {
+				return processed, releaseErr
+			}
+			return processed, err
+		}
+		processed++
+	}
+	return processed, nil
+}
+
+func reclaimStaleBillingPostBillingJobs(ctx context.Context, before time.Time) (int64, error) {
+	return db.Engine.Context(ctx).
+		Where("status = ? AND updated_at < ?", "running", before).
+		Cols("status", "next_run_at", "last_error", "updated_at").
+		Update(&model.BillingPostBillingJob{
+			Status:    "pending",
+			NextRunAt: time.Now(),
+			LastError: "reclaimed stale running post-billing job",
+			UpdatedAt: time.Now(),
+		})
+}
+
+func claimBillingPostBillingJob(ctx context.Context, jobID int64) (bool, error) {
+	affected, err := db.Engine.Context(ctx).
+		Where("id = ? AND status = ?", jobID, "pending").
+		Cols("status", "updated_at").
+		Update(&model.BillingPostBillingJob{Status: "running", UpdatedAt: time.Now()})
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
+}
+
+func releaseBillingPostBillingJob(ctx context.Context, job model.BillingPostBillingJob, cause error) error {
+	attempts := job.Attempts + 1
+	backoff := time.Duration(attempts*attempts) * time.Second
+	if backoff > 5*time.Minute {
+		backoff = 5 * time.Minute
+	}
+	_, err := db.Engine.Context(ctx).
+		ID(job.ID).
+		Cols("status", "attempts", "next_run_at", "last_error", "updated_at").
+		Update(&model.BillingPostBillingJob{
+			Status:    "pending",
+			Attempts:  attempts,
+			NextRunAt: time.Now().Add(backoff),
+			LastError: fmt.Sprint(cause),
+			UpdatedAt: time.Now(),
+		})
+	return err
+}
+
+func processBillingPostBillingJob(ctx context.Context, job model.BillingPostBillingJob) error {
+	if !job.RebateDone {
+		if err := completeBillingPostRebate(ctx, job); err != nil {
+			return err
+		}
+		job.RebateDone = true
+	}
+	if !job.VendorDone {
+		if err := completeBillingPostVendor(ctx, job); err != nil {
+			return err
+		}
+		job.VendorDone = true
+	}
+	_, err := db.Engine.Context(ctx).
+		ID(job.ID).
+		Cols("status", "attempts", "rebate_done", "vendor_done", "last_error", "updated_at").
+		Update(&model.BillingPostBillingJob{
+			Status:     "done",
+			Attempts:   job.Attempts + 1,
+			RebateDone: true,
+			VendorDone: true,
+			LastError:  "",
+			UpdatedAt:  time.Now(),
+		})
+	return err
+}
+
+func completeBillingPostRebate(ctx context.Context, job model.BillingPostBillingJob) error {
+	sess := db.Engine.NewSession()
+	defer sess.Close()
+	if err := sess.Begin(); err != nil {
+		return err
+	}
+	if job.Credits != 0 {
+		var inviterID int64
+		var rebateRatio *float64
+		rows, err := sess.QueryString("SELECT inviter_id, rebate_ratio FROM users WHERE id = $1", job.UserID)
+		if err != nil {
+			_ = sess.Rollback()
+			return fmt.Errorf("load inviter rebate: %w", err)
+		}
+		if len(rows) > 0 {
+			if s := rows[0]["inviter_id"]; s != "" {
+				inviterID, _ = strconv.ParseInt(s, 10, 64)
+			}
+			if s := rows[0]["rebate_ratio"]; s != "" {
+				var r float64
+				if _, err := fmt.Sscanf(s, "%f", &r); err == nil {
+					rebateRatio = &r
+				}
+			}
+		}
+		if inviterID > 0 {
+			ratio := getRebateRatio(ctx, rebateRatio)
+			rebateCredits := int64(float64(job.Credits) * ratio)
+			if rebateCredits != 0 {
+				sqlStmt := "UPDATE users SET frozen_balance = frozen_balance + $1 WHERE id = $2"
+				if rebateCredits < 0 {
+					sqlStmt = "UPDATE users SET frozen_balance = GREATEST(0, frozen_balance + $1) WHERE id = $2"
+				}
+				if _, err := sess.Exec(sqlStmt, rebateCredits, inviterID); err != nil {
+					_ = sess.Rollback()
+					return fmt.Errorf("apply inviter rebate user=%d inviter=%d: %w", job.UserID, inviterID, err)
+				}
+			}
+		}
+	}
+	if _, err := sess.ID(job.ID).Where("status = ?", "running").Cols("rebate_done", "updated_at").Update(&model.BillingPostBillingJob{RebateDone: true, UpdatedAt: time.Now()}); err != nil {
+		_ = sess.Rollback()
+		return err
+	}
+	return sess.Commit()
+}
+
+func completeBillingPostVendor(ctx context.Context, job model.BillingPostBillingJob) error {
+	sess := db.Engine.NewSession()
+	defer sess.Close()
+	if err := sess.Begin(); err != nil {
+		return err
+	}
+	if job.PoolKeyID > 0 && job.Cost != 0 {
+		rows, err := sess.QueryString("SELECT vendor_id FROM pool_keys WHERE id = $1", job.PoolKeyID)
+		if err != nil {
+			_ = sess.Rollback()
+			return fmt.Errorf("load vendor for pool key=%d: %w", job.PoolKeyID, err)
+		}
+		if len(rows) > 0 {
+			if vendorIDStr := rows[0]["vendor_id"]; vendorIDStr != "" {
+				vendorID, _ := strconv.ParseInt(vendorIDStr, 10, 64)
+				if vendorID > 0 {
+					commission := getVendorCommission(ctx, vendorID)
+					vendorEarns := int64(float64(job.Cost) * (1 - commission))
+					if vendorEarns != 0 {
+						sqlStmt := "UPDATE vendors SET balance = balance + $1 WHERE id = $2"
+						if vendorEarns < 0 {
+							sqlStmt = "UPDATE vendors SET balance = GREATEST(0, balance + $1) WHERE id = $2"
+						}
+						if _, err := sess.Exec(sqlStmt, vendorEarns, vendorID); err != nil {
+							_ = sess.Rollback()
+							return fmt.Errorf("apply vendor earning vendor=%d: %w", vendorID, err)
+						}
+					}
+				}
+			}
+		}
+	}
+	if _, err := sess.ID(job.ID).Where("status = ?", "running").Cols("vendor_done", "updated_at").Update(&model.BillingPostBillingJob{VendorDone: true, UpdatedAt: time.Now()}); err != nil {
+		_ = sess.Rollback()
+		return err
+	}
+	return sess.Commit()
 }
 
 // StartBillingRefundJobWorker retries refund transactions that were safely

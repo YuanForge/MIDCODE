@@ -39,7 +39,7 @@ func NewVendorHandler(cfg *config.ServerConfig) *VendorHandler {
 func (h *VendorHandler) Register(c *gin.Context) {
 	var req struct {
 		Username string `json:"username" binding:"required,min=3,max=32"`
-		Password string `json:"password" binding:"required,min=6,max=128"`
+		Password string `json:"password" binding:"required,min=8,max=128"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

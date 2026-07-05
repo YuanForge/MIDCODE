@@ -9,6 +9,12 @@ web/user/dist/
 /tmp/fanapi-server
 /tmp/fanapi-script
 *.exe
+/server
+/cmd/server/server
+/web/app/server
+
+# Runtime uploads / exports
+uploads/
 
 # Swagger generated artifacts (only docs/docs.go is needed)
 docs/swagger.json

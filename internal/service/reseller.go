@@ -525,7 +525,7 @@ func BuildResellerSite(ctx context.Context, jobID int64, cfg *config.Config) err
 	if !found {
 		return markBuildFailed(ctx, &job, &site, "validate_key", fmt.Errorf("bound API key not found or disabled"))
 	}
-	rawKey, err := DecryptAPIKey(apiKey.RawKeyEnc, cfg.Server.JWTSecret)
+	rawKey, err := DecryptAPIKey(apiKey.RawKeyEnc, cfg.Server.APIKeySecret)
 	if err != nil {
 		return markBuildFailed(ctx, &job, &site, "validate_key", err)
 	}

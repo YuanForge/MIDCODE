@@ -44,11 +44,18 @@ func NormalizeUsage(resp map[string]interface{}, sourceProtocol string) map[stri
 		if usg, ok := resp["usage"].(map[string]interface{}); ok {
 			in, _ := usg["input_tokens"].(float64)
 			out, _ := usg["output_tokens"].(float64)
-			return map[string]interface{}{
+			result := map[string]interface{}{
 				"prompt_tokens":     int64(in),
 				"completion_tokens": int64(out),
 				"total_tokens":      int64(in + out),
 			}
+			// OpenAI Responses prompt caching: input_tokens_details.cached_tokens
+			if details, ok := usg["input_tokens_details"].(map[string]interface{}); ok {
+				if n, _ := details["cached_tokens"].(float64); n > 0 {
+					result["cache_read_tokens"] = int64(n)
+				}
+			}
+			return result
 		}
 	default:
 		if usg, ok := resp["usage"].(map[string]interface{}); ok {

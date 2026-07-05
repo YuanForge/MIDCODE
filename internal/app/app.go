@@ -10,6 +10,7 @@ import (
 	"fanapi/internal/config"
 	"fanapi/internal/db"
 	"fanapi/internal/handler"
+	"fanapi/internal/middleware"
 	"fanapi/internal/mq"
 	"fanapi/internal/router"
 	"fanapi/pkg/mailer"
@@ -76,8 +77,16 @@ func New() (*App, error) {
 	}
 
 	r := gin.New()
+	if len(cfg.Server.TrustedProxies) > 0 {
+		if err := r.SetTrustedProxies(cfg.Server.TrustedProxies); err != nil {
+			return nil, fmt.Errorf("invalid trusted proxies: %w", err)
+		}
+	} else if err := r.SetTrustedProxies(nil); err != nil {
+		return nil, fmt.Errorf("disable trusted proxies failed: %w", err)
+	}
 	r.Use(gin.Logger())
 	r.Use(gin.Recovery())
+	r.Use(middleware.RateLimit())
 	r.Use(func(c *gin.Context) {
 		c.Set("app_config", cfg)
 		c.Next()

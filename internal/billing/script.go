@@ -1,15 +1,20 @@
 package billing
 
 import (
+	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/dop251/goja"
 )
 
+const billingScriptExecutionTimeout = 2 * time.Second
+
 var (
-	billingScriptCache   = make(map[string]*goja.Program)
-	billingScriptCacheMu sync.RWMutex
+	billingScriptCache      = make(map[string]*goja.Program)
+	billingScriptCacheMu    sync.RWMutex
+	errBillingScriptTimeout = errors.New("billing script execution timeout")
 )
 
 func getBillingProgram(scriptSrc string) (*goja.Program, error) {
@@ -52,7 +57,9 @@ func RunBillingScript(script string, req, resp map[string]interface{}) (int64, e
 	}
 
 	vm := goja.New()
-	if _, err := vm.RunProgram(prog); err != nil {
+	if _, err := runBillingScriptWithTimeout(vm, func() (goja.Value, error) {
+		return vm.RunProgram(prog)
+	}); err != nil {
 		return 0, fmt.Errorf("billing script run error: %w", err)
 	}
 
@@ -63,13 +70,17 @@ func RunBillingScript(script string, req, resp map[string]interface{}) (int64, e
 		if !ok {
 			return 0, fmt.Errorf("billing script: calcCost function not found")
 		}
-		res, err = fn(goja.Undefined(), vm.ToValue(req))
+		res, err = runBillingScriptWithTimeout(vm, func() (goja.Value, error) {
+			return fn(goja.Undefined(), vm.ToValue(req))
+		})
 	} else {
 		fn, ok := goja.AssertFunction(vm.Get("calcActualCost"))
 		if !ok {
 			return 0, fmt.Errorf("billing script: calcActualCost function not found")
 		}
-		res, err = fn(goja.Undefined(), vm.ToValue(req), vm.ToValue(resp))
+		res, err = runBillingScriptWithTimeout(vm, func() (goja.Value, error) {
+			return fn(goja.Undefined(), vm.ToValue(req), vm.ToValue(resp))
+		})
 	}
 
 	if err != nil {
@@ -84,4 +95,17 @@ func RunBillingScript(script string, req, resp map[string]interface{}) (int64, e
 	default:
 		return 0, fmt.Errorf("billing script must return a number, got %T", res.Export())
 	}
+}
+
+func runBillingScriptWithTimeout(vm *goja.Runtime, fn func() (goja.Value, error)) (goja.Value, error) {
+	timer := time.AfterFunc(billingScriptExecutionTimeout, func() {
+		vm.Interrupt(errBillingScriptTimeout)
+	})
+	defer timer.Stop()
+
+	value, err := fn()
+	if errors.Is(err, errBillingScriptTimeout) {
+		return nil, errBillingScriptTimeout
+	}
+	return value, err
 }

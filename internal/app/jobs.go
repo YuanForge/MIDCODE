@@ -21,6 +21,7 @@ func startJobs(ctx context.Context, cfg *config.Config) error {
 	billing.StartBalanceSyncer(ctx)
 	billing.StartBillingReconciler(ctx)
 	service.StartBillingRefundJobWorker(ctx)
+	service.StartBillingPostBillingJobWorker(ctx)
 	handler.StartLLMLogBatchWriter(ctx)
 	taskresult.StartBatchWriter(ctx)
 	taskresult.StartPoller(ctx)

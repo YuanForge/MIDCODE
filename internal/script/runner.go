@@ -1,11 +1,17 @@
 package script
 
 import (
+	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/dop251/goja"
 )
+
+var errScriptTimeout = errors.New("script execution timeout")
+
+const scriptExecutionTimeout = 2 * time.Second
 
 // compiledScript 缓存同一脚本源码对应的编译结果（AST Program），
 // 避免每次请求都重复 parse/compile，显著降低高并发下的 CPU 开销。
@@ -85,14 +91,16 @@ func RunCheckError(scriptSrc string, response map[string]interface{}) (string, b
 		return "", false, err
 	}
 	vm := goja.New()
-	if _, err := vm.RunProgram(prog); err != nil {
+	if _, err := runProgramWithTimeout(vm, prog); err != nil {
 		return "", false, fmt.Errorf("script run error: %w", err)
 	}
 	fn, ok := goja.AssertFunction(vm.Get("checkError"))
 	if !ok {
 		return "", false, fmt.Errorf("function \"checkError\" not found in error_script")
 	}
-	res, err := fn(goja.Undefined(), vm.ToValue(response))
+	res, err := callWithTimeout(vm, func() (goja.Value, error) {
+		return fn(goja.Undefined(), vm.ToValue(response))
+	})
 	if err != nil {
 		return "", false, fmt.Errorf("checkError execution error: %w", err)
 	}
@@ -131,7 +139,7 @@ func runMapFnWithGlobals(scriptSrc, fnName string, input map[string]interface{},
 
 	// 每次请求创建独立的 VM Runtime，保证并发安全（goja Runtime 非线程安全）
 	vm := goja.New()
-	if _, err := vm.RunProgram(prog); err != nil {
+	if _, err := runProgramWithTimeout(vm, prog); err != nil {
 		return nil, fmt.Errorf("script run error: %w", err)
 	}
 	for k, v := range globals {
@@ -143,7 +151,9 @@ func runMapFnWithGlobals(scriptSrc, fnName string, input map[string]interface{},
 		return nil, fmt.Errorf("function %q not found in script", fnName)
 	}
 
-	res, err := fn(goja.Undefined(), vm.ToValue(input))
+	res, err := callWithTimeout(vm, func() (goja.Value, error) {
+		return fn(goja.Undefined(), vm.ToValue(input))
+	})
 	if err != nil {
 		return nil, fmt.Errorf("function %q execution error: %w", fnName, err)
 	}
@@ -158,4 +168,23 @@ func runMapFnWithGlobals(scriptSrc, fnName string, input map[string]interface{},
 		return nil, fmt.Errorf("function %q must return an object, got %T", fnName, exported)
 	}
 	return result, nil
+}
+
+func runProgramWithTimeout(vm *goja.Runtime, prog *goja.Program) (goja.Value, error) {
+	return callWithTimeout(vm, func() (goja.Value, error) {
+		return vm.RunProgram(prog)
+	})
+}
+
+func callWithTimeout(vm *goja.Runtime, fn func() (goja.Value, error)) (goja.Value, error) {
+	timer := time.AfterFunc(scriptExecutionTimeout, func() {
+		vm.Interrupt(errScriptTimeout)
+	})
+	defer timer.Stop()
+
+	value, err := fn()
+	if errors.Is(err, errScriptTimeout) {
+		return nil, errScriptTimeout
+	}
+	return value, err
 }

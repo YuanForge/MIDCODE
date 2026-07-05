@@ -66,6 +66,7 @@ import {
 import { useSiteSettings } from '@/hooks/use-site-settings'
 import { clearRoleToken, getRoleToken, setSiteModePreference } from '@/lib/auth/storage'
 import { userApi } from '@/lib/api/user'
+import { sanitizeHtml } from '@/lib/sanitize-html'
 
 export type NavItem = {
   label: string
@@ -342,7 +343,7 @@ export function ConsoleLayout({
         {headerHtml ? (
           <div
             className="border-b border-border/60 bg-card px-4 py-2 text-sm md:px-6"
-            dangerouslySetInnerHTML={{ __html: headerHtml }}
+            dangerouslySetInnerHTML={{ __html: sanitizeHtml(headerHtml) }}
           />
         ) : null}
         <main className={isFullBleedPage ? 'flex-1 px-0 py-0' : 'flex-1 px-4 py-6 md:px-6'}>
@@ -359,7 +360,7 @@ export function ConsoleLayout({
         {footerHtml ? (
           <footer
             className="border-t border-border/60 bg-background px-4 py-3 text-xs text-muted-foreground md:px-6"
-            dangerouslySetInnerHTML={{ __html: footerHtml }}
+            dangerouslySetInnerHTML={{ __html: sanitizeHtml(footerHtml) }}
           />
         ) : null}
       </SidebarInset>

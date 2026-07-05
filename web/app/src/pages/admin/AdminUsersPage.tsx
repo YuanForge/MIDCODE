@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { CheckSquareIcon, FilterIcon, PlusIcon, SaveIcon, Trash2Icon, UsersIcon, XIcon } from 'lucide-react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -273,6 +273,7 @@ function UserReferralsSection({ userId, fallbackInviteCount }: { userId: number;
 
 export function AdminUsersPage() {
   const [page, setPage] = useState(1)
+  const [pageInput, setPageInput] = useState('1')
   const pageSize = 20
 
   // 复合过滤器
@@ -502,7 +503,19 @@ export function AdminUsersPage() {
   }
 
   const totalPages = Math.ceil(data.total / pageSize)
+  const safeTotalPages = Math.max(1, totalPages)
   const allOnPageSelected = data.users.length > 0 && data.users.every((u) => u.id != null && selectedIds.has(u.id))
+
+  useEffect(() => {
+    setPageInput(String(page))
+  }, [page])
+
+  function goToPage() {
+    const parsed = Number.parseInt(pageInput, 10)
+    const next = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), safeTotalPages) : 1
+    setPage(next)
+    setPageInput(String(next))
+  }
 
   return (
     <>
@@ -685,6 +698,18 @@ export function AdminUsersPage() {
                 上一页
               </Button>
               <span className="text-sm text-muted-foreground">第 {page} / {totalPages} 页</span>
+              <Input
+                className="h-8 w-20"
+                inputMode="numeric"
+                value={pageInput}
+                onChange={(event) => setPageInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') goToPage()
+                }}
+              />
+              <Button size="sm" variant="outline" onClick={goToPage}>
+                跳转
+              </Button>
               <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
                 下一页
               </Button>
