@@ -279,15 +279,13 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 		OutputPricePer1MTokens: outputPricePer1M,
 		IsStream:               true,
 		Transport:              "ws",
-		UpstreamRequest:        model.JSON(openAIReq),
-		ClientRequest:          model.JSON(responseData),
 		Status:                 "pending",
 	}
 	enqueueLLMLogInsert(*llmLog)
 
 	var usageForSettle map[string]interface{}
 	if useUpstreamWS {
-		usageWS, rawWSMessages, clientResp, wsErr := forwardResponsesWSWithSession(c.Request.Context(), upstreamSession, conn, c, ch, poolKey, upstreamWSURL, openAIReq)
+		usageWS, _, _, wsErr := forwardResponsesWSWithSession(c.Request.Context(), upstreamSession, conn, c, ch, poolKey, upstreamWSURL, openAIReq)
 		if wsErr != nil {
 			service.RecordChannelError(c.Request.Context(), ch.ID)
 			refunded, mcRefunded := refundHold("upstream_error")
@@ -298,11 +296,7 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 			return wsErr
 		}
 		service.RecordChannelSuccess(c.Request.Context(), ch.ID)
-		enqueueLLMLogPatch(corrID, []string{"upstream_status", "upstream_response", "client_response"}, model.LLMLog{
-			UpstreamStatus:   http.StatusOK,
-			UpstreamResponse: model.JSON{"messages": rawWSMessages},
-			ClientResponse:   clientResp,
-		})
+		enqueueLLMLogPatch(corrID, []string{"upstream_status"}, model.LLMLog{UpstreamStatus: http.StatusOK})
 		usageForSettle = usageWS
 	} else {
 		// 发送上游请求（强制流式）
@@ -335,10 +329,6 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 		usg := &usageState{protocol: proto}
 		sseConv := protocol.NewSSEConverter(proto, protocol.ProtocolResponses)
 
-		const maxSSELogBytes = 200 * 1024
-		var rawSSELines []string
-		var rawSSEBytes int
-
 		scanner := bufio.NewScanner(resp.Body)
 		// 可选：提高单行上限，避免长 data: 行触发 scanner.Err()==bufio.ErrTooLong
 		buf := make([]byte, 0, 64*1024)
@@ -348,11 +338,6 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 		for scanner.Scan() {
 			line := scanner.Text()
 			usg.processLine(line)
-			if rawSSEBytes < maxSSELogBytes {
-				rawSSELines = append(rawSSELines, line)
-				rawSSEBytes += len(line) + 1
-			}
-
 			var outLines []string
 			if sseConv != nil {
 				outLines = sseConv.Convert(line)
@@ -403,12 +388,7 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 			}
 		}
 
-		// 日志回写
-		enqueueLLMLogPatch(corrID, []string{"upstream_status", "upstream_response", "client_response"}, model.LLMLog{
-			UpstreamStatus:   http.StatusOK,
-			UpstreamResponse: model.JSON{"lines": rawSSELines},
-			ClientResponse:   buildStreamClientResponse(rawSSELines, proto),
-		})
+		enqueueLLMLogPatch(corrID, []string{"upstream_status"}, model.LLMLog{UpstreamStatus: http.StatusOK})
 		usageForSettle = usg.normalized(origReqData)
 	}
 
@@ -469,9 +449,6 @@ func forwardResponsesWS(ctx context.Context, clientConn *websocket.Conn, c *gin.
 		return nil, nil, nil, err
 	}
 
-	const maxWSLogBytes = 200 * 1024
-	var rawMessages []string
-	rawBytes := 0
 	var textBuf strings.Builder
 	var usage map[string]interface{}
 
@@ -481,16 +458,10 @@ func forwardResponsesWS(ctx context.Context, clientConn *websocket.Conn, c *gin.
 			if websocket.IsCloseError(readErr, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 				break
 			}
-			return usage, rawMessages, toWSClientResp(textBuf.String()), readErr
+			return usage, nil, toWSClientResp(textBuf.String()), readErr
 		}
 		if msgType != websocket.TextMessage {
 			continue
-		}
-
-		msgStr := string(msgBytes)
-		if rawBytes < maxWSLogBytes {
-			rawMessages = append(rawMessages, msgStr)
-			rawBytes += len(msgStr) + 1
 		}
 
 		var event map[string]interface{}
@@ -530,14 +501,14 @@ func forwardResponsesWS(ctx context.Context, clientConn *websocket.Conn, c *gin.
 				if errObj, ok := event["error"].(map[string]interface{}); ok {
 					if msg, _ := errObj["message"].(string); msg != "" {
 						_ = clientConn.WriteMessage(websocket.TextMessage, msgBytes)
-						return usage, rawMessages, toWSClientResp(textBuf.String()), fmt.Errorf("上游错误: %s", msg)
+						return usage, nil, toWSClientResp(textBuf.String()), fmt.Errorf("上游错误: %s", msg)
 					}
 				}
 			}
 		}
 
 		if writeErr := clientConn.WriteMessage(websocket.TextMessage, msgBytes); writeErr != nil {
-			return usage, rawMessages, toWSClientResp(textBuf.String()), writeErr
+			return usage, nil, toWSClientResp(textBuf.String()), writeErr
 		}
 
 		if eventType, _ := event["type"].(string); eventType == "response.completed" {
@@ -560,7 +531,7 @@ func forwardResponsesWS(ctx context.Context, clientConn *websocket.Conn, c *gin.
 		}
 	}
 
-	return usage, rawMessages, toWSClientResp(textBuf.String()), nil
+	return usage, nil, toWSClientResp(textBuf.String()), nil
 }
 
 type responsesWSUpstreamSession struct {
@@ -666,9 +637,6 @@ func forwardResponsesWSWithSession(ctx context.Context, session *responsesWSUpst
 		return nil, nil, nil, err
 	}
 
-	const maxWSLogBytes = 200 * 1024
-	var rawMessages []string
-	rawBytes := 0
 	var textBuf strings.Builder
 	var usage map[string]interface{}
 	var terminalErr error
@@ -682,18 +650,12 @@ func forwardResponsesWSWithSession(ctx context.Context, session *responsesWSUpst
 				break
 			}
 			if websocket.IsCloseError(readErr, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseNoStatusReceived) {
-				return usage, rawMessages, toWSClientResp(textBuf.String()), fmt.Errorf("upstream websocket closed before response.completed")
+				return usage, nil, toWSClientResp(textBuf.String()), fmt.Errorf("upstream websocket closed before response.completed")
 			}
-			return usage, rawMessages, toWSClientResp(textBuf.String()), readErr
+			return usage, nil, toWSClientResp(textBuf.String()), readErr
 		}
 		if msgType != websocket.TextMessage {
 			continue
-		}
-
-		msgStr := string(msgBytes)
-		if rawBytes < maxWSLogBytes {
-			rawMessages = append(rawMessages, msgStr)
-			rawBytes += len(msgStr) + 1
 		}
 
 		var event map[string]interface{}
@@ -733,7 +695,7 @@ func forwardResponsesWSWithSession(ctx context.Context, session *responsesWSUpst
 
 		if writeErr := clientConn.WriteMessage(websocket.TextMessage, msgBytes); writeErr != nil {
 			session.close()
-			return usage, rawMessages, toWSClientResp(textBuf.String()), writeErr
+			return usage, nil, toWSClientResp(textBuf.String()), writeErr
 		}
 
 		if terminalSeen {
@@ -742,7 +704,7 @@ func forwardResponsesWSWithSession(ctx context.Context, session *responsesWSUpst
 	}
 
 	if terminalErr != nil {
-		return usage, rawMessages, toWSClientResp(textBuf.String()), &wsClientErrorAlreadySent{err: terminalErr}
+		return usage, nil, toWSClientResp(textBuf.String()), &wsClientErrorAlreadySent{err: terminalErr}
 	}
 
 	if usage == nil {
@@ -759,7 +721,7 @@ func forwardResponsesWSWithSession(ctx context.Context, session *responsesWSUpst
 		}
 	}
 
-	return usage, rawMessages, toWSClientResp(textBuf.String()), nil
+	return usage, nil, toWSClientResp(textBuf.String()), nil
 }
 
 func prepareResponsesWSRequest(responseData map[string]interface{}, resolvedModel string) map[string]interface{} {

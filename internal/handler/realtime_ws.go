@@ -148,7 +148,6 @@ func RealtimeWSProxy(c *gin.Context) {
 	defer clientConn.Close()
 
 	reqData := map[string]interface{}{"model": routingModel}
-	upstreamReq := map[string]interface{}{"model": resolvedModel, "_url": targetURL}
 	inputHold, outputHold, calcErr := billing.CalcForUser(ch, reqData, userGroup)
 	if calcErr != nil {
 		_ = writeWSError(clientConn, "billing_error", calcErr.Error())
@@ -207,8 +206,6 @@ func RealtimeWSProxy(c *gin.Context) {
 		UpstreamURL:            targetURL,
 		UpstreamMethod:         "GET",
 		UpstreamHeaders:        model.JSON(toInterfaceMap(sentHeaders)),
-		UpstreamRequest:        model.JSON(upstreamReq),
-		ClientRequest:          model.JSON(reqData),
 		UpstreamStatus:         http.StatusSwitchingProtocols,
 		Status:                 "pending",
 	})
@@ -221,21 +218,12 @@ func RealtimeWSProxy(c *gin.Context) {
 			refunded, mcRefunded := llmRefundCredits(c, userID, totalHold)
 			recordLLMRefundTxDetached(c, userID, ch.ID, apiKeyIDVal, poolKeyIDVal, corrID, refunded, scaleRefundCost(upstreamCostHold, refunded, totalHold), mcRefunded, model.JSON{"reason": "realtime_ws_error"})
 		}
-		enqueueLLMLogPatch(corrID, []string{"status", "error_msg", "upstream_response", "client_response"}, model.LLMLog{
-			Status:           "error",
-			ErrorMsg:         err.Error(),
-			UpstreamResponse: session.upstreamLogJSON(),
-			ClientResponse:   session.clientLogJSON(),
-		})
+		enqueueLLMLogPatch(corrID, []string{"status", "error_msg"}, model.LLMLog{Status: "error", ErrorMsg: err.Error()})
 		return
 	}
 
 	service.RecordChannelSuccess(c.Request.Context(), ch.ID)
 	usage := session.usageData(reqData)
-	enqueueLLMLogPatch(corrID, []string{"upstream_response", "client_response"}, model.LLMLog{
-		UpstreamResponse: session.upstreamLogJSON(),
-		ClientResponse:   session.clientLogJSON(),
-	})
 	llmSettle(c, ch, reqData, usage, totalHold, userID, ch.ID, apiKeyIDVal, poolKeyIDVal, corrID, userGroup)
 }
 

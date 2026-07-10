@@ -47,6 +47,7 @@ func StartLLMLogBatchWriter(ctx context.Context) {
 }
 
 func enqueueLLMLogInsert(record model.LLMLog) {
+	stripLLMLogPayload(&record)
 	op := llmLogOp{
 		kind:   llmLogOpCreate,
 		corrID: record.CorrID,
@@ -70,6 +71,7 @@ func enqueueLLMLogPatch(corrID string, cols []string, patch model.LLMLog) {
 	if corrID == "" || len(cols) == 0 {
 		return
 	}
+	stripLLMLogPayload(&patch)
 	op := llmLogOp{
 		kind:   llmLogOpPatch,
 		corrID: corrID,
@@ -208,6 +210,7 @@ func applyLLMLogPatch(state *llmLogPending, cols []string, patch model.LLMLog) {
 	if state == nil {
 		return
 	}
+	stripLLMLogPayload(&patch)
 	for _, col := range cols {
 		switch col {
 		case "status":
@@ -218,16 +221,8 @@ func applyLLMLogPatch(state *llmLogPending, cols []string, patch model.LLMLog) {
 			state.record.Usage = patch.Usage
 		case "upstream_status":
 			state.record.UpstreamStatus = patch.UpstreamStatus
-		case "upstream_response":
-			state.record.UpstreamResponse = patch.UpstreamResponse
-		case "client_response":
-			state.record.ClientResponse = patch.ClientResponse
 		case "upstream_headers":
 			state.record.UpstreamHeaders = patch.UpstreamHeaders
-		case "upstream_request":
-			state.record.UpstreamRequest = patch.UpstreamRequest
-		case "client_request":
-			state.record.ClientRequest = patch.ClientRequest
 		case "upstream_url":
 			state.record.UpstreamURL = patch.UpstreamURL
 		case "upstream_method":
@@ -242,7 +237,19 @@ func applyLLMLogPatch(state *llmLogPending, cols []string, patch model.LLMLog) {
 			state.record.Model = patch.Model
 		case "is_stream":
 			state.record.IsStream = patch.IsStream
+		case "client_request", "upstream_request", "client_response", "upstream_response":
+			continue
 		}
 		state.patchCols[col] = true
 	}
+}
+
+func stripLLMLogPayload(record *model.LLMLog) {
+	if record == nil {
+		return
+	}
+	record.ClientRequest = nil
+	record.UpstreamRequest = nil
+	record.ClientResponse = nil
+	record.UpstreamResponse = nil
 }

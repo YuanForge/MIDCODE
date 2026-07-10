@@ -33,6 +33,7 @@ const (
 
 	responsesOperationCompact = "compact"
 	maxPoolKeyExhaustRetries  = 8
+	llmRouteContextKey        = "llm_route"
 )
 
 // OpenAIModels returns an OpenAI-compatible model list for clients that discover
@@ -96,6 +97,12 @@ func effectiveProtocol(ch *model.Channel) string {
 	return ch.Protocol
 }
 
+func matchedLLMRoute(c *gin.Context) string {
+	route, _ := c.Get(llmRouteContextKey)
+	value, _ := route.(string)
+	return value
+}
+
 // LLMProxy 处理 POST /v1/chat/completions（OpenAI 标准格式）。
 // 客户端发送 OpenAI 格式请求，收到 OpenAI 格式 SSE 响应。
 //
@@ -113,6 +120,7 @@ func effectiveProtocol(ch *model.Channel) string {
 // @Router       /v1/chat/completions [post]
 func LLMProxy(c *gin.Context) {
 	c.Set("client_proto", protocolOpenAI)
+	c.Set(llmRouteContextKey, "/v1/chat/completions")
 	llmProxy(c)
 }
 
@@ -250,6 +258,7 @@ func GeminiNativeProxy(c *gin.Context) {
 // @Router       /v1/responses [post]
 func ResponsesProxy(c *gin.Context) {
 	c.Set("client_proto", protocolResponses)
+	c.Set(llmRouteContextKey, "/v1/responses")
 	llmProxy(c)
 }
 
@@ -270,6 +279,7 @@ func ResponsesProxy(c *gin.Context) {
 // @Router       /v1/responses/compact [post]
 func ResponsesCompactProxy(c *gin.Context) {
 	c.Set("client_proto", protocolResponses)
+	c.Set(llmRouteContextKey, "/v1/responses/compact")
 	c.Set("responses_operation", responsesOperationCompact)
 	llmProxy(c)
 }
@@ -467,7 +477,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 	// 在协议转换前保存模型名（Gemini 转换后 body 不含 model 字段，但 URL 替换需要用到）
 	resolvedModel, _ := reqData["model"].(string)
 
-	proto := effectiveProtocol(ch)
+	proto := resolveLLMUpstreamTarget(ch.BaseURL, matchedLLMRoute(c), effectiveProtocol(ch), resolvedModel, false, getResponsesOperation(c)).Protocol
 	responsesOperation := getResponsesOperation(c)
 	isResponsesCompact := responsesOperation == responsesOperationCompact
 	if isResponsesCompact && proto != protocolResponses {
@@ -548,8 +558,44 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 		poolKey = pk
 	}
 	poolKeyValue := ""
+	poolKeyBaseURL := ""
 	if poolKey != nil {
 		poolKeyValue = poolKey.Value
+		poolKeyBaseURL = poolKey.BaseURLOverride
+	}
+	upstreamTarget := resolveLLMUpstreamTarget(
+		upstream.BaseURLForPoolKey(ch.BaseURL, poolKeyBaseURL),
+		matchedLLMRoute(c),
+		effectiveProtocol(ch),
+		resolvedModel,
+		isStream,
+		responsesOperation,
+	)
+	if proto != upstreamTarget.Protocol {
+		proto = upstreamTarget.Protocol
+		reqData = origReqData
+		needsConversion := !isResponsesCompact && shouldConvertRequestBody(clientProto, proto, reqData)
+		if !ch.PassthroughBody && needsConversion && ch.RequestScript == "" {
+			working := reqData
+			if clientProto != protocolOpenAI {
+				norm, normErr := protocol.NormalizeClientRequest(working, clientProto)
+				if normErr != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "request format conversion failed: " + normErr.Error()})
+					return
+				}
+				norm["model"] = resolvedModel
+				working = norm
+			}
+			if proto != protocolOpenAI {
+				conv, convErr := protocol.ConvertRequest(working, proto)
+				if convErr != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "request format conversion failed: " + convErr.Error()})
+					return
+				}
+				working = conv
+			}
+			reqData = working
+		}
 	}
 
 	// 2. request_script（JS）映射（有脚本时跳过自动协议转换，由脚本自行处理）
@@ -658,11 +704,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 	// 5. 写入 LLM 请求日志
 	modelName := resolvedModel
 	// 预先计算实际上游 URL（与 sendLLMRequest 中逻辑保持一致）
-	poolKeyBaseURL := ""
-	if poolKey != nil {
-		poolKeyBaseURL = poolKey.BaseURLOverride
-	}
-	upstreamURL := resolveLLMTargetURL(upstream.BaseURLForPoolKey(ch.BaseURL, poolKeyBaseURL), modelName, isStream, responsesOperation)
+	upstreamURL := upstreamTarget.URL
 	upstreamMethod := ch.Method
 	if upstreamMethod == "" {
 		upstreamMethod = "POST"
@@ -683,11 +725,9 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 			}
 			return "http"
 		}(),
-		UpstreamURL:     upstreamURL,
-		UpstreamMethod:  upstreamMethod,
-		UpstreamRequest: model.JSON(mappedReq),
-		ClientRequest:   model.JSON(origReqData), // 用户原始请求（协议转换前）
-		Status:          "pending",
+		UpstreamURL:    upstreamURL,
+		UpstreamMethod: upstreamMethod,
+		Status:         "pending",
 	}
 	enqueueLLMLogInsert(*llmLog)
 
@@ -907,13 +947,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 
 		c.Data(http.StatusOK, "application/json", respBytes)
 
-		var clientRespJSON map[string]interface{}
-		_ = json.Unmarshal(respBytes, &clientRespJSON)
-		enqueueLLMLogPatch(corrID, []string{"upstream_status", "upstream_response", "client_response"}, model.LLMLog{
-			UpstreamStatus:   http.StatusOK,
-			UpstreamResponse: model.JSON(origRespJSON),
-			ClientResponse:   model.JSON(clientRespJSON),
-		})
+		enqueueLLMLogPatch(corrID, []string{"upstream_status"}, model.LLMLog{UpstreamStatus: http.StatusOK})
 
 		llmSettle(c, ch, origReqData, syncUsage, totalHold, userID, channelID, apiKeyIDVal, poolKeyIDVal, corrID, userGroup)
 		return
@@ -1015,11 +1049,6 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 		responsesFilter = &responsesPassthroughSSEFilter{}
 	}
 
-	// 收集上游原始 SSE 行用于日志，超过 200KB 后停止收集但继续推流。
-	const maxSSELogBytes = 200 * 1024
-	var rawSSELines []string
-	var rawSSEBytes int
-
 	scanner := bufio.NewScanner(resp.Body)
 	// Gemini thinking 模型的单个 SSE data: 行可能远超 64 KB（Go Scanner 默认 token 上限），
 	// 超出会使 scanner.Scan() 停止并静默截断流。此处将上限提升至 10 MB。
@@ -1043,10 +1072,6 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 		}
 		line := scanner.Text()
 		usage.processLine(line) // 始终用上游格式解析，保证计费准确
-		if rawSSEBytes < maxSSELogBytes {
-			rawSSELines = append(rawSSELines, line)
-			rawSSEBytes += len(line) + 1
-		}
 		if sseConv != nil {
 			for _, l := range sseConv.Convert(line) {
 				fmt.Fprintf(w, "%s\n", l)
@@ -1061,11 +1086,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 		return true
 	})
 
-	enqueueLLMLogPatch(corrID, []string{"upstream_status", "upstream_response", "client_response"}, model.LLMLog{
-		UpstreamStatus:   http.StatusOK,
-		UpstreamResponse: model.JSON{"lines": rawSSELines},
-		ClientResponse:   buildStreamClientResponse(rawSSELines, proto),
-	})
+	enqueueLLMLogPatch(corrID, []string{"upstream_status"}, model.LLMLog{UpstreamStatus: http.StatusOK})
 
 	if streamReadErr != nil {
 		service.RecordChannelError(c.Request.Context(), channelID)

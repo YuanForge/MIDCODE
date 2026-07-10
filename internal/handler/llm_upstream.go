@@ -24,7 +24,7 @@ import (
 //   - "query_param" 将 KEY 作为查询参数附加到 URL
 //   - "basic"      HTTP Basic Auth，KEY 格式为 "user:pass"
 //   - "sigv4"      AWS Signature V4，KEY 格式为 "ACCESS_KEY:SECRET_KEY"
-func sendLLMRequest(c *gin.Context, ch *model.Channel, reqData map[string]interface{}, poolKey *model.PoolKey, _ string, resolvedModel string, isStream bool, responsesOperation ...string) (map[string]string, *http.Response, error) {
+func sendLLMRequest(c *gin.Context, ch *model.Channel, reqData map[string]interface{}, poolKey *model.PoolKey, channelProtocol string, resolvedModel string, isStream bool, responsesOperation ...string) (map[string]string, *http.Response, error) {
 	// passthrough_body=true：直接使用客户端原始请求体，不做任何序列化/修改
 	var body []byte
 	if ch.PassthroughBody {
@@ -48,7 +48,14 @@ func sendLLMRequest(c *gin.Context, ch *model.Channel, reqData map[string]interf
 	if poolKey != nil {
 		poolKeyBaseURL = poolKey.BaseURLOverride
 	}
-	targetURL := resolveLLMTargetURL(upstream.BaseURLForPoolKey(ch.BaseURL, poolKeyBaseURL), resolvedModel, isStream, op)
+	targetURL := resolveLLMUpstreamTarget(
+		upstream.BaseURLForPoolKey(ch.BaseURL, poolKeyBaseURL),
+		matchedLLMRoute(c),
+		channelProtocol,
+		resolvedModel,
+		isStream,
+		op,
+	).URL
 
 	method := ch.Method
 	if method == "" {
@@ -118,6 +125,55 @@ func sendLLMRequest(c *gin.Context, ch *model.Channel, reqData map[string]interf
 
 	resp, err := httpClient.Do(upReq)
 	return sanitizedHeaders, resp, err
+}
+
+type llmUpstreamTarget struct {
+	URL      string
+	Protocol string
+	Dynamic  bool
+}
+
+func resolveLLMUpstreamTarget(baseURL, route, channelProtocol, resolvedModel string, isStream bool, responsesOperation string) llmUpstreamTarget {
+	resolvedBaseURL := resolveLLMTargetURL(baseURL, resolvedModel, isStream, "")
+	fixedURL := resolvedBaseURL
+	if responsesOperation == responsesOperationCompact {
+		fixedURL = resolveResponsesCompactURL(fixedURL)
+	}
+	fixedTarget := llmUpstreamTarget{
+		URL:      fixedURL,
+		Protocol: channelProtocol,
+	}
+
+	parsed, err := url.Parse(resolvedBaseURL)
+	if err != nil || strings.TrimRight(parsed.Path, "/") != "/v1" {
+		return fixedTarget
+	}
+
+	switch route {
+	case "/v1/chat/completions":
+		parsed.Path = "/v1/chat/completions"
+		return llmUpstreamTarget{
+			URL:      parsed.String(),
+			Protocol: protocolOpenAI,
+			Dynamic:  true,
+		}
+	case "/v1/responses":
+		parsed.Path = "/v1/responses"
+		return llmUpstreamTarget{
+			URL:      parsed.String(),
+			Protocol: protocolResponses,
+			Dynamic:  true,
+		}
+	case "/v1/responses/compact":
+		parsed.Path = "/v1/responses/compact"
+		return llmUpstreamTarget{
+			URL:      parsed.String(),
+			Protocol: protocolResponses,
+			Dynamic:  true,
+		}
+	default:
+		return fixedTarget
+	}
 }
 
 func resolveLLMTargetURL(baseURL, resolvedModel string, isStream bool, responsesOperation string) string {
