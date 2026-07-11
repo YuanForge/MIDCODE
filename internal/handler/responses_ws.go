@@ -15,7 +15,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -313,14 +312,15 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			bodyErr, _ := io.ReadAll(resp.Body)
+			bodyErr, _ := readLLMUpstreamErrorBody(resp.Body)
+			errSummary := summarizeLLMUpstreamError(resp.StatusCode, bodyErr)
 			service.RecordChannelError(c.Request.Context(), ch.ID)
 			refunded, mcRefunded := refundHold("upstream_error")
 			if totalHold > 0 {
 				recordLLMRefundTxDetached(c, userID, ch.ID, apiKeyIDVal, poolKeyIDVal, corrID, refunded, scaleRefundCost(upstreamCostHold, refunded, totalHold), mcRefunded, model.JSON{"reason": "upstream_error"})
 			}
-			enqueueLLMLogPatch(corrID, []string{"status", "upstream_status", "error_msg"}, model.LLMLog{Status: "error", UpstreamStatus: resp.StatusCode, ErrorMsg: string(bodyErr)})
-			return fmt.Errorf("上游返回 %d: %s", resp.StatusCode, string(bodyErr))
+			enqueueLLMLogPatch(corrID, []string{"status", "upstream_status", "error_msg"}, model.LLMLog{Status: "error", UpstreamStatus: resp.StatusCode, ErrorMsg: errSummary})
+			return fmt.Errorf("%s", errSummary)
 		}
 
 		service.RecordChannelSuccess(c.Request.Context(), ch.ID)

@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"fanapi/internal/model"
 )
@@ -62,5 +64,25 @@ func TestLLMLogWriterDropsPayloadFieldsFromCreateAndPatch(t *testing.T) {
 	}
 	if record.ClientRequest != nil || record.UpstreamRequest != nil || record.ClientResponse != nil || record.UpstreamResponse != nil {
 		t.Fatalf("create payload fields must be dropped: %#v", record)
+	}
+}
+
+func TestStripLLMLogPayloadLimitsAndSanitizesErrorSummary(t *testing.T) {
+	record := model.LLMLog{ErrorMsg: "safe\x00" + string([]byte{'x', 0xff}) + strings.Repeat("错", maxLLMLogErrorSummaryBytes)}
+	stripLLMLogPayload(&record)
+	if len(record.ErrorMsg) > maxLLMLogErrorSummaryBytes {
+		t.Fatalf("error summary exceeded %d bytes: %d", maxLLMLogErrorSummaryBytes, len(record.ErrorMsg))
+	}
+	if !utf8.ValidString(record.ErrorMsg) {
+		t.Fatalf("error summary is not valid UTF-8: %q", record.ErrorMsg)
+	}
+	if strings.ContainsRune(record.ErrorMsg, '\x00') {
+		t.Fatalf("error summary retained NUL: %q", record.ErrorMsg)
+	}
+
+	shortInvalidRecord := model.LLMLog{ErrorMsg: string([]byte{'s', 'h', 'o', 'r', 't', 0xff})}
+	stripLLMLogPayload(&shortInvalidRecord)
+	if !utf8.ValidString(shortInvalidRecord.ErrorMsg) {
+		t.Fatalf("short error summary is not valid UTF-8: %q", shortInvalidRecord.ErrorMsg)
 	}
 }

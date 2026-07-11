@@ -329,6 +329,185 @@ func TestSendLLMRequestAppendsMatchedRouteForV1Base(t *testing.T) {
 	}
 }
 
+func TestReadLLMUpstreamErrorBodyLimitsBytes(t *testing.T) {
+	got, err := readLLMUpstreamErrorBody(strings.NewReader(strings.Repeat("x", maxLLMUpstreamErrorBodyBytes+512)))
+	if err != nil {
+		t.Fatalf("read error body: %v", err)
+	}
+	if len(got) != maxLLMUpstreamErrorBodyBytes {
+		t.Fatalf("expected %d bytes, got %d", maxLLMUpstreamErrorBodyBytes, len(got))
+	}
+}
+
+func TestSummarizeLLMUpstreamErrorKeepsStructuredMessageWithoutRawBody(t *testing.T) {
+	body := []byte(`{"error":{"message":"invalid key","trace":"secret upstream response"}}`)
+	got := summarizeLLMUpstreamError(http.StatusUnauthorized, body)
+	if want := "上游返回 401: invalid key"; got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+	if strings.Contains(got, "secret upstream response") {
+		t.Fatalf("raw upstream response leaked into summary: %q", got)
+	}
+}
+
+func TestSummarizeLLMUpstreamErrorDropsUnstructuredBody(t *testing.T) {
+	body := []byte("<html>private upstream error " + strings.Repeat("x", 128*1024) + "</html>")
+	got := summarizeLLMUpstreamError(http.StatusBadGateway, body)
+	if want := "上游返回 502"; got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+	if len(got) > maxLLMLogErrorSummaryBytes {
+		t.Fatalf("summary exceeded %d bytes: %d", maxLLMLogErrorSummaryBytes, len(got))
+	}
+}
+
+func TestPrepareLLMUpstreamAttemptRebuildsBodyForEachPoolKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	c.Set(llmRouteContextKey, "/v1/chat/completions")
+
+	ch := &model.Channel{
+		BaseURL:  "https://fallback.example/v1/responses",
+		Protocol: protocolResponses,
+	}
+	source := map[string]interface{}{
+		"model": "gpt-test",
+		"messages": []interface{}{
+			map[string]interface{}{"role": "user", "content": "hello"},
+		},
+	}
+
+	responsesKey := &model.PoolKey{Value: "responses-key", BaseURLOverride: "https://responses.example/v1/responses"}
+	responsesAttempt, err := prepareLLMUpstreamAttempt(c, ch, responsesKey, source, protocolOpenAI, "gpt-test", false, "")
+	if err != nil {
+		t.Fatalf("prepare Responses attempt: %v", err)
+	}
+	if responsesAttempt.Protocol != protocolResponses || responsesAttempt.Target.URL != "https://responses.example/v1/responses" {
+		t.Fatalf("unexpected Responses target: %#v", responsesAttempt)
+	}
+	if _, ok := responsesAttempt.Request["input"]; !ok {
+		t.Fatalf("Responses request must contain input: %#v", responsesAttempt.Request)
+	}
+	if _, ok := responsesAttempt.Request["messages"]; ok {
+		t.Fatalf("Responses request retained stale messages: %#v", responsesAttempt.Request)
+	}
+
+	chatKey := &model.PoolKey{Value: "chat-key", BaseURLOverride: "https://chat.example/v1"}
+	chatAttempt, err := prepareLLMUpstreamAttempt(c, ch, chatKey, source, protocolOpenAI, "gpt-test", false, "")
+	if err != nil {
+		t.Fatalf("prepare Chat attempt: %v", err)
+	}
+	if chatAttempt.Protocol != protocolOpenAI || chatAttempt.Target.URL != "https://chat.example/v1/chat/completions" {
+		t.Fatalf("unexpected Chat target: %#v", chatAttempt)
+	}
+	if _, ok := chatAttempt.Request["messages"]; !ok {
+		t.Fatalf("Chat request must restore messages: %#v", chatAttempt.Request)
+	}
+	if _, ok := chatAttempt.Request["input"]; ok {
+		t.Fatalf("Chat request retained stale Responses input: %#v", chatAttempt.Request)
+	}
+}
+
+func TestPrepareLLMUpstreamAttemptRunsRequestScriptForCurrentPoolKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	c.Set(llmRouteContextKey, "/v1/chat/completions")
+
+	ch := &model.Channel{
+		BaseURL:       "https://api.example/v1",
+		Protocol:      protocolOpenAI,
+		RequestScript: `function mapRequest(input) { return { model: input.model, key_marker: poolKey }; }`,
+	}
+	source := map[string]interface{}{"model": "gpt-test"}
+
+	first, err := prepareLLMUpstreamAttempt(c, ch, &model.PoolKey{Value: "first-key"}, source, protocolOpenAI, "gpt-test", false, "")
+	if err != nil {
+		t.Fatalf("prepare first attempt: %v", err)
+	}
+	second, err := prepareLLMUpstreamAttempt(c, ch, &model.PoolKey{Value: "second-key"}, source, protocolOpenAI, "gpt-test", false, "")
+	if err != nil {
+		t.Fatalf("prepare second attempt: %v", err)
+	}
+	if first.Request["key_marker"] != "first-key" || second.Request["key_marker"] != "second-key" {
+		t.Fatalf("request script reused stale key: first=%#v second=%#v", first.Request, second.Request)
+	}
+}
+
+func TestPrepareLLMUpstreamAttemptDoesNotMutateSourceStreamOptions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	c.Set(llmRouteContextKey, "/v1/chat/completions")
+
+	sourceOptions := map[string]interface{}{"custom": true}
+	source := map[string]interface{}{
+		"model":          "gpt-test",
+		"stream":         true,
+		"stream_options": sourceOptions,
+	}
+	attempt, err := prepareLLMUpstreamAttempt(c, &model.Channel{BaseURL: "https://api.example/v1"}, nil, source, protocolOpenAI, "gpt-test", true, "")
+	if err != nil {
+		t.Fatalf("prepare attempt: %v", err)
+	}
+	attemptOptions, _ := attempt.Request["stream_options"].(map[string]interface{})
+	if attemptOptions["include_usage"] != true {
+		t.Fatalf("prepared request is missing include_usage: %#v", attempt.Request)
+	}
+	if _, leaked := sourceOptions["include_usage"]; leaked {
+		t.Fatalf("prepared request mutated source options: %#v", sourceOptions)
+	}
+}
+
+func TestPrepareLLMUpstreamAttemptSkipsScriptForPassthroughBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	c.Set(llmRouteContextKey, "/v1/chat/completions")
+
+	ch := &model.Channel{
+		BaseURL:         "https://api.example/v1/responses",
+		Protocol:        protocolResponses,
+		PassthroughBody: true,
+		RequestScript:   "not valid JavaScript",
+	}
+	attempt, err := prepareLLMUpstreamAttempt(c, ch, &model.PoolKey{BaseURLOverride: "https://api.example/v1"}, map[string]interface{}{"model": "gpt-test"}, protocolOpenAI, "gpt-test", false, "")
+	if err != nil {
+		t.Fatalf("passthrough body must skip request script: %v", err)
+	}
+	if attempt.Protocol != protocolOpenAI || attempt.Target.URL != "https://api.example/v1/chat/completions" {
+		t.Fatalf("passthrough attempt did not derive the current key target: %#v", attempt)
+	}
+}
+
+func TestPrepareLLMUpstreamAttemptKeepsResponsesCompactBodyUnconverted(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses/compact", nil)
+	c.Set(llmRouteContextKey, "/v1/responses/compact")
+
+	source := map[string]interface{}{
+		"model": "gpt-test",
+		"messages": []interface{}{
+			map[string]interface{}{"role": "user", "content": "hello"},
+		},
+	}
+	attempt, err := prepareLLMUpstreamAttempt(c, &model.Channel{BaseURL: "https://api.example/v1", Protocol: protocolResponses}, nil, source, protocolOpenAI, "gpt-test", false, responsesOperationCompact)
+	if err != nil {
+		t.Fatalf("prepare compact attempt: %v", err)
+	}
+	if attempt.Protocol != protocolResponses || attempt.Target.URL != "https://api.example/v1/responses/compact" {
+		t.Fatalf("unexpected compact target: %#v", attempt)
+	}
+	if _, ok := attempt.Request["messages"]; !ok {
+		t.Fatalf("compact request should retain its original body: %#v", attempt.Request)
+	}
+	if _, ok := attempt.Request["input"]; ok {
+		t.Fatalf("compact request should not be automatically converted: %#v", attempt.Request)
+	}
+}
+
 func TestResponsesPassthroughSSEFilterDropsEmptyChatCompletionChunk(t *testing.T) {
 	filter := &responsesPassthroughSSEFilter{}
 	input := []string{

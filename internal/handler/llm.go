@@ -18,7 +18,6 @@ import (
 	"fanapi/internal/protocol"
 	"fanapi/internal/script"
 	"fanapi/internal/service"
-	"fanapi/internal/upstream"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -477,13 +476,8 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 	// 在协议转换前保存模型名（Gemini 转换后 body 不含 model 字段，但 URL 替换需要用到）
 	resolvedModel, _ := reqData["model"].(string)
 
-	proto := resolveLLMUpstreamTarget(ch.BaseURL, matchedLLMRoute(c), effectiveProtocol(ch), resolvedModel, false, getResponsesOperation(c)).Protocol
 	responsesOperation := getResponsesOperation(c)
 	isResponsesCompact := responsesOperation == responsesOperationCompact
-	if isResponsesCompact && proto != protocolResponses {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "对话压缩需要 protocol=responses 的上游渠道"})
-		return
-	}
 
 	// 获取客户端协议（由 LLMProxy/ClaudeProxy/GeminiProxy 写入 context）
 	clientProto := protocolOpenAI
@@ -502,38 +496,6 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 	origReqData := make(map[string]interface{}, len(reqData))
 	for k, v := range reqData {
 		origReqData[k] = v
-	}
-
-	// 客户端格式 ≠ 渠道格式时，需要请求格式转换链：
-	//   客户端格式 → OpenAI（若客户端本身就是 OpenAI 则跳过） → 渠道格式（若渠道本身是 OpenAI 则跳过）
-	// 特例：客户端和渠道都是 responses 协议时，仍需归一化转换：
-	//   客户端可能以 messages 格式（兼容 chat/completions）调用 /v1/responses，
-	//   必须经 responsesToOpenAI → openAIToResponsesRequest 将 messages 转换为合法的 input 字段，
-	//   否则原始 messages 体直接发往上游 Responses API 会导致 422/502。
-	// passthrough_body=true 时跳过所有转换，直接使用原始请求体字节。
-	needsConversion := !isResponsesCompact && shouldConvertRequestBody(clientProto, proto, reqData)
-	if !ch.PassthroughBody && needsConversion && ch.RequestScript == "" {
-		working := reqData
-		// Step 1: 客户端格式 → OpenAI
-		if clientProto != protocolOpenAI {
-			norm, normErr := protocol.NormalizeClientRequest(working, clientProto)
-			if normErr != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式转换错误: " + normErr.Error()})
-				return
-			}
-			norm["model"] = resolvedModel
-			working = norm
-		}
-		// Step 2: OpenAI → 渠道格式
-		if proto != protocolOpenAI {
-			conv, convErr := protocol.ConvertRequest(working, proto)
-			if convErr != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "请求格式转换错误: " + convErr.Error()})
-				return
-			}
-			working = conv
-		}
-		reqData = working
 	}
 
 	// 1. 号池 Sticky Key 分配（在 request_script 之前，以便脚本可用 poolKey 变量）
@@ -557,77 +519,14 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 		}
 		poolKey = pk
 	}
-	poolKeyValue := ""
-	poolKeyBaseURL := ""
-	if poolKey != nil {
-		poolKeyValue = poolKey.Value
-		poolKeyBaseURL = poolKey.BaseURLOverride
+	attempt, prepErr := prepareLLMUpstreamAttempt(c, ch, poolKey, origReqData, clientProto, resolvedModel, isStream, responsesOperation)
+	if prepErr != nil {
+		c.JSON(llmUpstreamPreparationStatus(prepErr), gin.H{"error": prepErr.Error()})
+		return
 	}
-	upstreamTarget := resolveLLMUpstreamTarget(
-		upstream.BaseURLForPoolKey(ch.BaseURL, poolKeyBaseURL),
-		matchedLLMRoute(c),
-		effectiveProtocol(ch),
-		resolvedModel,
-		isStream,
-		responsesOperation,
-	)
-	if proto != upstreamTarget.Protocol {
-		proto = upstreamTarget.Protocol
-		reqData = origReqData
-		needsConversion := !isResponsesCompact && shouldConvertRequestBody(clientProto, proto, reqData)
-		if !ch.PassthroughBody && needsConversion && ch.RequestScript == "" {
-			working := reqData
-			if clientProto != protocolOpenAI {
-				norm, normErr := protocol.NormalizeClientRequest(working, clientProto)
-				if normErr != nil {
-					c.JSON(http.StatusBadRequest, gin.H{"error": "request format conversion failed: " + normErr.Error()})
-					return
-				}
-				norm["model"] = resolvedModel
-				working = norm
-			}
-			if proto != protocolOpenAI {
-				conv, convErr := protocol.ConvertRequest(working, proto)
-				if convErr != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{"error": "request format conversion failed: " + convErr.Error()})
-					return
-				}
-				working = conv
-			}
-			reqData = working
-		}
-	}
-
-	// 2. request_script（JS）映射（有脚本时跳过自动协议转换，由脚本自行处理）
-	// passthrough_body=true 时也跳过脚本，确保请求体不被任何逻辑修改。
-	mappedReq := reqData
-	if !ch.PassthroughBody && ch.RequestScript != "" {
-		mapped, scriptErr := script.RunMapRequest(ch.RequestScript, reqData, poolKeyValue)
-		if scriptErr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "入参映射错误: " + scriptErr.Error()})
-			return
-		}
-		mappedReq = mapped
-	}
-
-	// 3a. Claude 渠道：补全必填字段（max_tokens 为 Claude API 强制要求，无论客户端格式如何）
-	// passthrough_body=true 时跳过，避免破坏原始请求体的完整性签名。
-	if !ch.PassthroughBody && proto == protocolClaude {
-		if _, ok := mappedReq["max_tokens"]; !ok {
-			mappedReq["max_tokens"] = 4096
-		}
-	}
-
-	// 3b. 流式注入 include_usage（OpenAI 协议专用）
-	// 即使 passthrough_body=true 也要注入，否则流式响应缺少 usage 会导致无法按实际 token 结算。
-	if isStream && proto == protocolOpenAI {
-		mappedReq["stream"] = true
-		if _, hasOpts := mappedReq["stream_options"]; !hasOpts {
-			mappedReq["stream_options"] = map[string]interface{}{"include_usage": true}
-		} else if opts, ok := mappedReq["stream_options"].(map[string]interface{}); ok {
-			opts["include_usage"] = true
-		}
-	}
+	proto := attempt.Protocol
+	upstreamTarget := attempt.Target
+	mappedReq := attempt.Request
 
 	// 4. 计算预扣金额（含用户分组定价）
 	// 使用原始客户端格式请求（origReqData）：Gemini 转换后不含 messages 字段，会导致 token 估算为 0
@@ -750,8 +649,16 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 				break
 			}
 			poolKey = newKey
-			poolKeyIDVal = newKey.ID // 更新 poolKeyIDVal，确保后续结算流水关联正确的号商
 			triedPoolKeyIDs = appendPoolKeyID(triedPoolKeyIDs, newKey.ID)
+			attempt, prepErr = prepareLLMUpstreamAttempt(c, ch, poolKey, origReqData, clientProto, resolvedModel, isStream, responsesOperation)
+			if prepErr != nil {
+				service.RecordChannelError(c.Request.Context(), channelID)
+				llmRefundAndAbort(c, corrID, userID, totalHold, upstreamCostHold, poolKeyIDVal, 0, "上游请求准备失败: "+prepErr.Error())
+				return
+			}
+			proto = attempt.Protocol
+			mappedReq = attempt.Request
+			poolKeyIDVal = newKey.ID // 只有请求准备成功后，后续结算才关联到新号商。
 			sentHeaders, resp, err = sendLLMRequest(c, ch, mappedReq, poolKey, proto, resolvedModel, isStream, responsesOperation)
 			persistLLMUpstreamHeaders(corrID, sentHeaders)
 			if err != nil {
@@ -769,8 +676,16 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 			}
 			resp.Body.Close()
 			poolKey = newKey
-			poolKeyIDVal = newKey.ID
 			triedPoolKeyIDs = appendPoolKeyID(triedPoolKeyIDs, newKey.ID)
+			attempt, prepErr = prepareLLMUpstreamAttempt(c, ch, poolKey, origReqData, clientProto, resolvedModel, isStream, responsesOperation)
+			if prepErr != nil {
+				service.RecordChannelError(c.Request.Context(), channelID)
+				llmRefundAndAbort(c, corrID, userID, totalHold, upstreamCostHold, poolKeyIDVal, 0, "上游请求准备失败: "+prepErr.Error())
+				return
+			}
+			proto = attempt.Protocol
+			mappedReq = attempt.Request
+			poolKeyIDVal = newKey.ID
 			sentHeaders, resp, err = sendLLMRequest(c, ch, mappedReq, poolKey, proto, resolvedModel, isStream, responsesOperation)
 			persistLLMUpstreamHeaders(corrID, sentHeaders)
 		}
@@ -804,7 +719,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		bodyErr, _ := io.ReadAll(resp.Body)
+		bodyErr, _ := readLLMUpstreamErrorBody(resp.Body)
 		service.RecordChannelError(c.Request.Context(), channelID)
 
 		// 跑 error_script 识别业务错误（含 fatal=余额不足等永久故障）。
@@ -859,7 +774,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 
 		abortMsg := bizErr
 		if abortMsg == "" {
-			abortMsg = fmt.Sprintf("上游返回 %d: %s", resp.StatusCode, string(bodyErr))
+			abortMsg = summarizeLLMUpstreamError(resp.StatusCode, bodyErr)
 		}
 		llmRefundAndAbort(c, corrID, userID, totalHold, upstreamCostHold, poolKeyIDVal, resp.StatusCode, abortMsg)
 		return

@@ -248,6 +248,7 @@ func stripLLMLogPayload(record *model.LLMLog) {
 	if record == nil {
 		return
 	}
+	record.ErrorMsg = limitLLMLogErrorSummary(record.ErrorMsg)
 	record.ClientRequest = nil
 	record.UpstreamRequest = nil
 	record.ClientResponse = nil
