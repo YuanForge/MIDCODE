@@ -174,8 +174,8 @@ export function AdminVipGroupsPage() {
         </Alert>
       ) : null}
 
-      <Card>
-        <Table>
+      <Card className="overflow-hidden">
+        <Table className="min-w-[920px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-24">分组</TableHead>

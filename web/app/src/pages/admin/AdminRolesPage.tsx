@@ -227,8 +227,8 @@ export function AdminRolesPage() {
 
         {/* ── 角色列表 Tab ── */}
         <TabsContent value="roles">
-          <Card>
-            <Table>
+          <Card className="overflow-hidden">
+            <Table className="min-w-[860px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-16">ID</TableHead>
@@ -285,8 +285,8 @@ export function AdminRolesPage() {
 
         {/* ── 管理员账号 Tab ── */}
         <TabsContent value="admins">
-          <Card>
-            <Table>
+          <Card className="overflow-hidden">
+            <Table className="min-w-[780px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-16">ID</TableHead>

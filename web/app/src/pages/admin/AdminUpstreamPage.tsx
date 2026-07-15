@@ -199,8 +199,8 @@ export function AdminUpstreamPage() {
         </Alert>
       ) : null}
 
-      <Card>
-        <Table>
+      <Card className="overflow-hidden">
+        <Table className="min-w-[1320px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-16">ID</TableHead>

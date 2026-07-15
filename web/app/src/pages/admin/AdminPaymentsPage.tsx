@@ -2,8 +2,10 @@ import { useState } from 'react'
 import { CreditCardIcon } from 'lucide-react'
 
 import { DateRangeFilter } from '@/components/shared/DateRangeFilter'
+import { FilterBar } from '@/components/shared/FilterBar'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { TableEmpty } from '@/components/shared/TableEmpty'
+import { TablePagination } from '@/components/shared/TablePagination'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -122,8 +124,6 @@ export function AdminPaymentsPage() {
     daily: [] as AdminPaymentDailySummary[],
   }, [queryParams])
 
-  const totalPages = Math.ceil(data.total / pageSize)
-
   function handleSearch() {
     setPage(1)
     setQueryParams(buildPaymentParams({
@@ -170,8 +170,9 @@ export function AdminPaymentsPage() {
         </Alert>
       ) : null}
 
-      <Card>
-        <CardContent className="flex flex-wrap items-end gap-3 py-4">
+      <FilterBar
+        filters={
+          <>
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground">状态</label>
             <Select value={filterStatus || '_all'} onValueChange={(v) => setFilterStatus(v === '_all' ? '' : v)}>
@@ -219,10 +220,15 @@ export function AdminPaymentsPage() {
               setEndAt(nextEnd)
             }}
           />
+          </>
+        }
+        actions={
+          <>
           <Button onClick={handleSearch}>查询</Button>
           <Button variant="outline" onClick={resetSearch}>重置</Button>
-        </CardContent>
-      </Card>
+          </>
+        }
+      />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
         <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-1">
@@ -284,8 +290,8 @@ export function AdminPaymentsPage() {
         </Card>
       </div>
 
-      <Card>
-        <Table>
+      <Card className="overflow-hidden">
+        <Table className="min-w-[1500px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-24">来源</TableHead>
@@ -336,15 +342,8 @@ export function AdminPaymentsPage() {
             </TableBody>
           )}
         </Table>
-        {totalPages > 1 ? (
-          <CardContent className="flex items-center justify-between border-t py-3">
-            <span className="text-sm text-muted-foreground">共 {data.total} 条</span>
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => changePage(page - 1)}>上一页</Button>
-              <span className="text-sm text-muted-foreground">{page} / {totalPages}</span>
-              <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => changePage(page + 1)}>下一页</Button>
-            </div>
-          </CardContent>
+        {data.total > 0 ? (
+          <TablePagination current={page} total={data.total} pageSize={pageSize} onChange={changePage} className="rounded-none border-x-0 border-b-0" />
         ) : null}
       </Card>
     </>

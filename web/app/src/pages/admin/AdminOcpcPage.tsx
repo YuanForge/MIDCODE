@@ -216,8 +216,8 @@ export function AdminOcpcPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
-      <Card>
-        <Table>
+      <Card className="overflow-hidden">
+        <Table className="min-w-[860px]">
           <TableHeader>
             <TableRow>
               <TableHead>ID</TableHead>
@@ -267,7 +267,7 @@ export function AdminOcpcPage() {
         </Table>
       </Card>
       <Card>
-        <CardContent className="flex flex-wrap items-center gap-4 p-6">
+          <CardContent className="flex flex-wrap items-center gap-4 p-4">
           <Label className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -296,7 +296,7 @@ export function AdminOcpcPage() {
         </CardContent>
         {uploadResult ? (
           <CardContent>
-            <pre className="overflow-auto rounded-xl border border-border/70 bg-muted/25 p-4 text-xs">
+            <pre className="overflow-auto rounded-lg border border-border bg-muted/25 p-4 text-xs">
               {uploadResult}
             </pre>
           </CardContent>

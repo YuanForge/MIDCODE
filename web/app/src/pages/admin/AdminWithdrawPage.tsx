@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { WalletIcon } from 'lucide-react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
+import { FilterBar } from '@/components/shared/FilterBar'
 import { TableEmpty } from '@/components/shared/TableEmpty'
+import { TablePagination } from '@/components/shared/TablePagination'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
@@ -17,7 +19,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -83,7 +85,9 @@ export function AdminWithdrawPage() {
 
   // 自动轮询待审核数量（每 30 秒）
   const reloadRef = useRef(reload)
-  reloadRef.current = reload
+  useEffect(() => {
+    reloadRef.current = reload
+  }, [reload])
   useEffect(() => {
     const timer = setInterval(() => reloadRef.current(), 30_000)
     return () => clearInterval(timer)
@@ -92,8 +96,6 @@ export function AdminWithdrawPage() {
   const rows = data.rows
   const pendingCount = data.pendingCount
   const pageSize = 20
-  const totalPages = Math.ceil(data.total / pageSize)
-
   const [mutError, setMutError] = useState('')
   const [rejecting, setRejecting] = useState<AdminWithdrawal | null>(null)
   const [remark, setRemark] = useState('')
@@ -201,9 +203,8 @@ export function AdminWithdrawPage() {
         </Alert>
       ) : null}
 
-      {/* 过滤栏 */}
-      <Card>
-        <CardContent className="flex flex-wrap items-end gap-3 py-4">
+      <FilterBar
+        filters={
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground">状态</label>
             <Select value={statusFilter || '_all'} onValueChange={(v) => setStatusFilter(v === '_all' ? '' : v)}>
@@ -218,18 +219,20 @@ export function AdminWithdrawPage() {
               </SelectContent>
             </Select>
           </div>
+        }
+        actions={
           <Button onClick={doFilter}>查询</Button>
-        </CardContent>
-      </Card>
+        }
+      />
 
-      <Card>
-        <Table>
+      <Card className="overflow-hidden">
+        <Table className="min-w-[1180px]">
           <TableHeader>
             <TableRow>
               <TableHead>ID</TableHead>
               <TableHead>用户</TableHead>
               <TableHead>申请时间</TableHead>
-              <TableHead>金额</TableHead>
+              <TableHead className="text-right">金额</TableHead>
               <TableHead>收款方式</TableHead>
               <TableHead>状态</TableHead>
               <TableHead>审批阶段</TableHead>
@@ -256,7 +259,7 @@ export function AdminWithdrawPage() {
                     <TableCell className="text-sm text-muted-foreground">
                       {row.created_at ? new Date(row.created_at).toLocaleString('zh-CN') : '-'}
                     </TableCell>
-                    <TableCell>¥{((row.amount ?? 0) / 1_000_000).toFixed(4)}</TableCell>
+                    <TableCell className="text-right tabular-nums">¥{((row.amount ?? 0) / 1_000_000).toFixed(4)}</TableCell>
                     <TableCell>{payTypeBadge(row.payment_type)}</TableCell>
                     <TableCell>{statusBadge(row.status)}</TableCell>
                     <TableCell>{stageBadge(row.review_stage)}</TableCell>
@@ -301,15 +304,8 @@ export function AdminWithdrawPage() {
             </TableBody>
           )}
         </Table>
-        {totalPages > 1 ? (
-          <CardContent className="flex items-center justify-between border-t py-3">
-            <span className="text-sm text-muted-foreground">共 {data.total} 条记录</span>
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => changePage(page - 1)}>上一页</Button>
-              <span className="text-sm text-muted-foreground">第 {page} / {totalPages} 页</span>
-              <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => changePage(page + 1)}>下一页</Button>
-            </div>
-          </CardContent>
+        {data.total > 0 ? (
+          <TablePagination current={page} total={data.total} pageSize={pageSize} onChange={changePage} className="rounded-none border-x-0 border-b-0" />
         ) : null}
       </Card>
 
