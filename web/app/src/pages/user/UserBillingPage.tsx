@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import QRCode from 'qrcode'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { PageSection } from '@/components/shared/PageSection'
+import { FilterBar } from '@/components/shared/FilterBar'
 import { TablePagination } from '@/components/shared/TablePagination'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
   Table,
@@ -24,13 +25,9 @@ import { useAuth } from '@/hooks/use-auth'
 import { Badge } from '@/components/ui/badge'
 import { formatCredits } from '@/lib/formatters/credits'
 import { cn } from '@/lib/utils'
-import { Check, Info, Loader2, RefreshCcw, Wallet } from 'lucide-react'
+import { Check, Loader2, RefreshCcw, Wallet } from 'lucide-react'
 import { toast } from 'sonner'
 import type { PaymentOrder } from '@/lib/api/user'
-
-function cx(...classes: (string | undefined | null | false)[]) {
-  return classes.filter(Boolean).join(' ')
-}
 
 export function UserBillingPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -259,7 +256,7 @@ export function UserBillingPage() {
   // 扣款类型：hold / settle / charge / consume；收入类型：recharge / refund / invite_rebate
   const isDebit = (type: string) => ['hold', 'settle', 'charge', 'consume'].includes(type)
   const txSign = (type: string) => (isDebit(type) ? '-' : '+')
-  const txAmtColor = (type: string) => (isDebit(type) ? 'text-red-500' : 'text-green-600')
+  const txAmtColor = (type: string) => (isDebit(type) ? 'text-destructive' : 'text-primary')
 
   const orderStatusLabel = (status: string) => {
     switch (status) {
@@ -280,8 +277,9 @@ export function UserBillingPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <>
       <PageHeader
+        eyebrow="Billing"
         title="我的订单"
         description="管理您的积分余额、充值、以及查看流水账单。"
       />
@@ -295,26 +293,18 @@ export function UserBillingPage() {
 
         <TabsContent value="recharge" className="space-y-6">
           <div className="grid gap-6 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>当前积分</CardTitle>
-                <CardDescription className="flex items-center gap-2">
-                  <Info className="h-4 w-4" /> 积分永不过期，随时可用
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
+            <PageSection
+              title="当前积分"
+              description="积分永不过期，随时可用"
+            >
                 <div className="flex items-baseline gap-2">
-                  <span className="text-4xl font-bold tracking-tight">{formatCredits(balanceCredits)}</span>
+                  <span className="text-3xl font-semibold tracking-tight tabular-nums">{formatCredits(balanceCredits)}</span>
                   <span className="text-muted-foreground">积分</span>
                 </div>
-              </CardContent>
-            </Card>
+            </PageSection>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>账户信息</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
+            <PageSection title="账户信息">
+              <div className="space-y-4 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">用户名</span>
                   <span className="font-medium">{user?.username || '—'}</span>
@@ -325,19 +315,14 @@ export function UserBillingPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">邮箱</span>
-                  <span className="font-medium text-green-600">{user?.email || '未绑定'}</span>
+                  <span className="font-medium">{user?.email || '未绑定'}</span>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </PageSection>
           </div>
 
           {modelCredits.length > 0 ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>专属模型积分</CardTitle>
-                <CardDescription>仅可用于指定模型的专属积分，优先于通用积分消耗</CardDescription>
-              </CardHeader>
-              <CardContent>
+            <PageSection title="专属模型积分" description="仅可用于指定模型的专属积分，优先于通用积分消耗">
                 <div className="divide-y">
                   {modelCredits.map((mc, i) => (
                     <div key={mc.id ?? i} className="flex items-center justify-between py-2">
@@ -346,26 +331,23 @@ export function UserBillingPage() {
                     </div>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
+            </PageSection>
           ) : null}
 
           {(settings.epayEnabled || settings.payApplyEnabled || settings.shouqianbaEnabled) && (
-            <Card>
-              <CardHeader>
-                <CardTitle>选择充值套餐</CardTitle>
-              </CardHeader>
-              <CardContent>
+            <PageSection title="选择充值套餐" description="选择套餐或输入自定义金额，确认优惠与实付金额后发起支付。">
                 <div className="grid gap-4 md:grid-cols-3">
                   {settings.plans?.map((plan, i) => (
-                    <div
+                    <button
+                      type="button"
                       key={i}
                       onClick={() => {
                         setSelectedPlan(i)
                         setSelectedAmount(plan.amount)
                       }}
+                      aria-pressed={selectedPlan === i}
                       className={cn(
-                        "relative cursor-pointer rounded-xl border-2 p-4 transition-all hover:border-primary/50",
+                        "relative rounded-xl border-2 p-4 text-left transition-all hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                         selectedPlan === i ? "border-primary bg-primary/5 shadow-md" : "border-border"
                       )}
                     >
@@ -374,9 +356,9 @@ export function UserBillingPage() {
                           <Check className="h-3 w-3" />
                         </div>
                       )}
-                      <div className="mb-2 font-semibold">
+                      <div className="mb-2 font-semibold text-foreground">
                         {plan.credits} 积分
-                        {plan.bonus ? <span className="text-xs text-orange-500"> (+{plan.bonus})</span> : ''}
+                        {plan.bonus ? <span className="text-xs text-primary"> (+{plan.bonus})</span> : ''}
                       </div>
                       <div className="flex items-baseline gap-1">
                         <span className="text-sm">￥</span>
@@ -386,7 +368,7 @@ export function UserBillingPage() {
                         )}
                       </div>
                       {plan.desc && <div className="mt-2 text-xs text-muted-foreground">{plan.desc}</div>}
-                    </div>
+                    </button>
                   ))}
                   {(!settings.plans?.length || settings.allowCustom) && (
                     <div className="flex flex-col justify-center rounded-xl border-2 border-border p-4">
@@ -414,7 +396,7 @@ export function UserBillingPage() {
                     {settings.wechatPayEnabled && (
                       <Button
                         variant={payMethod === 'wechat' ? 'default' : 'outline'}
-                        className={cx("h-12 w-32 border-2", payMethod === 'wechat' ? 'border-green-600 bg-green-50 text-green-700 hover:bg-green-100 hover:text-green-800' : '')}
+                        className="h-11 w-32"
                         onClick={() => setPayMethod('wechat')}
                       >
                         微信支付
@@ -423,7 +405,7 @@ export function UserBillingPage() {
                     {settings.alipayEnabled && (
                       <Button
                         variant={payMethod === 'alipay' ? 'default' : 'outline'}
-                        className={cx("h-12 w-32 border-2", payMethod === 'alipay' ? 'border-blue-600 bg-blue-50 text-blue-700 hover:bg-blue-100 hover:text-blue-800' : '')}
+                        className="h-11 w-32"
                         onClick={() => setPayMethod('alipay')}
                       >
                         支付宝
@@ -447,27 +429,25 @@ export function UserBillingPage() {
                     </div>
                     {couponError && <p className="text-xs text-destructive">{couponError}</p>}
                     {couponResult && (
-                      <p className="text-xs text-green-600">
+                      <p className="text-xs font-medium text-primary">
                         优惠 ¥{couponResult.discount_yuan.toFixed(2)}，实付 ¥{couponResult.final_amount.toFixed(2)}
                       </p>
                     )}
                   </div>
 
-                  <Button size="lg" className="w-64 rounded-full text-lg" onClick={handlePay} disabled={isPaying || !selectedAmount}>
+                  <Button size="lg" className="w-64 text-base" onClick={handlePay} disabled={isPaying || !selectedAmount}>
                     {isPaying && <Loader2 className="mr-2 h-5 w-5 animate-spin" />}
                     立即支付 ￥{couponResult ? couponResult.final_amount.toFixed(2) : (Number(selectedAmount) || 0).toFixed(2)}
                   </Button>
                 </div>
-              </CardContent>
-            </Card>
+            </PageSection>
           )}
         </TabsContent>
 
-        <TabsContent value="transactions">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-4">
-              <CardTitle>流水明细</CardTitle>
-              <div className="flex w-full max-w-2xl items-center gap-2">
+        <TabsContent value="transactions" className="space-y-4">
+          <FilterBar
+            filters={
+              <>
                 <Input
                   placeholder="按任务 ID 查询"
                   value={txTaskIdFilter}
@@ -480,11 +460,18 @@ export function UserBillingPage() {
                   onChange={(e) => setTxCorrIdFilter(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && setTxPage(1)}
                 />
-                <Button variant="secondary" onClick={() => setTxPage(1)}>查询</Button>
-                <Button variant="outline" size="icon" onClick={() => txReload()}><RefreshCcw className="h-4 w-4" /></Button>
-              </div>
-            </CardHeader>
-            <Table>
+              </>
+            }
+            actions={
+              <>
+                <Button onClick={() => setTxPage(1)}>查询</Button>
+                <Button variant="outline" size="icon" aria-label="刷新流水" onClick={() => txReload()}><RefreshCcw className="h-4 w-4" /></Button>
+              </>
+            }
+          />
+          <PageSection title="流水明细" description="展示积分收入、扣费及操作后的余额。">
+            <div className="overflow-x-auto">
+            <Table className="min-w-[760px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>类型</TableHead>
@@ -504,7 +491,7 @@ export function UserBillingPage() {
                         <div className="flex flex-wrap items-center gap-1">
                           <Badge variant="outline">{txTypeLabel(row.type)}</Badge>
                           {(row.model_credit_charged > 0) && (
-                            <Badge variant="outline" className="text-xs text-purple-600 border-purple-300">专属积分</Badge>
+                            <Badge variant="secondary" className="text-xs">专属积分</Badge>
                           )}
                         </div>
                       </TableCell>
@@ -514,7 +501,7 @@ export function UserBillingPage() {
                       <TableCell className="text-muted-foreground">
                         {row.balance_after != null ? `${formatCredits(row.balance_after)} 积分` : '—'}
                       </TableCell>
-                      <TableCell className="font-mono text-xs text-blue-500">
+                      <TableCell className="font-mono text-xs text-muted-foreground">
                         {row.metrics?.task_id ? `#${row.metrics.task_id}` : '—'}
                       </TableCell>
                       <TableCell>{row.created_at}</TableCell>
@@ -523,17 +510,19 @@ export function UserBillingPage() {
                 )}
               </TableBody>
             </Table>
+            </div>
             {txData?.total > 0 && (
-              <div className="p-4 border-t">
-                <TablePagination current={txPage} total={txData.total} pageSize={20} onChange={setTxPage} />
+              <div className="border-t pt-4">
+                <TablePagination current={txPage} total={txData.total} pageSize={20} onChange={setTxPage} className="py-0" />
               </div>
             )}
-          </Card>
+          </PageSection>
         </TabsContent>
 
         <TabsContent value="orders">
-          <Card>
-            <Table>
+          <PageSection title="订单记录" description="查看充值金额、到账积分、支付渠道和订单状态。">
+            <div className="overflow-x-auto">
+            <Table className="min-w-[820px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>订单号</TableHead>
@@ -551,8 +540,8 @@ export function UserBillingPage() {
                   orderData.items.map((row: PaymentOrder) => (
                     <TableRow key={row.id}>
                       <TableCell className="font-mono text-xs">{row.out_trade_no}</TableCell>
-                      <TableCell className="font-semibold text-blue-600">￥{row.amount.toFixed(2)}</TableCell>
-                      <TableCell className="font-semibold text-green-600">
+                      <TableCell className="font-semibold tabular-nums">￥{row.amount.toFixed(2)}</TableCell>
+                      <TableCell className="font-semibold text-primary">
                         {row.credits ? `+${formatCredits(row.credits)} 积分` : '—'}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">{orderChannelLabel(row)}</TableCell>
@@ -565,12 +554,13 @@ export function UserBillingPage() {
                 )}
               </TableBody>
             </Table>
+            </div>
             {orderData?.total > 0 && (
-              <div className="p-4 border-t">
-                <TablePagination current={orderPage} total={orderData.total} pageSize={20} onChange={setOrderPage} />
+              <div className="border-t pt-4">
+                <TablePagination current={orderPage} total={orderData.total} pageSize={20} onChange={setOrderPage} className="py-0" />
               </div>
             )}
-          </Card>
+          </PageSection>
         </TabsContent>
       </Tabs>
 
@@ -585,7 +575,7 @@ export function UserBillingPage() {
           <div className="flex flex-col items-center justify-center px-5 pb-5 pt-2">
             {payUrl ? (
               <>
-                <div className="flex h-[180px] w-full max-w-[320px] items-center justify-center rounded-xl border bg-white p-3">
+                <div className="flex aspect-square w-full max-w-60 items-center justify-center rounded-xl border bg-background p-3">
                   <canvas ref={qrCanvasRef} className="max-h-full max-w-full" />
                 </div>
                 {qrError ? (
@@ -627,6 +617,6 @@ export function UserBillingPage() {
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   )
 }

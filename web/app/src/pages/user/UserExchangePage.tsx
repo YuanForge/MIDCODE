@@ -3,11 +3,11 @@ import { TicketIcon } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/shared/PageHeader'
+import { PageSection } from '@/components/shared/PageSection'
 import { TableEmpty } from '@/components/shared/TableEmpty'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
   Table,
@@ -65,8 +65,8 @@ export function UserExchangePage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
-      <Card>
-        <CardContent className="flex gap-3 p-6">
+      <PageSection title="兑换卡密" description="兑换成功后积分会立即计入账户余额。">
+        <div className="flex flex-col gap-3 sm:flex-row">
           <Input
             value={code}
             onChange={(event) => setCode(event.target.value)}
@@ -76,10 +76,11 @@ export function UserExchangePage() {
           <Button onClick={redeem} disabled={submitting}>
             {submitting ? '兑换中...' : '立即兑换'}
           </Button>
-        </CardContent>
-      </Card>
-      <Card>
-        <Table>
+        </div>
+      </PageSection>
+      <PageSection title="兑换记录" description="展示已使用卡密、到账积分和兑换时间。">
+        <div className="overflow-x-auto">
+        <Table className="min-w-[620px]">
           <TableHeader>
             <TableRow>
               <TableHead>兑换码</TableHead>
@@ -114,7 +115,8 @@ export function UserExchangePage() {
             </TableBody>
           )}
         </Table>
-      </Card>
+        </div>
+      </PageSection>
     </>
   )
 }

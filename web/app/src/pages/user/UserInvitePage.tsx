@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/shared/PageHeader'
+import { PageSection } from '@/components/shared/PageSection'
 import { TablePagination } from '@/components/shared/TablePagination'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -11,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -42,8 +44,8 @@ type InviteData = {
 const withdrawPageSize = 20
 
 function withdrawStatusBadge(status: string | undefined) {
-  if (status === 'pending') return <Badge className="bg-yellow-500 hover:bg-yellow-500 text-white">待审核</Badge>
-  if (status === 'approved') return <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white">已通过</Badge>
+  if (status === 'pending') return <Badge variant="secondary">待审核</Badge>
+  if (status === 'approved') return <Badge>已通过</Badge>
   if (status === 'rejected') return <Badge variant="destructive">已拒绝</Badge>
   return <Badge variant="outline">{status ?? '-'}</Badge>
 }
@@ -264,11 +266,8 @@ export function UserInvitePage() {
           </CardContent>
         </Card>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>收款码</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2">
+      <PageSection title="收款码" description="提现前请上传并保存对应支付方式的收款二维码。">
+        <div className="grid gap-4 md:grid-cols-2">
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm font-medium">微信收款码</span>
@@ -298,12 +297,12 @@ export function UserInvitePage() {
               onChange={(event) => setWechatQrEdit(event.target.value)}
               placeholder="微信收款码 URL"
             />
-            <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 p-3">
+            <div className="flex min-h-48 items-center justify-center rounded-xl border border-dashed bg-muted/20 p-3">
               {wechatQrEdit ? (
                 <img
                   src={wechatQrEdit}
                   alt="微信收款码预览"
-                  className="max-h-56 rounded-md border bg-background object-contain"
+                  className="aspect-square h-auto w-full max-w-56 rounded-md border bg-background object-contain"
                 />
               ) : (
                 <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
@@ -341,12 +340,12 @@ export function UserInvitePage() {
               onChange={(event) => setAlipayQrEdit(event.target.value)}
               placeholder="支付宝收款码 URL"
             />
-            <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 p-3">
+            <div className="flex min-h-48 items-center justify-center rounded-xl border border-dashed bg-muted/20 p-3">
               {alipayQrEdit ? (
                 <img
                   src={alipayQrEdit}
                   alt="支付宝收款码预览"
-                  className="max-h-56 rounded-md border bg-background object-contain"
+                  className="aspect-square h-auto w-full max-w-56 rounded-md border bg-background object-contain"
                 />
               ) : (
                 <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
@@ -358,15 +357,16 @@ export function UserInvitePage() {
           <div className="md:col-span-2">
             <Button onClick={saveQr}>保存收款码</Button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </PageSection>
       <Alert>
         <AlertDescription>
           您邀请的用户每次消费后，返佣积分会先冻结到邀请账户；您可以解冻为可用积分，也可以在保存收款码后发起提现申请。
         </AlertDescription>
       </Alert>
-      <Card>
-        <Table>
+      <PageSection title="提现记录" description="展示提现积分、收款方式、审核状态与管理员备注。">
+        <div className="overflow-x-auto">
+        <Table className="min-w-[760px]">
           <TableHeader>
             <TableRow>
               <TableHead>时间</TableHead>
@@ -402,23 +402,23 @@ export function UserInvitePage() {
             </TableBody>
           )}
         </Table>
+        </div>
         {!loading && data.withdrawalsTotal > withdrawPageSize ? (
-          <CardContent className="border-t">
+          <div className="border-t pt-4">
             <TablePagination
               current={historyPage}
               total={data.withdrawalsTotal}
               pageSize={withdrawPageSize}
               onChange={setHistoryPage}
+              className="py-0"
             />
-          </CardContent>
+          </div>
         ) : null}
-      </Card>
+      </PageSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>被邀请用户列表</CardTitle>
-        </CardHeader>
-        <Table>
+      <PageSection title="被邀请用户列表" description="查看受邀用户的注册时间、累计充值和累计消费。">
+        <div className="overflow-x-auto">
+        <Table className="min-w-[680px]">
           <TableHeader>
             <TableRow>
               <TableHead>用户名</TableHead>
@@ -442,12 +442,16 @@ export function UserInvitePage() {
             ))}
           </TableBody>
         </Table>
-      </Card>
+        </div>
+      </PageSection>
 
       <Dialog open={convertOpen} onOpenChange={setConvertOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>解冻积分</DialogTitle>
+            <DialogDescription>
+              输入 0 将解冻全部冻结返佣；输入其他数值将按该积分数量转入可用余额。
+            </DialogDescription>
           </DialogHeader>
           <Input
             value={convertAmount}
@@ -467,6 +471,9 @@ export function UserInvitePage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>申请提现</DialogTitle>
+            <DialogDescription>
+              提交后将申请提现 {Number(withdrawAmount) > 0 ? `${Number(withdrawAmount).toFixed(2)} 积分` : '所填积分'}，并进入人工审核。
+            </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4">
             <Input

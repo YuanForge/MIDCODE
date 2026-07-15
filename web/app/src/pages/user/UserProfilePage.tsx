@@ -3,12 +3,12 @@ import { toast } from 'sonner'
 
 import { KeyRound, Mail, User, Wallet } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { PageSection } from '@/components/shared/PageSection'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Separator } from '@/components/ui/separator'
+import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { copyToClipboard } from '@/lib/clipboard'
 import { authApi } from '@/lib/api/public'
@@ -143,11 +143,10 @@ export function UserProfilePage() {
       ) : null}
 
       {/* 个人信息卡 */}
-      <Card>
-        <CardContent className="p-6">
+      <PageSection title="账户概览" description="查看当前身份、用户编号、邮箱和可用余额。">
           <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
             {/* 头像 */}
-            <div className="flex size-20 shrink-0 items-center justify-center rounded-full bg-primary text-3xl font-bold text-primary-foreground shadow-md">
+            <div className="flex size-20 shrink-0 items-center justify-center rounded-full bg-primary text-3xl font-semibold text-primary-foreground">
               {loading ? '?' : initial.toUpperCase()}
             </div>
 
@@ -187,7 +186,7 @@ export function UserProfilePage() {
             </div>
 
             {/* 余额 */}
-            <div className="flex flex-col gap-1 rounded-xl border bg-muted/40 px-5 py-4">
+            <div className="flex flex-col gap-1 rounded-lg border bg-muted/40 px-5 py-4">
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Wallet className="h-3.5 w-3.5" />
                 <span>当前余额</span>
@@ -198,24 +197,17 @@ export function UserProfilePage() {
               }
             </div>
           </div>
-        </CardContent>
-      </Card>
+      </PageSection>
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* 修改密码 */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <KeyRound className="h-4 w-4" />
-              修改密码
-            </CardTitle>
-          </CardHeader>
-          <Separator />
-          <CardContent className="space-y-4 pt-4">
+        <PageSection title="修改密码" description="设置至少 8 位的新密码。">
+          <div className="space-y-4">
             {pwdError ? <Alert variant="destructive"><AlertDescription>{pwdError}</AlertDescription></Alert> : null}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">新密码</label>
+              <Label htmlFor="new-password">新密码</Label>
               <Input
+                id="new-password"
                 type="password"
                 value={pwdForm.new_password}
                 onChange={(e) => setPwdForm((f) => ({ ...f, new_password: e.target.value }))}
@@ -223,8 +215,9 @@ export function UserProfilePage() {
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">确认新密码</label>
+              <Label htmlFor="confirm-password">确认新密码</Label>
               <Input
+                id="confirm-password"
                 type="password"
                 value={pwdForm.confirm}
                 onChange={(e) => setPwdForm((f) => ({ ...f, confirm: e.target.value }))}
@@ -232,28 +225,24 @@ export function UserProfilePage() {
               />
             </div>
             <Button className="w-full" onClick={changePassword} disabled={pwdLoading}>
+              <KeyRound data-icon="inline-start" />
               {pwdLoading ? '保存中…' : '保存密码'}
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </PageSection>
 
         {/* 邮箱绑定 */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Mail className="h-4 w-4" />
-              邮箱绑定
-            </CardTitle>
-          </CardHeader>
-          <Separator />
-          <CardContent className="space-y-4 pt-4">
+        <PageSection title="邮箱绑定" description="绑定邮箱后可用于账户验证和找回密码。">
+          <div className="space-y-4">
             {emailError ? <Alert variant="destructive"><AlertDescription>{emailError}</AlertDescription></Alert> : null}
             {profile?.email ? (
-              <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-4 py-3 text-sm dark:bg-emerald-950/30">
-                <span className="text-emerald-600">✓</span>
-                <span className="font-medium text-emerald-700 dark:text-emerald-400">{profile.email}</span>
+              <Alert>
+                <Mail className="h-4 w-4" />
+                <AlertDescription className="flex flex-wrap items-center gap-2">
+                <span className="font-medium text-foreground">{profile.email}</span>
                 <span className="text-muted-foreground">已绑定，可用于找回密码</span>
-              </div>
+                </AlertDescription>
+              </Alert>
             ) : (
               <>
                 {isEmailUsername ? (
@@ -262,26 +251,27 @@ export function UserProfilePage() {
                   </div>
                 ) : (
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium">邮箱地址</label>
-                    <Input type="email" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} placeholder="example@email.com" />
+                    <Label htmlFor="email-address">邮箱地址</Label>
+                    <Input id="email-address" type="email" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} placeholder="example@email.com" />
                   </div>
                 )}
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">验证码</label>
+                  <Label htmlFor="email-code">验证码</Label>
                   <div className="flex gap-2">
-                    <Input value={codeInput} onChange={(e) => setCodeInput(e.target.value)} placeholder="6 位验证码" className="flex-1" />
+                    <Input id="email-code" value={codeInput} onChange={(e) => setCodeInput(e.target.value)} placeholder="6 位验证码" className="flex-1" />
                     <Button variant="outline" disabled={countdown > 0} onClick={sendCode} className="shrink-0">
                       {countdown > 0 ? `${countdown}s` : '发送验证码'}
                     </Button>
                   </div>
                 </div>
                 <Button className="w-full" onClick={bindEmail} disabled={emailLoading}>
+                  <Mail data-icon="inline-start" />
                   {emailLoading ? '绑定中…' : '绑定邮箱'}
                 </Button>
               </>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </PageSection>
       </div>
     </>
   )
