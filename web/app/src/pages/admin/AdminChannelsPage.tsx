@@ -3,6 +3,8 @@ import { CopyIcon, PlusIcon, RefreshCwIcon, RotateCcwIcon, SaveIcon, SearchIcon 
 import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/shared/PageHeader'
+import { FilterBar } from '@/components/shared/FilterBar'
+import { TableEmpty } from '@/components/shared/TableEmpty'
 import { TablePagination } from '@/components/shared/TablePagination'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -18,7 +20,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
@@ -72,6 +74,7 @@ type ChannelForm = {
   upstream_cost_auto_sync: boolean
   // markup multiplier (selling price = cost * markup)
   billing_markup: string
+  billing_fast_ratio: string
   // token billing
   billing_input_price: string
   billing_output_price: string
@@ -134,6 +137,7 @@ const structuredBillingConfigKeys = new Set([
   'cache_creation_cost_per_1m_tokens',
   'cache_read_price_per_1m_tokens',
   'cache_read_cost_per_1m_tokens',
+  'fast_ratio',
   'input_from_response',
   'base_price',
   'base_cost',
@@ -177,6 +181,7 @@ const emptyForm: ChannelForm = {
   upstream_group: '',
   upstream_cost_auto_sync: false,
   billing_markup: '1.2',
+  billing_fast_ratio: '',
   billing_input_price: '',
   billing_output_price: '',
   billing_input_cost: '',
@@ -403,6 +408,13 @@ function buildBillingConfig(form: ChannelForm): Record<string, unknown> {
       if (form.billing_input_from_response) {
         cfg.input_from_response = true
       }
+      if (form.billing_fast_ratio.trim()) {
+        const fastRatio = Number(form.billing_fast_ratio)
+        if (!Number.isFinite(fastRatio) || fastRatio <= 0 || fastRatio > 100) {
+          throw new Error('Fast 倍率必须是大于 0 且不超过 100 的数字')
+        }
+        cfg.fast_ratio = fastRatio
+      }
       break
     case 'image': {
       setCostAndPrice('base_cost', 'base_price', form.billing_base_cost)
@@ -505,6 +517,7 @@ function buildFormFromChannel(row: AdminChannel, isCopy = false): ChannelForm {
       }
       return '1.2'
     })(),
+    billing_fast_ratio: getConfigString(billingConfig, 'fast_ratio'),
     billing_input_price: getNum(billingConfig, 'input_price_per_1m_tokens'),
     billing_output_price: getNum(billingConfig, 'output_price_per_1m_tokens'),
     billing_input_cost: getNum(billingConfig, 'input_cost_per_1m_tokens'),
@@ -1029,10 +1042,9 @@ export function AdminChannelsPage() {
         </Alert>
       ) : null}
 
-      {/* 批量操作工具栏 */}
-      <Card>
-        <CardContent className="py-4">
-          <form className="flex flex-wrap items-end gap-3" onSubmit={doSearch}>
+      <FilterBar
+        filters={
+          <form className="contents" onSubmit={doSearch}>
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground">全部</label>
               <Input
@@ -1110,8 +1122,8 @@ export function AdminChannelsPage() {
               重置
             </Button>
           </form>
-        </CardContent>
-      </Card>
+        }
+      />
 
       {selectedIds.size > 0 ? (
         <div className="flex items-center gap-3 rounded-lg border bg-muted/40 px-4 py-2.5">
@@ -1152,11 +1164,7 @@ export function AdminChannelsPage() {
           ) : (
             <TableBody>
               {rows.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={14} className="py-10 text-center text-muted-foreground">
-                    暂无渠道数据
-                  </TableCell>
-                </TableRow>
+                <TableEmpty cols={14} title="暂无渠道数据" description="调整筛选条件或新增渠道。" />
               ) : (
                 rows.map((row, index) => (
                   <TableRow key={row.id ?? index} data-state={row.id != null && selectedIds.has(row.id) ? 'selected' : undefined}>
@@ -1621,6 +1629,30 @@ export function AdminChannelsPage() {
                       <label className="text-sm font-medium">利润倍率</label>
                       <p className="text-xs text-muted-foreground">售价 = 成本 × 倍率。例如填 1.2 表示利润 20%。</p>
                       <Input type="number" step="0.01" value={form.billing_markup} onChange={(e) => resetUpstreamCostGate({ billing_markup: e.target.value })} placeholder="如 1.2" />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <label className="text-sm font-medium">Fast 倍率</label>
+                      <p className="text-xs text-muted-foreground">
+                        留空表示该渠道不支持 Fast。倍率同时应用于标准售价和上游成本；GPT Priority 倍率因模型而异，不能统一按 2 倍处理。
+                        Claude Fast 会自动添加 beta header，具体支持模型以上游官方为准。
+                      </p>
+                      <Input
+                        type="number"
+                        min="0.01"
+                        max="100"
+                        step="0.01"
+                        value={form.billing_fast_ratio}
+                        onChange={(event) => setForm((current) => ({ ...current, billing_fast_ratio: event.target.value }))}
+                        placeholder="如 2.0"
+                      />
+                      {form.billing_fast_ratio && Number(form.billing_fast_ratio) > 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          Fast 输入约 CNY {formatCnyValue((Number(form.billing_input_cost || '0') * Number(form.billing_markup || '1') * Number(form.billing_fast_ratio)))} / 百万 token；
+                          Fast 输出约 CNY {formatCnyValue((Number(form.billing_output_cost || '0') * Number(form.billing_markup || '1') * Number(form.billing_fast_ratio)))} / 百万 token
+                          {form.billing_cache_create_cost ? `；缓存写入约 CNY ${formatCnyValue(Number(form.billing_cache_create_cost) * Number(form.billing_markup || '1') * Number(form.billing_fast_ratio))} / 百万 token` : ''}
+                          {form.billing_cache_read_cost ? `；缓存读取约 CNY ${formatCnyValue(Number(form.billing_cache_read_cost) * Number(form.billing_markup || '1') * Number(form.billing_fast_ratio))} / 百万 token` : ''}。
+                        </p>
+                      ) : null}
                     </div>
                     <div className="space-y-1 md:col-span-2">
                       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">成本价格</p>
