@@ -1,5 +1,6 @@
 import { type FormEvent, useMemo, useRef, useState } from 'react'
 import { CopyIcon, PlusIcon, RefreshCwIcon, RotateCcwIcon, SaveIcon, SearchIcon } from 'lucide-react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -612,6 +613,8 @@ const emptyChannelFilters = {
 }
 
 export function AdminChannelsPage() {
+	const location = useLocation()
+	const navigate = useNavigate()
   const [page, setPage] = useState(1)
   const [filters, setFilters] = useState({ ...emptyChannelFilters })
   const [queryParams, setQueryParams] = useState<Record<string, string>>({})
@@ -1224,6 +1227,11 @@ export function AdminChannelsPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
+                        {row.id != null ? (
+                          <Button size="sm" variant="outline" onClick={() => navigate(`/admin/channels/${row.id}/token-stats${location.search}`)}>
+                            Token 统计
+                          </Button>
+                        ) : null}
                         <Button size="sm" variant="outline" onClick={() => openEdit(row)}>编辑</Button>
                         <Button size="sm" variant="outline" onClick={() => openCopy(row)}>
                           <CopyIcon data-icon="inline-start" />

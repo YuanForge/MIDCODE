@@ -13,6 +13,7 @@ func registerAdminRoutes(authed *gin.RouterGroup, deps Dependencies) {
 	{
 		admin.POST("/channels", handler.CreateChannel)
 		admin.GET("/channels", handler.ListChannels)
+		admin.GET("/channels/:id/token-stats", handler.GetAdminChannelTokenStats)
 		admin.PUT("/channels/:id", handler.UpdateChannel)
 		admin.PATCH("/channels/:id/active", handler.PatchChannelActive)
 		admin.POST("/channels/:id/refresh-runtime", handler.RefreshChannelRuntime)

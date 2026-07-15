@@ -26,6 +26,22 @@ func TestUserTokenStatsQueryContract(t *testing.T) {
 	}
 }
 
+func TestChannelTokenStatsQueryContract(t *testing.T) {
+	for _, fragment := range []string{
+		"ll.channel_id = ?",
+		"ll.status = 'ok'",
+		"ll.created_at >= ?",
+		"ll.created_at < ?",
+	} {
+		if !strings.Contains(channelTokenStatsQuery, fragment) {
+			t.Fatalf("query missing %q", fragment)
+		}
+	}
+	if strings.Contains(channelTokenStatsQuery, "GROUP BY ll.model") {
+		t.Fatal("channel statistics must not group by model")
+	}
+}
+
 func TestNormalizeTokenUsage(t *testing.T) {
 	tests := []struct {
 		name, protocol                 string

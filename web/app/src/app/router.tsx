@@ -39,6 +39,7 @@ const UserInvitePage = lazy(() => import('@/pages/user/UserInvitePage').then((m)
 const AdminLoginPage = lazy(() => import('@/pages/admin/AdminLoginPage').then((m) => ({ default: m.AdminLoginPage })))
 const AdminDashboardPage = lazy(() => import('@/pages/admin/AdminDashboardPage').then((m) => ({ default: m.AdminDashboardPage })))
 const AdminChannelsPage = lazy(() => import('@/pages/admin/AdminChannelsPage').then((m) => ({ default: m.AdminChannelsPage })))
+const AdminChannelTokenStatsPage = lazy(() => import('@/pages/admin/AdminChannelTokenStatsPage').then((m) => ({ default: m.AdminChannelTokenStatsPage })))
 const AdminUsersPage = lazy(() => import('@/pages/admin/AdminUsersPage').then((m) => ({ default: m.AdminUsersPage })))
 const AdminBillingPage = lazy(() => import('@/pages/admin/AdminBillingPage').then((m) => ({ default: m.AdminBillingPage })))
 const AdminCardsPage = lazy(() => import('@/pages/admin/AdminCardsPage').then((m) => ({ default: m.AdminCardsPage })))
@@ -200,6 +201,7 @@ export const router = createBrowserRouter([
         children: [
           { path: 'dashboard', element: renderLazy(<AdminDashboardPage />) },
           { path: 'channels', element: renderLazy(<AdminChannelsPage />) },
+          { path: 'channels/:id/token-stats', element: renderLazy(<AdminChannelTokenStatsPage />) },
           { path: 'users', element: renderLazy(<AdminUsersPage />) },
           { path: 'billing', element: renderLazy(<AdminBillingPage />) },
           { path: 'cards', element: renderLazy(<AdminCardsPage />) },

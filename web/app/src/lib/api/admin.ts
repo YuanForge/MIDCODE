@@ -86,6 +86,22 @@ export type AdminUser = {
   total_spent?: number
 }
 
+export type AdminChannelTokenTotals = {
+  non_cached_input_tokens: number
+  cache_read_tokens: number
+  cache_creation_tokens: number
+  output_tokens: number
+  total_tokens: number
+}
+
+export type AdminChannelTokenStatsResponse = {
+  channel: { id: number; name: string; model: string; protocol: string }
+  totals: AdminChannelTokenTotals
+  points: Array<AdminChannelTokenTotals & { label: string }>
+  start_at: string
+  end_at: string
+}
+
 export type AdminVIPGroup = {
   id?: number
   code?: string
@@ -829,6 +845,8 @@ export const adminApi = {
     http.post<{ ok: boolean; count: number }>('/admin/channels/batch', payload),
   getChannelHealth: (id: number) =>
     http.get<AdminChannelHealth>(`/admin/channels/${id}/health`),
+  getChannelTokenStats: (id: number, params: { start_at: string; end_at: string; bucket: 'hour' | 'day' }) =>
+    http.get<AdminChannelTokenStatsResponse>(`/admin/channels/${id}/token-stats`, { params }),
   listChannelLogs: (id: number) =>
     http.get<{ logs: AdminChannelLog[] }>(`/admin/channels/${id}/logs`),
   // 用户扩展

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fanapi/internal/db"
+	"fanapi/internal/model"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -61,6 +62,21 @@ WHERE ll.user_id = ?
 	AND ll.created_at < ?
 	AND (? = '' OR ll.model ILIKE ?)`
 
+const channelTokenStatsQuery = `
+SELECT
+	%s AS label,
+	SUM(COALESCE((ll.usage->>'prompt_tokens')::bigint, 0)) AS prompt_tokens,
+	SUM(COALESCE((ll.usage->>'completion_tokens')::bigint, 0)) AS output_tokens,
+	SUM(COALESCE((ll.usage->>'cache_read_tokens')::bigint, 0)) AS cache_read_tokens,
+	SUM(COALESCE((ll.usage->>'cache_creation_tokens')::bigint, 0)) AS cache_creation_tokens
+FROM llm_logs ll
+WHERE ll.channel_id = ?
+	AND ll.status = 'ok'
+	AND ll.created_at >= ?
+	AND ll.created_at < ?
+GROUP BY %s
+ORDER BY %s`
+
 type tokenUsageTotals struct {
 	NonCachedInput int64 `json:"non_cached_input_tokens"`
 	CacheRead      int64 `json:"cache_read_tokens"`
@@ -76,6 +92,23 @@ type userTokenStatsRow struct {
 	CacheCreation  int64  `xorm:"'cache_creation_tokens'" json:"cache_creation_tokens"`
 	Output         int64  `xorm:"'output_tokens'" json:"output_tokens"`
 	Total          int64  `xorm:"'total_tokens'" json:"total_tokens"`
+}
+
+type channelTokenStatsRow struct {
+	Label         string `xorm:"'label'"`
+	Prompt        int64  `xorm:"'prompt_tokens'"`
+	Output        int64  `xorm:"'output_tokens'"`
+	CacheRead     int64  `xorm:"'cache_read_tokens'"`
+	CacheCreation int64  `xorm:"'cache_creation_tokens'"`
+}
+
+type channelTokenStatsPoint struct {
+	Label          string `json:"label"`
+	NonCachedInput int64  `json:"non_cached_input_tokens"`
+	CacheRead      int64  `json:"cache_read_tokens"`
+	CacheCreation  int64  `json:"cache_creation_tokens"`
+	Output         int64  `json:"output_tokens"`
+	Total          int64  `json:"total_tokens"`
 }
 
 // GetUserTokenStats returns exact per-model Token usage for the authenticated user.
@@ -122,6 +155,82 @@ func GetUserTokenStats(c *gin.Context) {
 		"total":     count.Total,
 		"start_at":  start.Format(time.RFC3339),
 		"end_at":    end.Format(time.RFC3339),
+	})
+}
+
+// GetAdminChannelTokenStats returns usage for one exact channel without model grouping.
+func GetAdminChannelTokenStats(c *gin.Context) {
+	channelID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || channelID < 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid channel id"})
+		return
+	}
+
+	var channel model.Channel
+	found, err := db.Engine.ID(channelID).Get(&channel)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query channel"})
+		return
+	}
+	if !found {
+		c.JSON(http.StatusNotFound, gin.H{"error": "channel not found"})
+		return
+	}
+
+	start, end, err := parseTokenStatsRange(c.Query("start_at"), c.Query("end_at"), time.Now())
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	bucket := strings.ToLower(strings.TrimSpace(c.DefaultQuery("bucket", "hour")))
+	labelExpression := "TO_CHAR(DATE_TRUNC('hour', ll.created_at AT TIME ZONE 'Asia/Shanghai'), 'MM-DD HH24:00')"
+	groupExpression := "DATE_TRUNC('hour', ll.created_at AT TIME ZONE 'Asia/Shanghai')"
+	if bucket == "day" {
+		labelExpression = "TO_CHAR(DATE_TRUNC('day', ll.created_at AT TIME ZONE 'Asia/Shanghai'), 'YYYY-MM-DD')"
+		groupExpression = "DATE_TRUNC('day', ll.created_at AT TIME ZONE 'Asia/Shanghai')"
+	} else if bucket != "hour" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bucket must be hour or day"})
+		return
+	}
+
+	rawRows := make([]channelTokenStatsRow, 0)
+	query := fmt.Sprintf(channelTokenStatsQuery, labelExpression, groupExpression, groupExpression)
+	if err = db.Engine.SQL(query, channelID, start, end).Find(&rawRows); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query Token statistics"})
+		return
+	}
+
+	points := make([]channelTokenStatsPoint, 0, len(rawRows))
+	totals := tokenUsageTotals{}
+	for _, row := range rawRows {
+		usage := normalizeTokenUsage(channel.Protocol, row.Prompt, row.Output, row.CacheRead, row.CacheCreation)
+		points = append(points, channelTokenStatsPoint{
+			Label:          row.Label,
+			NonCachedInput: usage.NonCachedInput,
+			CacheRead:      usage.CacheRead,
+			CacheCreation:  usage.CacheCreation,
+			Output:         usage.Output,
+			Total:          usage.Total,
+		})
+		totals.NonCachedInput += usage.NonCachedInput
+		totals.CacheRead += usage.CacheRead
+		totals.CacheCreation += usage.CacheCreation
+		totals.Output += usage.Output
+		totals.Total += usage.Total
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"channel": gin.H{
+			"id":       channel.ID,
+			"name":     channel.Name,
+			"model":    channel.Model,
+			"protocol": channel.Protocol,
+		},
+		"totals":   totals,
+		"points":   points,
+		"start_at": start.Format(time.RFC3339),
+		"end_at":   end.Format(time.RFC3339),
 	})
 }
 
