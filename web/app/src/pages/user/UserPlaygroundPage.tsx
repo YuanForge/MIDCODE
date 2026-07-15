@@ -211,9 +211,9 @@ export function UserPlaygroundPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
-      <div className="grid gap-4 xl:grid-cols-[320px_1fr] 2xl:grid-cols-[320px_1fr_240px]">
-        <Card>
-          <CardContent className="flex flex-col gap-4 p-6">
+      <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)_minmax(220px,260px)]">
+        <Card size="sm" className="min-w-0">
+          <CardContent className="flex flex-col gap-4 p-4">
             <div className="flex flex-col gap-2">
               <Label>API 密钥</Label>
               <NativeSelect
@@ -316,9 +316,9 @@ export function UserPlaygroundPage() {
             </div>
           </CardContent>
         </Card>
-        <Card className="flex min-h-[70vh] flex-col overflow-hidden">
+        <Card size="sm" className="flex min-h-[560px] min-w-0 flex-col overflow-hidden xl:min-h-[calc(100dvh-14rem)]">
           <CardContent className="flex min-h-0 flex-1 flex-col p-0">
-            <div ref={scrollRef} className="flex-1 flex flex-col gap-4 overflow-auto p-6">
+            <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-4 md:p-6">
               {messages.length === 0 && !streaming ? (
                 <div className="flex min-h-[300px] items-center justify-center text-sm text-muted-foreground">
                   开始一段对话吧。
@@ -330,7 +330,7 @@ export function UserPlaygroundPage() {
                   className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-7 ${
+                    className={`max-w-[88%] rounded-xl px-4 py-3 text-sm leading-7 md:max-w-[80%] ${
                       message.role === 'user'
                         ? 'bg-primary text-primary-foreground'
                         : 'bg-muted text-foreground'
@@ -342,21 +342,21 @@ export function UserPlaygroundPage() {
               ))}
               {streaming && streamingText ? (
                 <div className="flex justify-start">
-                  <div className="max-w-[80%] rounded-2xl bg-muted px-4 py-3 text-sm leading-7">
+                  <div className="max-w-[88%] rounded-xl bg-muted px-4 py-3 text-sm leading-7 md:max-w-[80%]">
                     <MessageContent content={streamingText} role="assistant" />
                   </div>
                 </div>
               ) : null}
             </div>
             <div className="border-t border-border/70 p-4">
-              <div className="flex gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row">
                 <Textarea
                   className="min-h-24 flex-1"
                   value={inputText}
                   onChange={(event) => setInputText(event.target.value)}
                   placeholder="输入消息，Enter 发送"
                 />
-                <div className="flex flex-col gap-1 items-end">
+                <div className="flex flex-col items-stretch gap-1 sm:items-end">
                   <Button
                     onClick={sendMessage}
                     disabled={streaming || !inputText.trim() || !canInvoke() || channels.length === 0}
@@ -371,26 +371,34 @@ export function UserPlaygroundPage() {
             </div>
           </CardContent>
         </Card>
-        <Card className="hidden 2xl:flex flex-col overflow-hidden">
+        <Card size="sm" className="flex max-h-[520px] min-w-0 flex-col overflow-hidden xl:col-span-2 2xl:col-span-1 2xl:max-h-[calc(100dvh-14rem)]">
           <div className="flex items-center justify-between border-b px-4 py-3 shrink-0">
             <span className="text-sm font-semibold">历史对话</span>
-            <button type="button" onClick={() => void loadConversations()} className="text-xs text-muted-foreground hover:text-foreground">刷新</button>
+            <button type="button" onClick={() => void loadConversations()} className="inline-flex h-9 items-center px-2 text-xs text-muted-foreground hover:text-foreground">刷新</button>
           </div>
-          <div className="flex-1 overflow-y-auto divide-y divide-border/60">
+          <div role="list" className="flex-1 divide-y divide-border/60 overflow-y-auto">
             {conversations.length === 0 ? (
               <p className="px-4 py-10 text-center text-xs text-muted-foreground">暂无历史对话</p>
             ) : (
               conversations.map((conv) => (
                 <div
                   key={conv.id}
-                  className={`group flex cursor-pointer items-center gap-1.5 px-3 py-2 hover:bg-muted/50 ${currentConvId === conv.id ? 'bg-muted/70' : ''}`}
-                  onClick={() => { setMessages(conv.messages as Message[]); setCurrentConvId(conv.id); setStreamingText('') }}
+                  role="listitem"
+                  className={`group flex items-center gap-1.5 ${currentConvId === conv.id ? 'bg-muted/70' : ''}`}
                 >
-                  <p className="flex-1 truncate text-xs leading-snug">{conv.title}</p>
                   <button
                     type="button"
-                    onClick={(e) => { e.stopPropagation(); void deleteConversation(conv.id) }}
-                    className="shrink-0 text-sm text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                    aria-current={currentConvId === conv.id ? 'true' : undefined}
+                    onClick={() => { setMessages(conv.messages as Message[]); setCurrentConvId(conv.id); setStreamingText('') }}
+                    className="flex min-h-10 min-w-0 flex-1 items-center px-3 py-2 text-left text-xs leading-snug hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  >
+                    <span className="truncate">{conv.title}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void deleteConversation(conv.id)}
+                    aria-label={`删除历史对话 ${conv.title}`}
+                    className="mr-1 inline-flex size-9 shrink-0 items-center justify-center rounded-md text-sm text-muted-foreground transition-colors hover:text-destructive focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:opacity-0 md:transition-opacity md:group-hover:opacity-100 md:group-focus-within:opacity-100"
                   >
                     ×
                   </button>

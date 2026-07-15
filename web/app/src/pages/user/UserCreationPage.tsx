@@ -165,18 +165,18 @@ export function UserCreationPage() {
         description="整合图片与视频生成，支持提示词 AI 优化、素材解析与灵感库。"
         actions={
           tab !== 'gallery' ? (
-            <Button variant="outline" size="sm" onClick={() => setDrawerOpen(true)}>
+            <Button variant="outline" onClick={() => setDrawerOpen(true)}>
               <LightbulbIcon className="size-4" /> 快速挑词
             </Button>
           ) : null
         }
       />
 
-      <div className="mt-4 flex flex-col gap-4">
-        <Tabs value={tab} onValueChange={(v) => switchTab(v as TabKey)}>
-          <TabsList>
+      <div className="flex min-w-0 flex-col gap-4">
+        <Tabs value={tab} onValueChange={(v) => switchTab(v as TabKey)} className="min-w-0 overflow-x-auto pb-1">
+          <TabsList className="h-10 min-w-max">
             {TABS.map((t) => (
-              <TabsTrigger key={t.key} value={t.key}>
+              <TabsTrigger key={t.key} value={t.key} className="h-9 px-3">
                 <t.icon className="size-4" />
                 {t.label}
               </TabsTrigger>
@@ -200,7 +200,7 @@ export function UserCreationPage() {
             onClear={promptHistory.clear}
           />
         ) : (
-          <div className="grid gap-4 xl:grid-cols-[340px_1fr] 2xl:grid-cols-[340px_1fr_280px]">
+          <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(300px,340px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(300px,340px)_minmax(0,1fr)_minmax(240px,300px)]">
             <ParamPanel
               mode={mode}
               apiKeys={resources.apiKeys}
@@ -249,7 +249,7 @@ export function UserCreationPage() {
               onMakeVideo={(url) => makeVideo(url, prompt)}
             />
 
-            <div className="hidden 2xl:block">
+            <div className="min-w-0 [&_button]:min-h-10 [&_button]:min-w-10 [&_button]:focus-visible:outline-none [&_button]:focus-visible:ring-2 [&_button]:focus-visible:ring-ring md:[&_button]:min-h-9 md:[&_button]:min-w-9 [&_[data-slot=dropdown-menu-trigger]]:size-10 [&_[data-slot=dropdown-menu-trigger]]:opacity-100 md:[&_[data-slot=dropdown-menu-trigger]]:size-9 md:[&_[data-slot=dropdown-menu-trigger]]:opacity-0 md:[&_.group:hover_[data-slot=dropdown-menu-trigger]]:opacity-100 md:[&_.group:focus-within_[data-slot=dropdown-menu-trigger]]:opacity-100 xl:col-span-2 2xl:col-span-1">
               <HistoryPanel
                 mode={mode}
                 tasks={history.tasks}

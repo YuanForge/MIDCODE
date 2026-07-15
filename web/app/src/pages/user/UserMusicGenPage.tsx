@@ -203,9 +203,9 @@ export function UserMusicGenPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
-      <div className="grid gap-4 xl:grid-cols-[320px_1fr] 2xl:grid-cols-[320px_1fr_240px]">
-        <Card>
-          <CardContent className="flex flex-col gap-4 p-6">
+      <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)_minmax(220px,260px)]">
+        <Card size="sm" className="min-w-0">
+          <CardContent className="flex flex-col gap-4 p-4">
             <div className="grid gap-1.5">
               <Label>API 密钥</Label>
               <NativeSelect value={selectedKeyId} onChange={(event) => setSelectedKeyId(Number(event.target.value))}>
@@ -227,21 +227,23 @@ export function UserMusicGenPage() {
             </div>
             <div className="grid gap-1.5">
               <Label>创作模式</Label>
-              <div className="flex rounded-md border border-input p-0.5">
+              <div className="flex rounded-lg border border-input bg-muted/40 p-1">
                 <button
                   type="button"
+                  aria-pressed={mode === '10'}
                   onClick={() => setMode('10')}
-                  className={`flex-1 rounded-sm px-3 py-1.5 text-xs font-medium transition ${
-                    mode === '10' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                  className={`min-h-9 flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                    mode === '10' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
                   灵感模式
                 </button>
                 <button
                   type="button"
+                  aria-pressed={mode === '20'}
                   onClick={() => setMode('20')}
-                  className={`flex-1 rounded-sm px-3 py-1.5 text-xs font-medium transition ${
-                    mode === '20' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                  className={`min-h-9 flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                    mode === '20' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
                   自定义模式
@@ -308,8 +310,8 @@ export function UserMusicGenPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="flex flex-col gap-4 p-6">
+        <Card size="sm" className="min-h-[480px] min-w-0">
+          <CardContent className="flex h-full flex-col gap-4 p-4 md:p-6">
             {taskStatus === 'idle' && items.length === 0 ? (
               <p className="text-sm text-muted-foreground">提交后将在这里显示生成的音乐。</p>
             ) : null}
@@ -351,10 +353,10 @@ export function UserMusicGenPage() {
             ))}
           </CardContent>
         </Card>
-        <Card className="hidden 2xl:flex flex-col overflow-hidden">
+        <Card size="sm" className="flex max-h-[520px] min-w-0 flex-col overflow-hidden xl:col-span-2 2xl:col-span-1 2xl:max-h-[calc(100dvh-14rem)]">
           <div className="flex items-center justify-between border-b px-4 py-3 shrink-0">
             <span className="text-sm font-semibold">历史生成</span>
-            <button type="button" onClick={() => void loadHistory()} className="text-xs text-muted-foreground hover:text-foreground">刷新</button>
+            <button type="button" onClick={() => void loadHistory()} className="inline-flex h-9 items-center px-2 text-xs text-muted-foreground hover:text-foreground">刷新</button>
           </div>
           <div className="flex-1 overflow-y-auto divide-y divide-border/50">
             {historyTasks.length === 0 ? (
@@ -376,8 +378,8 @@ export function UserMusicGenPage() {
                       {first?.image_url ? (
                         <img src={first.image_url} alt="" className="h-9 w-9 shrink-0 rounded-md object-cover" loading="lazy" />
                       ) : (
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-purple-500/20 to-pink-500/20 text-base">
-                          🎵
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-muted/40 text-base text-muted-foreground">
+                          <span aria-hidden="true">♪</span>
                         </div>
                       )}
                       <div className="min-w-0 flex-1">

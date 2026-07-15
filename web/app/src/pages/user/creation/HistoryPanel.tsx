@@ -141,6 +141,7 @@ export function HistoryPanel({
                       <DropdownMenuTrigger asChild>
                         <button
                           type="button"
+                          aria-label="历史记录操作"
                           className="grid size-6 place-items-center rounded-md bg-black/45 text-white opacity-0 transition-opacity group-hover:opacity-100"
                         >
                           <MoreVerticalIcon className="size-3.5" />

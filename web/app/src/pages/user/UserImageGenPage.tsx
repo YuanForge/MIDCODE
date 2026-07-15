@@ -315,9 +315,9 @@ export function UserImageGenPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
-      <div className="grid gap-4 xl:grid-cols-[320px_1fr] 2xl:grid-cols-[320px_1fr_240px]">
-        <Card>
-          <CardContent className="flex flex-col gap-4 p-6">
+      <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)_minmax(220px,260px)]">
+        <Card size="sm" className="min-w-0">
+          <CardContent className="flex flex-col gap-4 p-4">
             <div className="grid gap-1.5">
               <Label>API 密钥 <span className="text-destructive">*</span></Label>
               <NativeSelect value={selectedKeyId} onChange={(event) => setSelectedKeyId(Number(event.target.value))}>
@@ -404,7 +404,7 @@ export function UserImageGenPage() {
               {referenceUrls().length > 0 ? (
                 <div className="grid gap-3 sm:grid-cols-2">
                   {referenceUrls().map((url) => (
-                    <div key={url} className="overflow-hidden rounded-xl border border-border/70 bg-muted/20">
+                    <div key={url} className="overflow-hidden rounded-lg border border-border bg-muted/20">
                       <img src={url} alt="reference" className="h-36 w-full object-cover" />
                       <div className="truncate px-3 py-2 text-xs text-muted-foreground">{url}</div>
                     </div>
@@ -417,8 +417,8 @@ export function UserImageGenPage() {
             </Button>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="flex flex-col gap-4 p-6">
+        <Card size="sm" className="min-h-[480px] min-w-0">
+          <CardContent className="flex h-full flex-col gap-4 p-4 md:p-6">
             {taskStatus === 'polling' ? (
               <Alert>
                 <AlertDescription>
@@ -438,7 +438,7 @@ export function UserImageGenPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 {images.map((url, index) => (
                   <a key={`${index}-${url.slice(0, 64)}`} href="#" onClick={(e) => { e.preventDefault(); openImageUrl(url) }}>
-                    <img className="rounded-xl border border-border/70 w-full" src={url} alt="generated" />
+                    <img className="w-full rounded-lg border border-border" src={url} alt="generated" />
                   </a>
                 ))}
               </div>
@@ -447,14 +447,14 @@ export function UserImageGenPage() {
             ) : null}
           </CardContent>
         </Card>
-        <Card className="hidden 2xl:flex flex-col overflow-hidden">
+        <Card size="sm" className="flex max-h-[520px] min-w-0 flex-col overflow-hidden xl:col-span-2 2xl:col-span-1 2xl:max-h-[calc(100dvh-14rem)]">
           <div className="flex items-center justify-between border-b px-4 py-3 shrink-0">
             <span className="text-sm font-semibold">历史生成</span>
             <div className="flex items-center gap-2">
               {historyTasks.length > 0 && (
-                <button type="button" onClick={() => void clearHistory()} className="text-xs text-muted-foreground hover:text-destructive">清空</button>
+                <button type="button" onClick={() => void clearHistory()} className="inline-flex h-9 items-center px-2 text-xs text-muted-foreground hover:text-destructive">清空</button>
               )}
-              <button type="button" onClick={() => void loadHistory()} className="text-xs text-muted-foreground hover:text-foreground">刷新</button>
+              <button type="button" onClick={() => void loadHistory()} className="inline-flex h-9 items-center px-2 text-xs text-muted-foreground hover:text-foreground">刷新</button>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-2">
