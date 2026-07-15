@@ -24,12 +24,16 @@ export function PageSection({
 }) {
   return (
     <Card className={className}>
-      <CardHeader className="border-b">
+      <CardHeader className="border-b has-data-[slot=card-action]:grid-cols-1 sm:has-data-[slot=card-action]:grid-cols-[1fr_auto]">
         <CardTitle>
           <h2>{title}</h2>
         </CardTitle>
         {description ? <CardDescription>{description}</CardDescription> : null}
-        {action ? <CardAction>{action}</CardAction> : null}
+        {action ? (
+          <CardAction className="col-start-1 row-start-auto row-span-1 mt-2 justify-self-start sm:col-start-2 sm:row-start-1 sm:row-span-2 sm:mt-0 sm:justify-self-end">
+            {action}
+          </CardAction>
+        ) : null}
       </CardHeader>
       <CardContent className="pt-1">{children}</CardContent>
     </Card>

@@ -2,13 +2,15 @@ import { useState } from 'react'
 import { FileClockIcon, Search, Loader2 } from 'lucide-react'
 
 import { DateRangeFilter } from '@/components/shared/DateRangeFilter'
+import { FilterBar } from '@/components/shared/FilterBar'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { TableEmpty } from '@/components/shared/TableEmpty'
+import { TablePagination } from '@/components/shared/TablePagination'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/select'
 import {
@@ -95,8 +97,6 @@ export function AdminLogsPage() {
 
   const rows = data.logs
   const total = data.total
-  const totalPages = Math.ceil(total / pageSize)
-
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [currentLog, setCurrentLog] = useState<AdminLog | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -161,9 +161,9 @@ export function AdminLogsPage() {
       />
       {error ? <Alert variant="destructive" className="mb-4"><AlertDescription>{error}</AlertDescription></Alert> : null}
 
-      <Card className="mb-4">
-        <CardContent className="pt-6">
-          <div className="flex flex-wrap items-center gap-3">
+      <FilterBar
+        filters={
+          <>
             <Input placeholder="模型名称" value={filters.model}
               onChange={e => setFilters({ ...filters, model: e.target.value })} className="w-[160px]"
               onKeyDown={e => e.key === 'Enter' && handleSearch()} />
@@ -188,14 +188,18 @@ export function AdminLogsPage() {
               endAt={filters.endAt}
               onChange={({ startAt, endAt }) => setFilters({ ...filters, startAt, endAt })}
             />
-            <Button onClick={handleSearch}><Search className="mr-2 h-4 w-4" />查询</Button>
+          </>
+        }
+        actions={
+          <>
+            <Button onClick={handleSearch}><Search data-icon="inline-start" />查询</Button>
             <Button variant="outline" onClick={handleReset}>重置</Button>
-          </div>
-        </CardContent>
-      </Card>
+          </>
+        }
+      />
 
-      <Card>
-        <Table>
+      <Card className="overflow-hidden">
+        <Table className="min-w-[1660px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[60px]">ID</TableHead>
@@ -205,7 +209,7 @@ export function AdminLogsPage() {
               <TableHead>渠道 ID</TableHead>
               <TableHead>上游 API Key</TableHead>
               <TableHead>相关 ID</TableHead>
-              <TableHead>Token 用量</TableHead>
+              <TableHead className="text-right">Token 用量</TableHead>
               <TableHead className="text-right">消耗积分</TableHead>
               <TableHead className="text-right">上游成本</TableHead>
               <TableHead className="text-center">上游状态</TableHead>
@@ -214,10 +218,10 @@ export function AdminLogsPage() {
               <TableHead className="text-center">操作</TableHead>
             </TableRow>
           </TableHeader>
-          {loading ? <TableSkeleton cols={13} rows={10} /> : (
+          {loading ? <TableSkeleton cols={14} rows={10} /> : (
             <TableBody>
               {rows.length === 0 ? (
-                <TableEmpty cols={13} Icon={FileClockIcon} title="还没有调用日志" description="所有 LLM 调用记录会在此处汇总。" />
+                <TableEmpty cols={14} Icon={FileClockIcon} title="还没有调用日志" description="所有 LLM 调用记录会在此处汇总。" />
               ) : rows.map((row, idx) => (
                 <TableRow key={row.id ?? idx}>
                   <TableCell className="text-muted-foreground">{row.id ?? '-'}</TableCell>
@@ -229,7 +233,7 @@ export function AdminLogsPage() {
                     {row.upstream_api_key ?? '-'}
                   </TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground max-w-[220px] truncate" title={row.corr_id}>{row.corr_id ?? '-'}</TableCell>
-                  <TableCell>
+                  <TableCell className="text-right tabular-nums">
                     {renderUsageSummary(row)}
                   </TableCell>
                   <TableCell className="text-right">
@@ -257,18 +261,15 @@ export function AdminLogsPage() {
             </TableBody>
           )}
         </Table>
-        {totalPages > 0 && (
-          <div className="flex items-center justify-between px-4 py-4 border-t">
-            <div className="text-sm text-muted-foreground">共 {total} 条数据</div>
-            <div className="flex items-center space-x-2">
-              <Button variant="outline" size="sm" disabled={page <= 1}
-                onClick={() => { setPage(p => p - 1); setTimeout(reload, 0) }}>上一页</Button>
-              <div className="text-sm">第 {page} / {totalPages || 1} 页</div>
-              <Button variant="outline" size="sm" disabled={page >= totalPages}
-                onClick={() => { setPage(p => p + 1); setTimeout(reload, 0) }}>下一页</Button>
-            </div>
-          </div>
-        )}
+        {total > 0 ? (
+          <TablePagination
+            current={page}
+            total={total}
+            pageSize={pageSize}
+            onChange={(next) => { setPage(next); setTimeout(reload, 0) }}
+            className="rounded-none border-x-0 border-b-0"
+          />
+        ) : null}
       </Card>
 
       <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>

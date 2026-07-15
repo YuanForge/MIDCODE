@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { CreditCardIcon, RefreshCwIcon } from 'lucide-react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
+import { FilterBar } from '@/components/shared/FilterBar'
 import { TableEmpty } from '@/components/shared/TableEmpty'
+import { TablePagination } from '@/components/shared/TablePagination'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
@@ -17,7 +19,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -42,6 +44,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { copyToClipboard } from '@/lib/clipboard'
 import { adminApi, type AdminCard, type AdminCardBatch, type AdminVendor } from '@/lib/api/admin'
 import { useAsync } from '@/hooks/use-async'
@@ -55,7 +58,7 @@ export function AdminCardsPage() {
   const cardPageSize = 50
   const [queryParams, setQueryParams] = useState<Record<string, unknown>>({ page: 1, size: cardPageSize })
 
-  const { data: batchRows, loading: batchLoading, reload: reloadBatches } = useAsync(async () => {
+  const { data: batchRows, loading: batchLoading, error: batchError, reload: reloadBatches } = useAsync(async () => {
     const res = await adminApi.listCardBatches()
     return res.batches ?? []
   }, [] as AdminCardBatch[], [])
@@ -67,9 +70,7 @@ export function AdminCardsPage() {
 
   const rows = cardData.cards
   const cardTotal = cardData.total
-  const cardTotalPages = Math.ceil(cardTotal / cardPageSize)
-
-  const { data: usedRows, loading: usedLoading } = useAsync(async () => {
+  const { data: usedRows, loading: usedLoading, error: usedError } = useAsync(async () => {
     const response = await adminApi.listCards({ status: 'used', page: 1, size: 500 })
     return response.cards ?? []
   }, [] as AdminCard[], [tab === 'uses' ? 1 : 0])
@@ -227,20 +228,25 @@ export function AdminCardsPage() {
         </Alert>
       ) : null}
 
-      <div className="flex gap-2">
-        <Button size="sm" variant={tab === 'batches' ? 'default' : 'outline'} onClick={() => setTab('batches')}>批次管理</Button>
-        <Button size="sm" variant={tab === 'cards' ? 'default' : 'outline'} onClick={() => setTab('cards')}>卡密列表</Button>
-        <Button size="sm" variant={tab === 'uses' ? 'default' : 'outline'} onClick={() => setTab('uses')}>使用记录</Button>
-      </div>
+      <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
+        <TabsList>
+          <TabsTrigger value="batches">批次管理</TabsTrigger>
+          <TabsTrigger value="cards">卡密列表</TabsTrigger>
+          <TabsTrigger value="uses">使用记录</TabsTrigger>
+        </TabsList>
 
-      {tab === 'batches' ? (
-        <Card>
-          <Table>
+        <TabsContent value="batches" className="mt-4">
+        {
+        batchError ? (
+          <Alert variant="destructive"><AlertDescription>{batchError}</AlertDescription></Alert>
+        ) : (
+          <Card className="overflow-hidden">
+          <Table className="min-w-[860px]">
             <TableHeader>
               <TableRow>
                 <TableHead>批次 ID</TableHead>
                 <TableHead>备注</TableHead>
-                <TableHead className="w-28">面值（¥）</TableHead>
+                <TableHead className="w-28 text-right">面值（¥）</TableHead>
                 <TableHead className="w-20 text-right">总数</TableHead>
                 <TableHead className="w-20 text-right">已用</TableHead>
                 <TableHead className="w-40">生成时间</TableHead>
@@ -255,9 +261,9 @@ export function AdminCardsPage() {
                   <TableRow key={row.id ?? row.batch_id}>
                     <TableCell className="font-mono text-xs">{row.batch_id}</TableCell>
                     <TableCell>{row.note || '-'}</TableCell>
-                    <TableCell className="font-mono">¥{((row.credits ?? 0) / 1e6).toFixed(2)}</TableCell>
-                    <TableCell className="text-right">{row.count}</TableCell>
-                    <TableCell className="text-right text-emerald-600">{row.used ?? 0}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">¥{((row.credits ?? 0) / 1e6).toFixed(2)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{row.count}</TableCell>
+                    <TableCell className="text-right tabular-nums text-emerald-600">{row.used ?? 0}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {row.created_at ? new Date(row.created_at).toLocaleString('zh-CN') : '-'}
                     </TableCell>
@@ -271,12 +277,13 @@ export function AdminCardsPage() {
               </TableBody>
             )}
           </Table>
-        </Card>
-      ) : null}
+          </Card>
+        )}
+        </TabsContent>
 
-      {tab === 'cards' ? <>
-      <Card>
-        <CardContent className="flex items-end gap-3 py-4">
+        <TabsContent value="cards" className="mt-4">
+      <FilterBar
+        filters={
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground">状态过滤</label>
             <Select value={statusFilter || '_all'} onValueChange={(v) => setStatusFilter(v === '_all' ? '' : v)}>
@@ -289,17 +296,21 @@ export function AdminCardsPage() {
               </SelectContent>
             </Select>
           </div>
-          <Button onClick={() => { setCardPage(1); setQueryParams(statusFilter ? { status: statusFilter, page: 1, size: cardPageSize } : { page: 1, size: cardPageSize }) }}>查询</Button>
-          <Button variant="outline" onClick={() => { setStatusFilter(''); setCardPage(1); setQueryParams({ page: 1, size: cardPageSize }) }}>重置</Button>
-        </CardContent>
-      </Card>
+        }
+        actions={
+          <>
+            <Button onClick={() => { setCardPage(1); setQueryParams(statusFilter ? { status: statusFilter, page: 1, size: cardPageSize } : { page: 1, size: cardPageSize }) }}>查询</Button>
+            <Button variant="outline" onClick={() => { setStatusFilter(''); setCardPage(1); setQueryParams({ page: 1, size: cardPageSize }) }}>重置</Button>
+          </>
+        }
+      />
 
-      <Card>
-        <Table>
+      <Card className="overflow-hidden">
+        <Table className="min-w-[960px]">
           <TableHeader>
             <TableRow>
               <TableHead>兑换码</TableHead>
-              <TableHead>面值</TableHead>
+              <TableHead className="text-right">面值</TableHead>
               <TableHead>状态</TableHead>
               <TableHead>备注</TableHead>
               <TableHead>生成时间</TableHead>
@@ -321,14 +332,17 @@ export function AdminCardsPage() {
               ) : (
                 rows.map((row, index) => (
                   <TableRow key={row.id ?? index}>
-                    <TableCell
-                      className="font-mono text-xs cursor-pointer hover:text-primary"
-                      onClick={() => {
-                        void copyToClipboard(row.code ?? '', { successMessage: '兑换码已复制' })
-                      }}
-                      title="点击复制"
-                    >{row.code ?? '-'}</TableCell>
-                    <TableCell>¥{((row.credits ?? 0) / 1_000_000).toFixed(4)}</TableCell>
+                    <TableCell>
+                      <button
+                        type="button"
+                        className="font-mono text-xs hover:text-primary focus-visible:text-primary focus-visible:outline-none"
+                        onClick={() => void copyToClipboard(row.code ?? '', { successMessage: '兑换码已复制' })}
+                        aria-label={`复制兑换码 ${row.code ?? ''}`}
+                      >
+                        {row.code ?? '-'}
+                      </button>
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">¥{((row.credits ?? 0) / 1_000_000).toFixed(4)}</TableCell>
                     <TableCell>
                       <Badge variant={row.status === 'unused' ? 'default' : row.status === 'voided' ? 'destructive' : 'secondary'}>
                         {row.status === 'unused' ? '未使用' : row.status === 'voided' ? '已作废' : '已使用'}
@@ -359,26 +373,29 @@ export function AdminCardsPage() {
             </TableBody>
           )}
         </Table>
-        {cardTotalPages > 1 ? (
-          <div className="flex items-center justify-between border-t px-4 py-3">
-            <span className="text-sm text-muted-foreground">共 {cardTotal} 条</span>
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" disabled={cardPage <= 1} onClick={() => { const p = cardPage - 1; setCardPage(p); setQueryParams((prev) => ({ ...prev, page: p })) }}>上一页</Button>
-              <span className="text-sm">{cardPage} / {cardTotalPages}</span>
-              <Button size="sm" variant="outline" disabled={cardPage >= cardTotalPages} onClick={() => { const p = cardPage + 1; setCardPage(p); setQueryParams((prev) => ({ ...prev, page: p })) }}>下一页</Button>
-            </div>
-          </div>
+        {cardTotal > 0 ? (
+          <TablePagination
+            current={cardPage}
+            total={cardTotal}
+            pageSize={cardPageSize}
+            onChange={(next) => { setCardPage(next); setQueryParams((prev) => ({ ...prev, page: next })) }}
+            className="rounded-none border-x-0 border-b-0"
+          />
         ) : null}
       </Card>
-      </> : null}
+        </TabsContent>
 
-      {tab === 'uses' ? (
-        <Card>
-          <Table>
+        <TabsContent value="uses" className="mt-4">
+        {
+        usedError ? (
+          <Alert variant="destructive"><AlertDescription>{usedError}</AlertDescription></Alert>
+        ) : (
+          <Card className="overflow-hidden">
+          <Table className="min-w-[760px]">
             <TableHeader>
               <TableRow>
                 <TableHead>兑换码</TableHead>
-                <TableHead>面值</TableHead>
+                <TableHead className="text-right">面值</TableHead>
                 <TableHead>兑换用户 ID</TableHead>
                 <TableHead>兑换时间</TableHead>
                 <TableHead>备注</TableHead>
@@ -391,7 +408,7 @@ export function AdminCardsPage() {
                 ) : usedRows.map((row) => (
                   <TableRow key={row.id}>
                     <TableCell className="font-mono text-xs">{row.code ?? '-'}</TableCell>
-                    <TableCell>¥{((row.credits ?? 0) / 1_000_000).toFixed(4)}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">¥{((row.credits ?? 0) / 1_000_000).toFixed(4)}</TableCell>
                     <TableCell className="text-muted-foreground">{row.used_by ? `#${row.used_by}` : '-'}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {row.used_at ? new Date(row.used_at).toLocaleString('zh-CN') : '-'}
@@ -402,8 +419,10 @@ export function AdminCardsPage() {
               </TableBody>
             )}
           </Table>
-        </Card>
-      ) : null}
+          </Card>
+        )}
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={generateOpen} onOpenChange={setGenerateOpen}>
         <DialogContent>

@@ -3,7 +3,9 @@ import { ListIcon, RefreshCwIcon, Trash2Icon } from 'lucide-react'
 
 import { DateRangeFilter } from '@/components/shared/DateRangeFilter'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { FilterBar } from '@/components/shared/FilterBar'
 import { TableEmpty } from '@/components/shared/TableEmpty'
+import { TablePagination } from '@/components/shared/TablePagination'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
@@ -111,8 +113,6 @@ export function AdminTasksPage() {
   const canCleanup = permissions.includes('*') || permissions.includes('tasks:write')
 
   const pageSize = 20
-  const totalPages = Math.ceil(data.total / pageSize)
-
   // 详情弹窗
   const [detail, setDetail] = useState<AdminTask | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -469,8 +469,9 @@ export function AdminTasksPage() {
       ) : null}
 
       {/* 过滤栏 */}
-      <Card>
-        <CardContent className="flex flex-wrap items-end gap-3 py-4">
+      <FilterBar
+        filters={
+          <>
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground">Task ID</label>
             <Input
@@ -523,13 +524,18 @@ export function AdminTasksPage() {
             label="时间范围"
             onChange={({ startAt: s, endAt: e }) => { setStartAt(s); setEndAt(e) }}
           />
-          <Button onClick={doSearch}>查询</Button>
-          <Button variant="outline" onClick={resetFilters}>重置</Button>
-        </CardContent>
-      </Card>
+          </>
+        }
+        actions={
+          <>
+            <Button onClick={doSearch}>查询</Button>
+            <Button variant="outline" onClick={resetFilters}>重置</Button>
+          </>
+        }
+      />
 
-      <Card>
-        <Table>
+      <Card className="overflow-hidden">
+        <Table className="min-w-[1280px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-20">Task ID</TableHead>
@@ -594,15 +600,8 @@ export function AdminTasksPage() {
             </TableBody>
           )}
         </Table>
-        {totalPages > 1 ? (
-          <CardContent className="flex items-center justify-between border-t py-3">
-            <span className="text-sm text-muted-foreground">共 {data.total} 条记录</span>
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => changePage(page - 1)}>上一页</Button>
-              <span className="text-sm text-muted-foreground">第 {page} / {totalPages} 页</span>
-              <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => changePage(page + 1)}>下一页</Button>
-            </div>
-          </CardContent>
+        {data.total > 0 ? (
+          <TablePagination current={page} total={data.total} pageSize={pageSize} onChange={changePage} className="rounded-none border-x-0 border-b-0" />
         ) : null}
       </Card>
 

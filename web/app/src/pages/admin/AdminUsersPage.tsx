@@ -1,12 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { CheckSquareIcon, FilterIcon, PlusIcon, SaveIcon, Trash2Icon, UsersIcon, XIcon } from 'lucide-react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
+import { FilterBar } from '@/components/shared/FilterBar'
+import { TableEmpty } from '@/components/shared/TableEmpty'
+import { TablePagination } from '@/components/shared/TablePagination'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
@@ -152,7 +155,14 @@ function UserPortraitTab({ userId }: { userId: number }) {
           {labels.length === 0 ? <span className="text-sm text-muted-foreground">无标签</span> : labels.map((l) => (
             <Badge key={l.id} variant="destructive" className="text-xs flex items-center gap-1">
               {l.label}
-              <button onClick={() => l.id != null && removeLabel(l.id)} className="ml-0.5 text-xs hover:opacity-70">×</button>
+              <button
+                type="button"
+                aria-label={`移除风险标签 ${l.label}`}
+                onClick={() => l.id != null && removeLabel(l.id)}
+                className="ml-0.5 text-xs hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                ×
+              </button>
             </Badge>
           ))}
         </div>
@@ -273,7 +283,6 @@ function UserReferralsSection({ userId, fallbackInviteCount }: { userId: number;
 
 export function AdminUsersPage() {
   const [page, setPage] = useState(1)
-  const [pageInput, setPageInput] = useState('1')
   const pageSize = 20
 
   // 复合过滤器
@@ -502,20 +511,7 @@ export function AdminUsersPage() {
     }
   }
 
-  const totalPages = Math.ceil(data.total / pageSize)
-  const safeTotalPages = Math.max(1, totalPages)
   const allOnPageSelected = data.users.length > 0 && data.users.every((u) => u.id != null && selectedIds.has(u.id))
-
-  useEffect(() => {
-    setPageInput(String(page))
-  }, [page])
-
-  function goToPage() {
-    const parsed = Number.parseInt(pageInput, 10)
-    const next = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), safeTotalPages) : 1
-    setPage(next)
-    setPageInput(String(next))
-  }
 
   return (
     <>
@@ -544,8 +540,9 @@ export function AdminUsersPage() {
       ) : null}
 
       {/* 过滤栏 */}
-      <Card>
-        <CardContent className="flex flex-wrap items-end gap-3 py-4">
+      <FilterBar
+        filters={
+          <>
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground">邮箱</label>
             <Input className="w-44" placeholder="模糊匹配" value={filters.email}
@@ -585,10 +582,15 @@ export function AdminUsersPage() {
                 onChange={(e) => setFilters((f) => ({ ...f, balance_max: e.target.value }))} />
             </div>
           </div>
-          <Button onClick={doSearch}><FilterIcon className="mr-1 size-3.5" />查询</Button>
-          <Button variant="outline" onClick={resetSearch}>重置</Button>
-        </CardContent>
-      </Card>
+          </>
+        }
+        actions={
+          <>
+            <Button onClick={doSearch}><FilterIcon data-icon="inline-start" />查询</Button>
+            <Button variant="outline" onClick={resetSearch}>重置</Button>
+          </>
+        }
+      />
 
       {/* 批量操作工具栏 */}
       {selectedIds.size > 0 ? (
@@ -600,14 +602,14 @@ export function AdminUsersPage() {
             <Button size="sm" variant="outline" onClick={() => { setBatchGroup(''); setDialogMode('batch_group') }}>批量设置 VIP</Button>
             <Button size="sm" variant="ghost" onClick={() => submitBatch('unfreeze')}>批量解封</Button>
           </div>
-          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setSelectedIds(new Set())}>
+          <Button size="icon-sm" variant="ghost" className="ml-auto" onClick={() => setSelectedIds(new Set())} aria-label="清除选择">
             <XIcon className="size-3.5" />
           </Button>
         </div>
       ) : null}
 
-      <Card>
-        <Table>
+      <Card className="overflow-hidden">
+        <Table className="min-w-[1100px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-10">
@@ -622,7 +624,7 @@ export function AdminUsersPage() {
               <TableHead>邮箱</TableHead>
               <TableHead className="w-16">状态</TableHead>
               <TableHead className="w-20">分组</TableHead>
-              <TableHead className="w-32">余额（¥）</TableHead>
+              <TableHead className="w-32 text-right">余额（¥）</TableHead>
               <TableHead className="w-40">注册时间</TableHead>
               <TableHead className="text-right">操作</TableHead>
             </TableRow>
@@ -632,15 +634,7 @@ export function AdminUsersPage() {
           ) : (
             <TableBody>
               {data.users.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="py-12 text-center">
-                    <div className="flex flex-col items-center gap-2">
-                      <UsersIcon className="size-10 text-muted-foreground/40" />
-                      <p className="text-sm font-medium">没有找到用户</p>
-                      <p className="max-w-sm text-xs text-muted-foreground">调整筛选条件后重试。</p>
-                    </div>
-                  </TableCell>
-                </TableRow>
+                <TableEmpty cols={9} Icon={UsersIcon} title="没有找到用户" description="调整筛选条件后重试。" />
               ) : (
                 data.users.map((row, index) => (
                   <TableRow key={row.id ?? index} data-state={row.id != null && selectedIds.has(row.id) ? 'selected' : undefined}>
@@ -666,7 +660,7 @@ export function AdminUsersPage() {
                         </div>
                       ) : null}
                     </TableCell>
-                    <TableCell className="font-mono text-sm">{fmtBalance(row)}</TableCell>
+                    <TableCell className="text-right font-mono text-sm tabular-nums">{fmtBalance(row)}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {row.created_at ? new Date(row.created_at).toLocaleString('zh-CN') : '-'}
                     </TableCell>
@@ -690,38 +684,9 @@ export function AdminUsersPage() {
             </TableBody>
           )}
         </Table>
-        {totalPages > 1 ? (
-          <CardContent className="flex items-center justify-between border-t py-3">
-            <span className="text-sm text-muted-foreground">共 {data.total} 位用户</span>
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-                上一页
-              </Button>
-              <span className="text-sm text-muted-foreground">第 {page} / {totalPages} 页</span>
-              <Input
-                className="h-8 w-20"
-                inputMode="numeric"
-                value={pageInput}
-                onChange={(event) => setPageInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') goToPage()
-                }}
-              />
-              <Button size="sm" variant="outline" onClick={goToPage}>
-                跳转
-              </Button>
-              <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
-                下一页
-              </Button>
-            </div>
-          </CardContent>
-        ) : (
-          data.total > 0 ? (
-            <CardContent className="border-t py-3">
-              <span className="text-sm text-muted-foreground">共 {data.total} 位用户</span>
-            </CardContent>
-          ) : null
-        )}
+        {data.total > 0 ? (
+          <TablePagination current={page} total={data.total} pageSize={pageSize} onChange={setPage} className="rounded-none border-x-0 border-b-0" />
+        ) : null}
       </Card>
 
       {/* 详情弹窗 */}

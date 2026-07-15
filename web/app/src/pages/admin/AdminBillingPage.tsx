@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { WalletCardsIcon } from 'lucide-react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
+import { FilterBar } from '@/components/shared/FilterBar'
 import { TableEmpty } from '@/components/shared/TableEmpty'
+import { TablePagination } from '@/components/shared/TablePagination'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -81,8 +83,6 @@ export function AdminBillingPage() {
   }, { transactions: [] as AdminTransaction[], total: 0, summary: {} as AdminTransactionSummary }, [searchParams])
 
   const pageSize = 20
-  const totalPages = Math.ceil(data.total / pageSize)
-
   function doSearch() {
     const params: Record<string, unknown> = { page: 1, size: pageSize }
     if (startAt) params.start_at = startAt.replace('T', ' ') + ':00'
@@ -109,7 +109,7 @@ export function AdminBillingPage() {
 
   // 聚合视图数据
   const aggDim = activeTab === 'detail' ? '' : activeTab
-  const { data: aggData, loading: aggLoading } = useAsync(async () => {
+  const { data: aggData, loading: aggLoading, error: aggError } = useAsync(async () => {
     if (!aggDim) return { rows: [] as { key: string; revenue: number; cost: number; profit: number; calls: number }[] }
     return adminApi.getTransactionAggregate({ dim: aggDim })
   }, { rows: [] as { key: string; revenue: number; cost: number; profit: number; calls: number }[] }, [aggDim])
@@ -178,7 +178,7 @@ export function AdminBillingPage() {
               type="month"
               value={exportMonth}
               onChange={e => setExportMonth(e.target.value)}
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm"
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm shadow-sm"
             />
             <Button size="sm" variant="outline" onClick={submitExport} disabled={exporting}>
               {exporting ? '提交中…' : '导出对账单'}
@@ -206,8 +206,9 @@ export function AdminBillingPage() {
 
         <TabsContent value="detail">
       {/* 过滤栏 */}
-      <Card>
-        <CardContent className="flex flex-wrap items-end gap-3 py-4">
+      <FilterBar
+        filters={
+          <>
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground">开始时间</label>
             <Input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} className="w-52" />
@@ -237,32 +238,37 @@ export function AdminBillingPage() {
               onChange={(e) => setUserId(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && doSearch()} />
           </div>
-          <Button onClick={doSearch}>查询</Button>
-          <Button variant="outline" onClick={resetSearch}>重置</Button>
-        </CardContent>
-      </Card>
+          </>
+        }
+        actions={
+          <>
+            <Button onClick={doSearch}>查询</Button>
+            <Button variant="outline" onClick={resetSearch}>重置</Button>
+          </>
+        }
+      />
 
       {/* 汇总卡片 */}
       {(data.summary.revenue != null || data.summary.cost != null) ? (
         <div className="grid gap-4 sm:grid-cols-3">
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">收入</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-bold">¥{toMoney(data.summary.revenue)}</p></CardContent>
+            <CardContent><p className="text-2xl font-semibold tabular-nums">¥{toMoney(data.summary.revenue)}</p></CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">成本</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-bold">¥{toMoney(data.summary.cost)}</p></CardContent>
+            <CardContent><p className="text-2xl font-semibold tabular-nums">¥{toMoney(data.summary.cost)}</p></CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">利润</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-bold text-blue-600">¥{toMoney(data.summary.profit)}</p></CardContent>
+            <CardContent><p className="text-2xl font-semibold tabular-nums">¥{toMoney(data.summary.profit)}</p></CardContent>
           </Card>
         </div>
       ) : null}
 
       {/* 流水表格 */}
-      <Card>
-        <Table>
+      <Card className="overflow-hidden">
+        <Table className="min-w-[1040px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-14">ID</TableHead>
@@ -335,15 +341,8 @@ export function AdminBillingPage() {
             </TableBody>
           )}
         </Table>
-        {totalPages > 1 ? (
-          <CardContent className="flex items-center justify-between border-t py-3">
-            <span className="text-sm text-muted-foreground">共 {data.total} 条记录</span>
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => changePage(page - 1)}>上一页</Button>
-              <span className="text-sm text-muted-foreground">第 {page} / {totalPages} 页</span>
-              <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => changePage(page + 1)}>下一页</Button>
-            </div>
-          </CardContent>
+        {data.total > 0 ? (
+          <TablePagination current={page} total={data.total} pageSize={pageSize} onChange={changePage} className="rounded-none border-x-0 border-b-0" />
         ) : null}
       </Card>
         </TabsContent>
@@ -351,8 +350,11 @@ export function AdminBillingPage() {
         {/* 聚合视图 */}
         {(['user', 'channel', 'model', 'day'] as const).map((dim) => (
           <TabsContent key={dim} value={dim}>
-            <Card>
-              <Table>
+            {aggError ? (
+              <Alert variant="destructive"><AlertDescription>{aggError}</AlertDescription></Alert>
+            ) : (
+              <Card className="overflow-hidden">
+              <Table className="min-w-[720px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>{{ user: '用户 ID', channel: '渠道 ID', model: '模型', day: '日期' }[dim]}</TableHead>
@@ -365,9 +367,7 @@ export function AdminBillingPage() {
                 {aggLoading ? <TableSkeleton cols={5} /> : (
                   <TableBody>
                     {aggData.rows.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">暂无数据</TableCell>
-                      </TableRow>
+                      <TableEmpty cols={5} title="暂无汇总数据" description="当前维度下没有可展示的账单数据。" />
                     ) : aggData.rows.map((row, i) => (
                       <TableRow key={row.key ?? i}>
                         <TableCell className="font-mono text-sm">{row.key}</TableCell>
@@ -380,7 +380,8 @@ export function AdminBillingPage() {
                   </TableBody>
                 )}
               </Table>
-            </Card>
+              </Card>
+            )}
           </TabsContent>
         ))}
       </Tabs>

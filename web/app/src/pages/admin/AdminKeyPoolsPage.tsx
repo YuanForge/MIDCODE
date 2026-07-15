@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
+import { TableEmpty } from '@/components/shared/TableEmpty'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
@@ -298,11 +299,7 @@ export function AdminKeyPoolsPage() {
           ) : (
             <TableBody>
               {pools.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
-                    暂无号池数据
-                  </TableCell>
-                </TableRow>
+                <TableEmpty cols={6} title="暂无号池数据" description="新建号池后会显示在这里。" />
               ) : (
                 pools.map((pool, index) => (
                   <TableRow key={pool.id ?? index}>
@@ -327,7 +324,7 @@ export function AdminKeyPoolsPage() {
                           {pool.is_active ? '停用' : '启用'}
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => toggleVendor(pool)}>切上传</Button>
-                        <Button size="sm" onClick={() => setPendingDeletePool(pool)}>删除</Button>
+                        <Button size="sm" variant="destructive" onClick={() => setPendingDeletePool(pool)}>删除</Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -399,8 +396,8 @@ export function AdminKeyPoolsPage() {
                 <TableHead>Base URL</TableHead>
                 <TableHead>号商</TableHead>
                 <TableHead>最近使用</TableHead>
-                <TableHead>调用次数</TableHead>
-                <TableHead>失败率</TableHead>
+                <TableHead className="text-right">调用次数</TableHead>
+                <TableHead className="text-right">失败率</TableHead>
                 <TableHead>优先级</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead className="text-right">操作</TableHead>
@@ -449,8 +446,8 @@ export function AdminKeyPoolsPage() {
                       <TableCell className="text-xs text-muted-foreground">
                         {row.last_used_at ? new Date(row.last_used_at).toLocaleString('zh-CN') : '从未'}
                       </TableCell>
-                      <TableCell className="text-right">{row.total_calls ?? 0}</TableCell>
-                      <TableCell>
+                      <TableCell className="text-right tabular-nums">{row.total_calls ?? 0}</TableCell>
+                      <TableCell className="text-right tabular-nums">
                         {row.fail_rate != null
                           ? <span className={row.fail_rate > 0.1 ? 'text-destructive' : ''}>{(row.fail_rate * 100).toFixed(1)}%</span>
                           : '-'}
