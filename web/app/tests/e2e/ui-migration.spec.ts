@@ -21,6 +21,7 @@ test('public and auth surfaces use MidCode branding', async ({ page }) => {
 })
 
 test('user console exposes the shared shell', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
   await page.addInitScript(() => window.localStorage.setItem('token', 'mock-user-token'))
   await page.route('**/api/user/balance', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '{"balance_credits":0}' }),
@@ -29,6 +30,20 @@ test('user console exposes the shared shell', async ({ page }) => {
     route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }),
   )
   await page.goto('/dashboard')
-  await expect(page.locator('[data-slot="app-shell"]')).toBeVisible()
+  const appShell = page.locator('[data-slot="app-shell"]')
+  await expect(appShell).toBeVisible()
+  await expect(appShell).toHaveClass(/group\/sidebar-wrapper/)
   await expect(page.locator('[data-slot="page-container"]')).toBeVisible()
+  const sidebarInset = page.locator('[data-slot="sidebar-inset"]')
+  await expect(sidebarInset).toHaveClass(/min-w-0/)
+  await expect(sidebarInset).not.toHaveClass(/\bw-full\b/)
+  const pageWidth = await page.evaluate(() => ({
+    client: document.documentElement.clientWidth,
+    scroll: document.documentElement.scrollWidth,
+  }))
+  expect(pageWidth.scroll).toBeLessThanOrEqual(pageWidth.client)
+  const insetRight = await sidebarInset.evaluate((element) =>
+    element.getBoundingClientRect().right,
+  )
+  expect(insetRight).toBeLessThanOrEqual(pageWidth.client)
 })

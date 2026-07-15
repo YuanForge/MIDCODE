@@ -219,8 +219,7 @@ export function ConsoleLayout({
   }
 
   return (
-    <div data-slot="app-shell" className="flex min-h-svh w-full">
-      <SidebarProvider>
+    <SidebarProvider data-slot="app-shell">
       <Sidebar collapsible="offcanvas">
         <SidebarHeader>
           <AppLogo siteName={siteName} logoUrl={logoUrl} label={siteName} />
@@ -379,8 +378,7 @@ export function ConsoleLayout({
           />
         ) : null}
       </SidebarInset>
-      </SidebarProvider>
-    </div>
+    </SidebarProvider>
   )
 }
 
