@@ -50,7 +50,7 @@ test('renders admin login page', async ({ page }) => {
 })
 
 test('redirects protected user route to login when unauthenticated', async ({ page }) => {
-  await page.goto('/dashboard')
+  await page.goto('/stats')
 
   await expect(page).toHaveURL(/\/login$/)
 })
@@ -82,7 +82,7 @@ test('renders user dashboard with authenticated mocks', async ({ page }) => {
   await page.goto('/dashboard')
 
   await expect(page.getByText('用户数据看板')).toBeVisible()
-  await expect(page.getByText('1.80')).toBeVisible()
+  await expect(page.getByText('1.80', { exact: true })).toBeVisible()
   await expect(page.getByText('5.20')).toBeVisible()
   await expect(page.getByText('1.20')).toBeVisible()
 })
@@ -99,8 +99,10 @@ test('renders admin dashboard with authenticated mocks', async ({ page }) => {
       contentType: 'application/json',
       body: JSON.stringify({
         total_users: 42,
-        total_requests: 380,
-        total_revenue: 9900000,
+        channels: 12,
+        active_channels: 9,
+        today: { revenue: 3800000, cost: 2700000, profit: 1100000, count: 8 },
+        total: { revenue: 9900000, cost: 6400000, profit: 3500000 },
       }),
     })
   })
@@ -108,9 +110,10 @@ test('renders admin dashboard with authenticated mocks', async ({ page }) => {
   await page.goto('/admin/dashboard')
 
   await expect(page.getByText('平台运营看板')).toBeVisible()
-  await expect(page.getByText('42')).toBeVisible()
-  await expect(page.getByText('380')).toBeVisible()
-  await expect(page.getByText('9900000')).toBeVisible()
+  await expect(page.getByText('42', { exact: true })).toBeVisible()
+  await expect(page.getByText('9 / 12', { exact: true })).toBeVisible()
+  await expect(page.getByText('¥3.8000', { exact: true })).toBeVisible()
+  await expect(page.getByText('¥9.9000', { exact: true })).toBeVisible()
 })
 
 test('renders extended user routes with authenticated session', async ({ page }) => {
