@@ -288,7 +288,7 @@ export function AdminSettingsPage() {
               <TabsContent value="basic" className="px-6 pb-6">
                 <div className="max-w-2xl divide-y">
                   <FieldRow label="站点名称">
-                    <Input value={form.site_name ?? ''} onChange={(e) => set('site_name', e.target.value)} placeholder="例如：FanAPI" />
+                    <Input value={form.site_name ?? ''} onChange={(e) => set('site_name', e.target.value)} placeholder="例如：MidCode" />
                     <Tip>显示在浏览器标题栏和页面 Logo 旁；如果 env.js 配置了 site_name，则前台展示会优先使用 env.js</Tip>
                   </FieldRow>
                   <FieldRow label="Logo 图片">
@@ -336,7 +336,7 @@ export function AdminSettingsPage() {
                                     <Input
                                       value={rule.to}
                                       onChange={(e) => setProxyRules(p => p.map((r, idx) => idx === i ? { ...r, to: e.target.value } : r))}
-                                      placeholder="https://api.fanapi.cc/apimart"
+                                      placeholder="https://api.example.com/apimart"
                                       className="h-8 font-mono text-xs"
                                     />
                                   </td>
@@ -420,11 +420,9 @@ export function AdminSettingsPage() {
                     <FieldRow label="预览">
                       <div className="rounded-lg border overflow-hidden">
                         <div className="bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground">页眉预览</div>
-                        {/* eslint-disable-next-line react/no-danger */}
                         <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(form.header_html || '<span style="color:#aaa">（空）</span>') }} />
                         <Separator />
                         <div className="bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground">页脚预览</div>
-                        {/* eslint-disable-next-line react/no-danger */}
                         <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(form.footer_html || '<span style="color:#aaa">（空）</span>') }} />
                       </div>
                     </FieldRow>
@@ -585,7 +583,7 @@ export function AdminSettingsPage() {
                       onChange={(e) => set('contact_info', e.target.value)}
                       rows={4}
                       className={compactTextareaClass}
-                      placeholder={`微信：fanapi\nQQ群：123456789\n邮箱：support@example.com`}
+                      placeholder={`微信：midcode\nQQ群：123456789\n邮箱：support@example.com`}
                     />
                     <Tip>纯文本，每行一条联系方式，显示在数据看板公告区域</Tip>
                   </FieldRow>

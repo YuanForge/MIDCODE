@@ -1,4 +1,4 @@
-# FanAPI
+# MidCode
 
 A multi-channel LLM & AI generation service aggregation platform. It provides a unified API to proxy multiple third-party AI providers (OpenAI, Claude, etc.) with built-in billing, user, and channel management.
 
