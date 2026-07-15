@@ -22,7 +22,7 @@ export function AppLogo({
   return (
     <div className={cn('flex items-center gap-3', className)}>
       {showImage ? (
-        <div className="flex size-10 items-center justify-center overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
+        <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-card shadow-sm">
           <img
             className="size-full object-contain"
             src={logoUrl}
@@ -31,19 +31,19 @@ export function AppLogo({
           />
         </div>
       ) : logoUrl && errored ? (
-        <div className="flex size-10 items-center justify-center rounded-xl bg-primary text-base font-semibold text-primary-foreground shadow-sm">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary text-base font-semibold text-primary-foreground shadow-sm">
           {initial}
         </div>
       ) : (
-        <div className="flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
           <BotIcon className="size-5" />
         </div>
       )}
       <div className="min-w-0">
-        <p className="truncate text-sm font-medium uppercase tracking-[0.18em] text-muted-foreground">
+        <p className="truncate text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
           {siteName}
         </p>
-        <p className="truncate text-base font-semibold text-foreground">{label}</p>
+        <p className="truncate text-sm font-medium text-foreground">{label}</p>
       </div>
     </div>
   )

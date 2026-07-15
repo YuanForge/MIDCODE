@@ -31,6 +31,7 @@ import {
 
 import { AppLogo } from '@/components/shared/AppLogo'
 import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher'
+import { PageContainer } from '@/components/shared/PageContainer'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import {
@@ -96,6 +97,14 @@ type ConsoleLayoutProps = {
   }
   footer?: ReactNode
 }
+
+const GENERATION_USER_PATHS = new Set([
+  '/playground',
+  '/creation',
+  '/image-gen',
+  '/video-gen',
+  '/music-gen',
+])
 
 function HeaderBalanceChip() {
   const { t } = useTranslation()
@@ -173,7 +182,8 @@ export function ConsoleLayout({
 
   const isLoggedIn = !!getRoleToken(role)
   const displayName = identity?.label
-  const isFullBleedPage = role === 'user' && location.pathname === '/docs'
+  const isDocsPage = role === 'user' && location.pathname === '/docs'
+  const isGenerationPage = role === 'user' && GENERATION_USER_PATHS.has(location.pathname)
   const isWidePage = role === 'admin' && [
     '/admin/channels',
     '/admin/key-pools',
@@ -209,7 +219,8 @@ export function ConsoleLayout({
   }
 
   return (
-    <SidebarProvider>
+    <div data-slot="app-shell" className="flex min-h-svh w-full">
+      <SidebarProvider>
       <Sidebar collapsible="offcanvas">
         <SidebarHeader>
           <AppLogo siteName={siteName} logoUrl={logoUrl} label={siteName} />
@@ -279,7 +290,7 @@ export function ConsoleLayout({
         </SidebarFooter>
       </Sidebar>
       <SidebarInset>
-        <header className="sticky top-0 z-20 flex h-[54px] items-center justify-between border-b border-border/60 bg-background px-4">
+        <header className="sticky top-0 z-20 flex h-[58px] shrink-0 items-center justify-between border-b border-border bg-card px-4 md:px-6">
           <div className="flex items-center gap-3">
             <SidebarTrigger />
             <span className="text-sm font-semibold">{pageTitle}</span>
@@ -346,16 +357,20 @@ export function ConsoleLayout({
             dangerouslySetInnerHTML={{ __html: sanitizeHtml(headerHtml) }}
           />
         ) : null}
-        <main className={isFullBleedPage ? 'flex-1 px-0 py-0' : 'flex-1 px-4 py-6 md:px-6'}>
-          <div className={
-            isFullBleedPage
-              ? 'flex w-full flex-col'
-              : isWidePage
-                ? 'flex w-full flex-col gap-6'
-                : 'mx-auto flex w-full max-w-7xl flex-col gap-6'
-          }>
-            <Outlet />
-          </div>
+        <main className="min-w-0 flex-1">
+          {isDocsPage ? (
+            <div className="flex w-full flex-col">
+              <Outlet />
+            </div>
+          ) : isGenerationPage ? (
+            <div className="flex w-full flex-col gap-6 px-4 py-6 md:px-6">
+              <Outlet />
+            </div>
+          ) : (
+            <PageContainer className={isWidePage ? 'max-w-none' : undefined}>
+              <Outlet />
+            </PageContainer>
+          )}
         </main>
         {footerHtml ? (
           <footer
@@ -364,7 +379,8 @@ export function ConsoleLayout({
           />
         ) : null}
       </SidebarInset>
-    </SidebarProvider>
+      </SidebarProvider>
+    </div>
   )
 }
 

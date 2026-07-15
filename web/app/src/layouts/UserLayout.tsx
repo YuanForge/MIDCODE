@@ -25,11 +25,13 @@ function withTutorialNav(groups: NavGroup[]) {
   })
 }
 
+const userNavGroupsWithTutorial = withTutorialNav(userNavGroups)
+
 export function UserLayout() {
   return (
     <ConsoleLayout
       role="user"
-      groups={withTutorialNav(userNavGroups)}
+      groups={userNavGroupsWithTutorial}
     />
   )
 }

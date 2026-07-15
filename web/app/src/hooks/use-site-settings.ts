@@ -58,6 +58,24 @@ const defaultSettings: SiteSettings = {
   userAgreementContent: '',
 }
 
+let pendingSettingsRequest: ReturnType<typeof publicApi.getSettings> | null = null
+
+function getSettings() {
+  if (pendingSettingsRequest) return pendingSettingsRequest
+
+  const request = publicApi.getSettings()
+  pendingSettingsRequest = request
+  request.then(
+    () => {
+      if (pendingSettingsRequest === request) pendingSettingsRequest = null
+    },
+    () => {
+      if (pendingSettingsRequest === request) pendingSettingsRequest = null
+    },
+  )
+  return request
+}
+
 export function useSiteSettings() {
   const [settings, setSettings] = useState<SiteSettings>(defaultSettings)
   const [loaded, setLoaded] = useState(false)
@@ -65,7 +83,7 @@ export function useSiteSettings() {
   useEffect(() => {
     async function load() {
       try {
-        const response = await publicApi.getSettings()
+        const response = await getSettings()
         const maybeSettings = (response as { settings?: unknown }).settings
         const record =
           maybeSettings && typeof maybeSettings === 'object'
