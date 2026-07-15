@@ -12,8 +12,8 @@ export function EmptyState({
   icon?: ReactNode
 }) {
   return (
-    <Card className="border-dashed">
-      <CardContent className="flex min-h-48 flex-col items-center justify-center gap-3 text-center">
+    <Card className="min-h-50 border-dashed">
+      <CardContent className="flex flex-1 flex-col items-center justify-center gap-3 px-5 py-6 text-center">
         {icon}
         <div className="flex flex-col gap-1">
           <h2 className="text-base font-medium">{title}</h2>

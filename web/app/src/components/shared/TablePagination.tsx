@@ -77,7 +77,13 @@ export function TablePagination({
   const actionsDisabled = rateLimited || total <= 0
 
   return (
-    <div className={cn('flex flex-wrap items-center justify-end gap-2 py-4', className)}>
+    <nav
+      aria-label="表格分页"
+      className={cn(
+        'flex min-h-14 flex-wrap items-center justify-end gap-3 rounded-xl border border-border bg-card px-4 py-3',
+        className,
+      )}
+    >
       <div className="text-sm text-muted-foreground">
         第 {currentPage} 页 / 共 {maxPage} 页
       </div>
@@ -85,15 +91,17 @@ export function TablePagination({
         <Button
           variant="outline"
           size="sm"
+          type="button"
           onClick={() => changePage(currentPage - jumpStep)}
           disabled={actionsDisabled || currentPage <= 1}
         >
-          <ChevronsLeft className="h-4 w-4" />
+          <ChevronsLeft data-icon="inline-start" />
           前 {jumpStep} 页
         </Button>
         <Button
           variant="outline"
           size="sm"
+          type="button"
           onClick={() => changePage(currentPage - 1)}
           disabled={actionsDisabled || currentPage <= 1}
         >
@@ -102,6 +110,7 @@ export function TablePagination({
         <Button
           variant="outline"
           size="sm"
+          type="button"
           onClick={() => changePage(currentPage + 1)}
           disabled={actionsDisabled || currentPage >= maxPage}
         >
@@ -110,11 +119,12 @@ export function TablePagination({
         <Button
           variant="outline"
           size="sm"
+          type="button"
           onClick={() => changePage(currentPage + jumpStep)}
           disabled={actionsDisabled || currentPage >= maxPage}
         >
           后 {jumpStep} 页
-          <ChevronsRight className="h-4 w-4" />
+          <ChevronsRight data-icon="inline-end" />
         </Button>
       </div>
       <form className="flex flex-wrap items-center gap-2" onSubmit={submitPage}>
@@ -123,6 +133,7 @@ export function TablePagination({
           key={currentPage}
           ref={pageInputRef}
           type="number"
+          aria-label="跳转页码"
           min={1}
           max={maxPage}
           defaultValue={currentPage}
@@ -133,7 +144,15 @@ export function TablePagination({
           查询
         </Button>
       </form>
-      {rateLimited ? <div className="basis-full text-right text-xs text-muted-foreground">操作太快，请稍后再试</div> : null}
-    </div>
+      {rateLimited ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="basis-full text-right text-xs text-muted-foreground"
+        >
+          操作太快，请稍后再试
+        </div>
+      ) : null}
+    </nav>
   )
 }
