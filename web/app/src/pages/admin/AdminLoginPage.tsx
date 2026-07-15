@@ -1,7 +1,7 @@
 import type { FormEvent } from 'react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRightIcon, LockKeyholeIcon, ShieldCheckIcon, UserCogIcon } from 'lucide-react'
+import { ArrowRightIcon, ShieldCheckIcon } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -38,68 +38,60 @@ export function AdminLoginPage() {
   }
 
   return (
-    <Card className="w-full max-w-[440px] border-border/80 bg-card/95 shadow-xl shadow-primary/5 backdrop-blur">
-      <CardHeader className="gap-4 px-6 pt-6">
+    <Card className="w-full max-w-[440px] shadow-lg">
+      <CardHeader className="gap-4 px-6 pt-6 sm:px-8 sm:pt-8">
         <Badge variant="secondary" className="w-fit">
-          <ShieldCheckIcon />
+          <ShieldCheckIcon data-icon="inline-start" />
           Admin access
         </Badge>
         <div className="flex flex-col gap-2">
-          <CardTitle className="text-2xl font-semibold tracking-tight">
-            登录管理后台
+          <CardTitle>
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">登录管理后台</h1>
           </CardTitle>
           <CardDescription>
             进入运营、用户、渠道、账务和系统配置中心。
           </CardDescription>
         </div>
       </CardHeader>
-      <CardContent className="px-6">
+      <CardContent className="px-6 sm:px-8">
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <div className="flex flex-col gap-2">
             <Label htmlFor="admin-login-username">管理员账号</Label>
-            <div className="relative">
-              <UserCogIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="admin-login-username"
-                className="h-10 pl-9"
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                placeholder="请输入管理员账号"
-                autoComplete="username"
-                aria-invalid={Boolean(error)}
-                required
-              />
-            </div>
+            <Input
+              id="admin-login-username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              placeholder="请输入管理员账号"
+              autoComplete="username"
+              aria-invalid={Boolean(error)}
+              required
+            />
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="admin-login-password">密码</Label>
-            <div className="relative">
-              <LockKeyholeIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="admin-login-password"
-                className="h-10 pl-9"
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="请输入密码"
-                autoComplete="current-password"
-                aria-invalid={Boolean(error)}
-                required
-              />
-            </div>
+            <Input
+              id="admin-login-password"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="请输入密码"
+              autoComplete="current-password"
+              aria-invalid={Boolean(error)}
+              required
+            />
           </div>
           {error ? (
             <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           ) : null}
-          <Button className="h-10 w-full" type="submit" disabled={submitting}>
+          <Button className="w-full" type="submit" disabled={submitting}>
             {submitting ? '登录中...' : '进入后台'}
             <ArrowRightIcon data-icon="inline-end" />
           </Button>
         </form>
       </CardContent>
-      <CardFooter className="justify-center bg-muted/35 px-6 py-4 text-xs text-muted-foreground">
+      <CardFooter className="justify-center px-6 py-4 text-center text-xs text-muted-foreground sm:px-8">
         管理后台使用独立权限入口，请确认账号来源可信。
       </CardFooter>
     </Card>

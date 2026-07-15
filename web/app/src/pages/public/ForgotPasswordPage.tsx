@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { getApiErrorMessage } from '@/lib/api/http'
@@ -33,28 +33,33 @@ export function ForgotPasswordPage() {
   }
 
   return (
-    <Card className="w-full max-w-xl border-border/70 bg-card/92 shadow-lg">
-      <CardHeader className="flex flex-col gap-3">
+    <Card className="w-full max-w-[440px] shadow-lg">
+      <CardHeader className="gap-2 px-6 pt-6 sm:px-8 sm:pt-8">
         <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
           Password recovery
         </p>
-        <CardTitle className="text-3xl tracking-tight">找回密码</CardTitle>
+        <CardTitle>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">找回密码</h1>
+        </CardTitle>
+        <CardDescription>输入账号绑定邮箱以获取密码重置指引。</CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-6 sm:px-8">
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <div className="flex flex-col gap-2">
-            <Label>邮箱</Label>
+            <Label htmlFor="forgot-password-email">邮箱</Label>
             <Input
+              id="forgot-password-email"
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               placeholder="请输入账号绑定邮箱"
+              autoComplete="email"
             />
           </div>
           {message ? (
-            <div className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-foreground">
-              {message}
-            </div>
+            <Alert>
+              <AlertDescription>{message}</AlertDescription>
+            </Alert>
           ) : null}
           {error ? (
             <Alert variant="destructive">
@@ -65,12 +70,12 @@ export function ForgotPasswordPage() {
             {submitting ? '提交中...' : '发送重置指引'}
           </Button>
         </form>
-        <div className="mt-5 text-sm text-muted-foreground">
-          <Link className="hover:text-foreground" to="/login">
-            返回登录
-          </Link>
-        </div>
       </CardContent>
+      <CardFooter className="justify-center px-6 py-4 text-sm text-muted-foreground sm:px-8">
+        <Link className="hover:text-foreground" to="/login">
+          返回登录
+        </Link>
+      </CardFooter>
     </Card>
   )
 }

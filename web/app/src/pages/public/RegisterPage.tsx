@@ -4,7 +4,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { getApiErrorMessage } from '@/lib/api/http'
@@ -69,34 +69,41 @@ export function RegisterPage() {
   }
 
   return (
-    <Card className="w-full max-w-xl border-border/70 bg-card/92 shadow-lg">
-      <CardHeader className="flex flex-col gap-3">
+    <Card className="w-full max-w-[480px] shadow-lg">
+      <CardHeader className="gap-2 px-6 pt-6 sm:px-8 sm:pt-8">
         <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
           User sign up
         </p>
-        <CardTitle className="text-3xl tracking-tight">创建账号</CardTitle>
+        <CardTitle>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">创建账号</h1>
+        </CardTitle>
+        <CardDescription>使用邮箱验证码创建用户账号。</CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-6 sm:px-8">
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <div className="flex flex-col gap-2">
-            <Label>用户名</Label>
+            <Label htmlFor="register-username">用户名</Label>
             <Input
+              id="register-username"
               value={form.username}
               onChange={(event) =>
                 setForm((current) => ({ ...current, username: event.target.value }))
               }
+              autoComplete="username"
             />
           </div>
           <div className="flex flex-col gap-2">
-            <Label>邮箱</Label>
-            <div className="flex gap-2">
+            <Label htmlFor="register-email">邮箱</Label>
+            <div className="flex flex-col gap-2 sm:flex-row">
               <Input
+                id="register-email"
                 type="email"
                 value={form.email}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, email: event.target.value }))
                 }
                 placeholder="用于账号验证和登录"
+                autoComplete="email"
               />
               <Button
                 type="button"
@@ -113,24 +120,29 @@ export function RegisterPage() {
             ) : null}
           </div>
           <div className="flex flex-col gap-2">
-            <Label>邮箱验证码</Label>
+            <Label htmlFor="register-code">邮箱验证码</Label>
             <Input
+              id="register-code"
               value={form.code}
               onChange={(event) =>
                 setForm((current) => ({ ...current, code: event.target.value }))
               }
               placeholder="请输入收到的 6 位验证码"
               maxLength={6}
+              inputMode="numeric"
+              autoComplete="one-time-code"
             />
           </div>
           <div className="flex flex-col gap-2">
-            <Label>密码</Label>
+            <Label htmlFor="register-password">密码</Label>
             <Input
+              id="register-password"
               type="password"
               value={form.password}
               onChange={(event) =>
                 setForm((current) => ({ ...current, password: event.target.value }))
               }
+              autoComplete="new-password"
             />
           </div>
           {error ? (
@@ -142,13 +154,13 @@ export function RegisterPage() {
             {submitting ? '创建中...' : '创建账号'}
           </Button>
         </form>
-        <div className="mt-5 text-sm text-muted-foreground">
-          已有账号？{' '}
-          <Link className="font-medium text-foreground hover:underline" to="/login">
-            去登录
-          </Link>
-        </div>
       </CardContent>
+      <CardFooter className="justify-center gap-1 px-6 py-4 text-sm text-muted-foreground sm:px-8">
+        <span>已有账号？</span>
+        <Link className="font-medium text-foreground hover:underline" to="/login">
+          去登录
+        </Link>
+      </CardFooter>
     </Card>
   )
 }

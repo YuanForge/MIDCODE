@@ -1,10 +1,11 @@
 import type { FormEvent } from 'react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRightIcon, EyeIcon, EyeOffIcon, KeyRoundIcon, UserRoundIcon } from 'lucide-react'
+import { ArrowRightIcon, EyeIcon, EyeOffIcon, KeyRoundIcon, LoaderCircleIcon, UserRoundIcon } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -76,29 +77,20 @@ export function UserLoginPage() {
   const agreementContent = settings.userAgreementContent.trim()
 
   return (
-    <div className="w-full max-w-[420px]">
-      {/* 顶部渐变装饰条 */}
-      <div className="h-1 w-full rounded-t-2xl bg-gradient-to-r from-primary/60 via-primary to-primary/60" />
-
-      <div className="rounded-b-2xl border border-t-0 border-border/70 bg-card/95 shadow-2xl shadow-primary/8 backdrop-blur-sm">
-        {/* 头部 */}
-        <div className="px-8 pb-6 pt-8">
+    <Card className="w-full max-w-[440px] shadow-lg">
+      <CardHeader className="gap-2 px-6 pt-6 sm:px-8 sm:pt-8">
           <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary/70">
             User sign in
           </p>
-          <h2 className="text-[1.65rem] font-semibold tracking-tight text-foreground">
-            登录用户控制台
-          </h2>
-          <p className="mt-1.5 text-sm text-muted-foreground">
+          <CardTitle>
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">登录用户端</h1>
+          </CardTitle>
+          <CardDescription>
             管理 API Key、调用统计、账单余额和生成任务。
-          </p>
-        </div>
+          </CardDescription>
+      </CardHeader>
 
-        {/* 分割线 */}
-        <div className="mx-8 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
-
-        {/* 表单区 */}
-        <div className="px-8 py-6">
+      <CardContent className="px-6 sm:px-8">
           <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="user-login-username" className="text-sm font-medium">
@@ -215,24 +207,24 @@ export function UserLoginPage() {
             ) : null}
 
             <Button
-              className="h-11 w-full rounded-xl text-sm font-semibold shadow-sm shadow-primary/20 transition-all hover:shadow-md hover:shadow-primary/25"
+              className="w-full"
               type="submit"
               disabled={submitting}
             >
               {submitting ? (
                 <span className="flex items-center gap-2">
-                  <span className="size-4 animate-spin rounded-full border-2 border-primary-foreground/30 border-t-primary-foreground" />
+                  <LoaderCircleIcon className="animate-spin" data-icon="inline-start" />
                   登录中...
                 </span>
               ) : (
                 <span className="flex items-center gap-1.5">
                   登录
-                  <ArrowRightIcon className="size-4" />
+                  <ArrowRightIcon data-icon="inline-end" />
                 </span>
               )}
             </Button>
           </form>
-        </div>
+      </CardContent>
 
         <Dialog open={agreementOpen} onOpenChange={setAgreementOpen}>
           <DialogContent className="max-h-[82vh] overflow-hidden sm:max-w-3xl">
@@ -245,8 +237,7 @@ export function UserLoginPage() {
           </DialogContent>
         </Dialog>
 
-        {/* 底部注册区 */}
-        <div className="flex items-center justify-center gap-1 rounded-b-2xl border-t border-border/50 bg-muted/30 px-8 py-4 text-sm text-muted-foreground">
+      <CardFooter className="justify-center gap-1 px-6 py-4 text-sm text-muted-foreground sm:px-8">
           <span>还没有账号？</span>
           <Link
             to="/register"
@@ -254,8 +245,7 @@ export function UserLoginPage() {
           >
             立即注册
           </Link>
-        </div>
-      </div>
-    </div>
+      </CardFooter>
+    </Card>
   )
 }
