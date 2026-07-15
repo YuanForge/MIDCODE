@@ -1,12 +1,14 @@
 import { useState } from 'react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
+import { FilterBar } from '@/components/shared/FilterBar'
 import { TableEmpty } from '@/components/shared/TableEmpty'
+import { TablePagination } from '@/components/shared/TablePagination'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
@@ -35,8 +37,6 @@ export function AdminAuditPage() {
     return { logs: res.logs ?? [], total: res.total ?? 0 }
   }, { logs: [] as AdminAuditLog[], total: 0 }, [page, filterAction, filterResource])
 
-  const totalPages = Math.ceil(data.total / pageSize)
-
   return (
     <>
       <PageHeader
@@ -50,8 +50,9 @@ export function AdminAuditPage() {
         </Alert>
       ) : null}
 
-      <Card>
-        <CardContent className="flex flex-wrap items-end gap-3 py-4">
+      <FilterBar
+        filters={
+          <>
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground">操作类型</label>
             <Input className="w-36" placeholder="如：create" value={filterAction}
@@ -72,12 +73,15 @@ export function AdminAuditPage() {
               </SelectContent>
             </Select>
           </div>
+          </>
+        }
+        actions={
           <Button variant="outline" onClick={() => { setFilterAction(''); setFilterResource(''); setPage(1) }}>重置</Button>
-        </CardContent>
-      </Card>
+        }
+      />
 
-      <Card>
-        <Table>
+      <Card className="overflow-hidden">
+        <Table className="min-w-[1040px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-16">ID</TableHead>
@@ -116,15 +120,8 @@ export function AdminAuditPage() {
             </TableBody>
           )}
         </Table>
-        {totalPages > 1 ? (
-          <CardContent className="flex items-center justify-between border-t py-3">
-            <span className="text-sm text-muted-foreground">共 {data.total} 条</span>
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>上一页</Button>
-              <span className="text-sm text-muted-foreground">{page} / {totalPages}</span>
-              <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>下一页</Button>
-            </div>
-          </CardContent>
+        {data.total > 0 ? (
+          <TablePagination current={page} total={data.total} pageSize={pageSize} onChange={setPage} className="rounded-none border-x-0 border-b-0" />
         ) : null}
       </Card>
     </>

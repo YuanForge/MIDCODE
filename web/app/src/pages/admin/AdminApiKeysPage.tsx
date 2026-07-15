@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { BanIcon, KeyIcon } from 'lucide-react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
+import { FilterBar } from '@/components/shared/FilterBar'
 import { TableEmpty } from '@/components/shared/TableEmpty'
+import { TablePagination } from '@/components/shared/TablePagination'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
@@ -17,7 +19,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
   Table,
@@ -46,8 +48,6 @@ export function AdminApiKeysPage() {
 
   const [mutError, setMutError] = useState('')
   const [pendingRevokeId, setPendingRevokeId] = useState<number | null>(null)
-  const totalPages = Math.ceil(data.total / pageSize)
-
   async function executeRevoke() {
     if (pendingRevokeId == null) return
     setMutError('')
@@ -80,8 +80,9 @@ export function AdminApiKeysPage() {
         </Alert>
       ) : null}
 
-      <Card>
-        <CardContent className="flex flex-wrap items-end gap-3 py-4">
+      <FilterBar
+        filters={
+          <>
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground">用户邮箱</label>
             <Input className="w-52" placeholder="搜索邮箱…" value={filterEmail}
@@ -94,13 +95,18 @@ export function AdminApiKeysPage() {
               onChange={(e) => setFilterUserId(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()} />
           </div>
+          </>
+        }
+        actions={
+          <>
           <Button onClick={handleSearch}>查询</Button>
           <Button variant="outline" onClick={() => { setFilterEmail(''); setFilterUserId(''); setPage(1) }}>重置</Button>
-        </CardContent>
-      </Card>
+          </>
+        }
+      />
 
-      <Card>
-        <Table>
+      <Card className="overflow-hidden">
+        <Table className="min-w-[980px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-16">ID</TableHead>
@@ -149,15 +155,8 @@ export function AdminApiKeysPage() {
             </TableBody>
           )}
         </Table>
-        {totalPages > 1 ? (
-          <CardContent className="flex items-center justify-between border-t py-3">
-            <span className="text-sm text-muted-foreground">共 {data.total} 条</span>
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>上一页</Button>
-              <span className="text-sm text-muted-foreground">{page} / {totalPages}</span>
-              <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>下一页</Button>
-            </div>
-          </CardContent>
+        {data.total > 0 ? (
+          <TablePagination current={page} total={data.total} pageSize={pageSize} onChange={setPage} className="rounded-none border-x-0 border-b-0" />
         ) : null}
       </Card>
 

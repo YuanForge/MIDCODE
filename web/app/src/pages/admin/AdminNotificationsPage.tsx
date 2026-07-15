@@ -99,8 +99,8 @@ export function AdminNotificationsPage() {
         </Alert>
       ) : null}
 
-      <Card>
-        <Table>
+      <Card className="overflow-hidden">
+        <Table className="min-w-[920px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-16">ID</TableHead>

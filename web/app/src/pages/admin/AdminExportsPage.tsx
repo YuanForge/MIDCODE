@@ -83,8 +83,8 @@ export function AdminExportsPage() {
         </Alert>
       ) : null}
 
-      <Card>
-        <Table>
+      <Card className="overflow-hidden">
+        <Table className="min-w-[1040px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-16">ID</TableHead>

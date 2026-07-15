@@ -142,15 +142,15 @@ export function AdminCouponsPage() {
         </Alert>
       ) : null}
 
-      <Card>
-        <Table>
+      <Card className="overflow-hidden">
+        <Table className="min-w-[1040px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-16">ID</TableHead>
               <TableHead>兑换码</TableHead>
               <TableHead>名称</TableHead>
-              <TableHead className="w-28">优惠</TableHead>
-              <TableHead className="w-28">最低消费</TableHead>
+              <TableHead className="w-28 text-right">优惠</TableHead>
+              <TableHead className="w-28 text-right">最低消费</TableHead>
               <TableHead className="w-20 text-right">已用/总量</TableHead>
               <TableHead className="w-40">有效期</TableHead>
               <TableHead className="text-right">操作</TableHead>
@@ -167,12 +167,12 @@ export function AdminCouponsPage() {
                   <TableCell>{c.id}</TableCell>
                   <TableCell className="font-mono text-sm">{c.code}</TableCell>
                   <TableCell className="font-medium">{c.title}</TableCell>
-                  <TableCell>
+                  <TableCell className="text-right tabular-nums">
                     {isVoided
                       ? <Badge variant="secondary">已作废</Badge>
                       : <Badge variant="outline">{discountLabel(c)}</Badge>}
                   </TableCell>
-                  <TableCell>{c.min_amount ? `¥${((c.min_amount ?? 0) / 100).toFixed(2)}` : '-'}</TableCell>
+                  <TableCell className="text-right tabular-nums">{c.min_amount ? `¥${((c.min_amount ?? 0) / 100).toFixed(2)}` : '-'}</TableCell>
                   <TableCell className="text-right text-sm">
                     {c.used_count ?? 0} / {c.total_count ?? '∞'}
                   </TableCell>

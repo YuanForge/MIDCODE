@@ -2,12 +2,14 @@ import { useState } from 'react'
 import { AlertTriangleIcon, CheckCircleIcon } from 'lucide-react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
+import { FilterBar } from '@/components/shared/FilterBar'
 import { TableEmpty } from '@/components/shared/TableEmpty'
+import { TablePagination } from '@/components/shared/TablePagination'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Table,
@@ -39,8 +41,6 @@ export function AdminAlertsPage() {
   }, { alerts: [] as AdminAlert[], total: 0 }, [page, filterStatus])
 
   const [mutError, setMutError] = useState('')
-  const totalPages = Math.ceil(data.total / pageSize)
-
   async function handleAck(id: number) {
     setMutError('')
     try {
@@ -76,8 +76,8 @@ export function AdminAlertsPage() {
         </Alert>
       ) : null}
 
-      <Card>
-        <CardContent className="flex items-end gap-3 py-4">
+      <FilterBar
+        filters={
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground">状态</label>
             <Select value={filterStatus || '_all'} onValueChange={(v) => { setFilterStatus(v === '_all' ? '' : v); setPage(1) }}>
@@ -90,12 +90,14 @@ export function AdminAlertsPage() {
               </SelectContent>
             </Select>
           </div>
+        }
+        actions={
           <Button variant="outline" onClick={() => { setFilterStatus(''); setPage(1) }}>重置</Button>
-        </CardContent>
-      </Card>
+        }
+      />
 
-      <Card>
-        <Table>
+      <Card className="overflow-hidden">
+        <Table className="min-w-[900px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-16">ID</TableHead>
@@ -144,15 +146,8 @@ export function AdminAlertsPage() {
             </TableBody>
           )}
         </Table>
-        {totalPages > 1 ? (
-          <CardContent className="flex items-center justify-between border-t py-3">
-            <span className="text-sm text-muted-foreground">共 {data.total} 条</span>
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>上一页</Button>
-              <span className="text-sm text-muted-foreground">{page} / {totalPages}</span>
-              <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>下一页</Button>
-            </div>
-          </CardContent>
+        {data.total > 0 ? (
+          <TablePagination current={page} total={data.total} pageSize={pageSize} onChange={setPage} className="rounded-none border-x-0 border-b-0" />
         ) : null}
       </Card>
     </>

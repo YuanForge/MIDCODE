@@ -216,8 +216,8 @@ export function AdminResellersPage() {
               <TableHead>ID</TableHead>
               <TableHead>代理商</TableHead>
               <TableHead>联系人</TableHead>
-              <TableHead>Key</TableHead>
-              <TableHead>站点</TableHead>
+              <TableHead className="text-right">Key</TableHead>
+              <TableHead className="text-right">站点</TableHead>
               <TableHead>状态</TableHead>
               <TableHead>创建时间</TableHead>
               <TableHead className="text-right">操作</TableHead>
@@ -243,8 +243,8 @@ export function AdminResellersPage() {
                       <div>{row.contact_name || '-'}</div>
                       <div className="text-xs text-muted-foreground">{row.phone || '-'}</div>
                     </TableCell>
-                    <TableCell>{row.key_count ?? 0}</TableCell>
-                    <TableCell>{row.site_count ?? 0}</TableCell>
+                    <TableCell className="text-right tabular-nums">{row.key_count ?? 0}</TableCell>
+                    <TableCell className="text-right tabular-nums">{row.site_count ?? 0}</TableCell>
                     <TableCell>
                       <Badge variant={row.is_active === false ? 'secondary' : 'default'}>
                         {row.is_active === false ? '停用' : '启用'}
@@ -277,7 +277,7 @@ export function AdminResellersPage() {
               <TableHead>状态</TableHead>
               <TableHead>DB</TableHead>
               <TableHead>Redis</TableHead>
-              <TableHead>端口</TableHead>
+              <TableHead className="text-right">端口</TableHead>
               <TableHead>NATS</TableHead>
               <TableHead>目录</TableHead>
               <TableHead>创建时间</TableHead>
@@ -303,7 +303,7 @@ export function AdminResellersPage() {
                     </TableCell>
                     <TableCell className="font-mono text-xs">{row.db_name ?? '-'}</TableCell>
                     <TableCell className="font-mono text-xs">{row.redis_db ?? '-'}</TableCell>
-                    <TableCell className="font-mono text-xs">{row.app_port ?? '-'}</TableCell>
+                    <TableCell className="text-right font-mono text-xs tabular-nums">{row.app_port ?? '-'}</TableCell>
                     <TableCell className="max-w-[180px] truncate font-mono text-xs">{row.nats_namespace ?? '-'}</TableCell>
                     <TableCell className="max-w-[260px] truncate font-mono text-xs text-muted-foreground">{row.code_path ?? '-'}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{formatTime(row.created_at)}</TableCell>

@@ -113,15 +113,17 @@ export function AdminVendorsPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
-      <Card>
-        <Table>
+      <Card className="overflow-hidden">
+        <Table className="min-w-[1040px]">
           <TableHeader>
             <TableRow>
               <TableHead>ID</TableHead>
               <TableHead>名称</TableHead>
-              <TableHead>邮箱</TableHead>              <TableHead>注册码</TableHead>              <TableHead>余额</TableHead>
+              <TableHead>邮箱</TableHead>
+              <TableHead>注册码</TableHead>
+              <TableHead className="text-right">余额</TableHead>
               <TableHead>状态</TableHead>
-              <TableHead>佣金/费率</TableHead>
+              <TableHead className="text-right">佣金/费率</TableHead>
               <TableHead>注册时间</TableHead>
               <TableHead className="text-right">操作</TableHead>
             </TableRow>
@@ -144,7 +146,7 @@ export function AdminVendorsPage() {
                     <TableCell>{row.username ?? row.name ?? '-'}</TableCell>
                     <TableCell>{row.email ?? '-'}</TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">{row.invite_code ?? '-'}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-right tabular-nums">
                       ¥{((row.balance ?? row.balance_credits ?? 0) / 1_000_000).toFixed(4)}
                     </TableCell>
                     <TableCell>
@@ -152,7 +154,7 @@ export function AdminVendorsPage() {
                         {(row.is_active ?? row.enabled ?? true) ? '启用' : '停用'}
                       </Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="text-right tabular-nums">
                       {(row.commission_ratio ?? row.fee_ratio) != null
                         ? `${((row.commission_ratio ?? row.fee_ratio ?? 0) * 100).toFixed(2)}%`
                         : '—（全局）'}
