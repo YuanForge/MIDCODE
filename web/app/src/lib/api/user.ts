@@ -103,6 +103,24 @@ export interface UserLogUsage {
   actual_speed?: string;
 }
 
+export type TokenUsageRow = {
+  model: string
+  non_cached_input_tokens: number
+  cache_read_tokens: number
+  cache_creation_tokens: number
+  output_tokens: number
+  total_tokens: number
+}
+
+export type TokenStatsResponse = {
+  items: TokenUsageRow[]
+  page: number
+  page_size: number
+  total: number
+  start_at: string
+  end_at: string
+}
+
 export type UserLog = {
   id?: number
   model?: string
@@ -199,6 +217,8 @@ export const userApi = {
   getProfile: () => http.get<UserProfileResponse>('/user/profile'),
   getBalance: () => http.get<UserBalanceResponse>('/user/balance'),
   getStats: () => http.get<UserStatsResponse>('/user/stats'),
+  getTokenStats: (params: { start_at: string; end_at: string; model?: string; page: number; page_size: number }) =>
+    http.get<TokenStatsResponse>('/user/stats/tokens', { params }),
   getTransactions: (page = 1, size = 20, taskId?: string, corrId?: string) =>
     http.get<{ items?: UserTransaction[]; transactions?: UserTransaction[]; total?: number }>('/user/transactions', {
       params: { page, size, ...(taskId ? { task_id: taskId } : {}), ...(corrId ? { corr_id: corrId } : {}) },

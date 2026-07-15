@@ -1,9 +1,30 @@
 package handler
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestUserTokenStatsQueryContract(t *testing.T) {
+	for _, fragment := range []string{
+		"JOIN channels c ON c.id = ll.channel_id",
+		"ll.user_id = ?",
+		"ll.status = 'ok'",
+		"ll.created_at >= ?",
+		"ll.created_at < ?",
+		"LOWER(COALESCE(c.protocol, 'openai'))",
+		"GROUP BY ll.model",
+		"ORDER BY total_tokens DESC",
+	} {
+		if !strings.Contains(userTokenStatsQuery, fragment) {
+			t.Fatalf("query missing %q", fragment)
+		}
+	}
+	if strings.Contains(strings.ToLower(userTokenStatsQuery), "other") {
+		t.Fatal("query must not introduce an Other model bucket")
+	}
+}
 
 func TestNormalizeTokenUsage(t *testing.T) {
 	tests := []struct {

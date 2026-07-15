@@ -1,11 +1,17 @@
+import { useState, type FormEvent } from 'react'
+import { BarChart3Icon, SearchIcon } from 'lucide-react'
+
+import { DateRangeFilter } from '@/components/shared/DateRangeFilter'
+import { FilterBar } from '@/components/shared/FilterBar'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { StatCard } from '@/components/shared/StatCard'
-import { TrendChart, DualTrendChart } from '@/components/shared/TrendChart'
+import { TableEmpty } from '@/components/shared/TableEmpty'
+import { TablePagination } from '@/components/shared/TablePagination'
+import { TableSkeleton } from '@/components/shared/TableSkeleton'
+import { TokenUsageBarChart } from '@/components/shared/TokenUsageBarChart'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import {
   Table,
   TableBody,
@@ -14,158 +20,107 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { userApi, type UserStatsResponse } from '@/lib/api/user'
-import { formatCredits } from '@/lib/formatters/credits'
 import { useAsync } from '@/hooks/use-async'
+import { userApi, type TokenStatsResponse } from '@/lib/api/user'
+import { formatTokenCount, tokenStatsTodayRange } from '@/lib/token-usage'
 
-function buildDailyTable(stats: UserStatsResponse) {
-  const days: string[] = []
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    const label = `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    days.push(label)
-  }
-  return days.map((label) => {
-    const creditsEntry = (stats.daily_credits ?? []).find((r) => r.day === label)
-    const reqEntry = (stats.daily_requests ?? []).find((r) => r.day === label)
-    const success = reqEntry?.success ?? 0
-    const failed = reqEntry?.failed ?? 0
-    const total = success + failed
-    const rate = total > 0 ? Math.round((success / total) * 100) : 100
-    return { label, credits: creditsEntry?.credits ?? 0, success, failed, total, rate }
-  })
-}
+const pageSize = 20
 
 export function UserStatsPage() {
-  const { data: stats, loading, error, reload } = useAsync(
-    () => userApi.getStats(),
-    {} as UserStatsResponse,
+  const [range, setRange] = useState(tokenStatsTodayRange)
+  const [modelDraft, setModelDraft] = useState('')
+  const [model, setModel] = useState('')
+  const [page, setPage] = useState(1)
+  const { data, loading, error, reload } = useAsync(
+    () => userApi.getTokenStats({
+      start_at: range.startAt,
+      end_at: range.endAt,
+      model: model || undefined,
+      page,
+      page_size: pageSize,
+    }),
+    { items: [], page: 1, page_size: pageSize, total: 0, start_at: '', end_at: '' } as TokenStatsResponse,
+    [range.startAt, range.endAt, model, page],
   )
 
-  const daily = buildDailyTable(stats)
-  const totalRequests = daily.reduce((s, r) => s + r.total, 0)
-  const creditsTrend = daily.map((row) => ({ label: row.label, value: row.credits / 1e6 }))
-  const requestTrend = daily.map((row) => ({ label: row.label, success: row.success, failed: row.failed }))
+  function search(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setPage(1)
+    setModel(modelDraft.trim())
+  }
 
   return (
     <>
       <PageHeader
-        eyebrow="Metrics"
-        title="使用统计"
-        description="查看积分消耗趋势与最近 7 天的调用统计。"
-        actions={
-          error ? (
-            <Button size="sm" variant="outline" onClick={reload}>
-              重试
-            </Button>
-          ) : null
+        eyebrow="Token Usage"
+        title="Token 统计"
+        description="按精确模型查看输入、缓存与输出 Token。"
+        actions={error ? <Button variant="outline" onClick={reload}>重试</Button> : null}
+      />
+      {error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
+
+      <FilterBar
+        filters={
+          <>
+            <DateRangeFilter
+              label="时间"
+              startAt={range.startAt}
+              endAt={range.endAt}
+              onChange={(next) => { setRange(next); setPage(1) }}
+            />
+            <form className="flex items-end gap-2" onSubmit={search}>
+              <Input
+                className="w-56"
+                value={modelDraft}
+                onChange={(event) => setModelDraft(event.target.value)}
+                placeholder="搜索精确模型名"
+                aria-label="模型名称"
+              />
+              <Button type="submit">
+                <SearchIcon data-icon="inline-start" />查询
+              </Button>
+            </form>
+          </>
         }
       />
-      {error ? (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      ) : null}
-      <div className="grid gap-4 md:grid-cols-3">
-        <StatCard
-          title="累计消耗积分"
-          value={formatCredits(stats.total_consumed ?? 0)}
-          loading={loading}
-        />
-        <StatCard
-          title="今日消耗积分"
-          value={formatCredits(stats.today_consumed ?? 0)}
-          loading={loading}
-        />
-        <StatCard
-          title="累计请求次数"
-          value={String(totalRequests)}
-          hint="最近 7 天"
-          loading={loading}
-        />
-      </div>
 
-      {loading ? (
-        <div className="grid gap-4 xl:grid-cols-2">
-          <Card><CardContent className="p-6"><Skeleton className="h-64 w-full" /></CardContent></Card>
-          <Card><CardContent className="p-6"><Skeleton className="h-64 w-full" /></CardContent></Card>
-        </div>
-      ) : (stats.daily_credits ?? []).length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center text-sm text-muted-foreground">
-            暂无最近 7 天统计数据。
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4 xl:grid-cols-2">
-          <TrendChart
-            title="积分消耗趋势（最近 7 天）"
-            points={creditsTrend}
-            color="#2563eb"
-            formatValue={(value) => `${value.toFixed(2)} 积分`}
-          />
-          <DualTrendChart title="请求次数统计（最近 7 天）" points={requestTrend} />
-        </div>
-      )}
+      {!loading && data.items.length > 0 ? <TokenUsageBarChart rows={data.items} /> : null}
 
-      {/* 每日明细表 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>每日请求明细</CardTitle>
-        </CardHeader>
-        <Table>
+      <Card className="overflow-hidden">
+        <Table className="min-w-[980px]">
           <TableHeader>
             <TableRow>
-              <TableHead>日期</TableHead>
-              <TableHead className="text-right">消耗积分</TableHead>
-              <TableHead className="text-right">成功请求</TableHead>
-              <TableHead className="text-right">失败请求</TableHead>
-              <TableHead>成功率</TableHead>
+              <TableHead>模型</TableHead>
+              <TableHead className="text-right">非缓存输入</TableHead>
+              <TableHead className="text-right">缓存读取</TableHead>
+              <TableHead className="text-right">缓存写入</TableHead>
+              <TableHead className="text-right">输出</TableHead>
+              <TableHead className="text-right">总 Token</TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
-            {loading ? (
-              Array.from({ length: 7 }).map((_, i) => (
-                <TableRow key={i}>
-                  {Array.from({ length: 5 }).map((_, j) => (
-                    <TableCell key={j}><Skeleton className="h-4 w-20" /></TableCell>
-                  ))}
+          {loading ? (
+            <TableSkeleton cols={6} />
+          ) : (
+            <TableBody>
+              {data.items.length === 0 ? (
+                <TableEmpty cols={6} Icon={BarChart3Icon} title="暂无 Token 使用记录" description="当前模型或时间范围内没有成功调用。" />
+              ) : data.items.map((row) => (
+                <TableRow key={row.model}>
+                  <TableCell className="font-mono text-xs">{row.model}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{formatTokenCount(row.non_cached_input_tokens)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{formatTokenCount(row.cache_read_tokens)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{formatTokenCount(row.cache_creation_tokens)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{formatTokenCount(row.output_tokens)}</TableCell>
+                  <TableCell className="text-right font-mono font-semibold tabular-nums">{formatTokenCount(row.total_tokens)}</TableCell>
                 </TableRow>
-              ))
-            ) : daily.map((row) => (
-              <TableRow key={row.label}>
-                <TableCell>{row.label}</TableCell>
-                <TableCell className="text-right font-semibold text-blue-600">
-                  {formatCredits(row.credits)}
-                </TableCell>
-                <TableCell className="text-right">
-                  {row.success > 0 ? (
-                    <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white">{row.success}</Badge>
-                  ) : <span className="text-muted-foreground">0</span>}
-                </TableCell>
-                <TableCell className="text-right">
-                  {row.failed > 0 ? (
-                    <Badge variant="destructive">{row.failed}</Badge>
-                  ) : <span className="text-muted-foreground">0</span>}
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <div className="h-2 w-24 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${row.rate >= 90 ? 'bg-emerald-500' : row.rate >= 70 ? 'bg-yellow-500' : 'bg-red-500'}`}
-                        style={{ width: `${row.rate}%` }}
-                      />
-                    </div>
-                    <span className="text-xs text-muted-foreground">{row.rate}%</span>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
+              ))}
+            </TableBody>
+          )}
         </Table>
+        {data.total > 0 ? (
+          <TablePagination current={page} total={data.total} pageSize={pageSize} onChange={setPage} className="rounded-none border-x-0 border-b-0" />
+        ) : null}
       </Card>
     </>
   )
 }
-
