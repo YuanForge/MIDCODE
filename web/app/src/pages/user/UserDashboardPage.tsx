@@ -5,18 +5,17 @@ import {
   BlocksIcon,
   CheckIcon,
   CopyIcon,
-  CreditCardIcon,
   KeySquareIcon,
   MessageSquareIcon,
   ImageIcon,
   ShoppingCartIcon,
-  SparklesIcon,
-  TrendingUpIcon,
 } from 'lucide-react'
-import { StatCard } from '@/components/shared/StatCard'
+import { PageHeader } from '@/components/shared/PageHeader'
+import { PageSection } from '@/components/shared/PageSection'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import { copyToClipboard } from '@/lib/clipboard'
 import { userApi, type UserStatsResponse } from '@/lib/api/user'
 import { formatCredits } from '@/lib/formatters/credits'
@@ -66,12 +65,15 @@ export function UserDashboardPage() {
 
   return (
     <>
+      <PageHeader
+        eyebrow="Overview"
+        title="用户数据看板"
+        description="查看账户余额与积分消耗，并快速进入常用功能。"
+        actions={error ? <Button size="sm" variant="outline" onClick={reload}>重试</Button> : null}
+      />
       {error ? (
         <Alert variant="destructive">
-          <AlertDescription className="flex items-center justify-between">
-            <span>{error}</span>
-            <Button size="sm" variant="outline" onClick={reload}>重试</Button>
-          </AlertDescription>
+          <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
       {settings.noticeTitle && (
@@ -84,42 +86,31 @@ export function UserDashboardPage() {
           </AlertDescription>
         </Alert>
       )}
-      <div className="grid gap-4 xl:grid-cols-3">
-        <StatCard
-          title="剩余积分"
-          value={formatCredits(data.balance)}
-          icon={<CreditCardIcon />}
-          loading={loading}
-          variant="info"
-        />
-        <StatCard
-          title="累计消耗积分"
-          value={formatCredits(data.totalConsumed)}
-          icon={<TrendingUpIcon />}
-          loading={loading}
-          variant="success"
-        />
-        <StatCard
-          title="今日消耗积分"
-          value={formatCredits(data.todayConsumed)}
-          icon={<SparklesIcon />}
-          loading={loading}
-          variant="warning"
-        />
-      </div>
-
       <Card>
-        <CardHeader>
-          <CardTitle>快速开始</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2">
+        <CardContent className="grid gap-0 p-0 sm:grid-cols-3">
+          {[
+            ['剩余积分', data.balance],
+            ['累计消耗积分', data.totalConsumed],
+            ['今日消耗积分', data.todayConsumed],
+          ].map(([label, value], index) => (
+            <div key={label} className="flex min-h-28 flex-col justify-center gap-2 border-b px-5 py-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
+              <p className="text-sm text-muted-foreground">{label}</p>
+              {loading ? <Skeleton className="h-8 w-28" /> : <p className="text-2xl font-semibold tracking-tight tabular-nums">{formatCredits(value as number)}</p>}
+              {index === 0 ? <p className="text-xs text-muted-foreground">当前可用账户余额</p> : null}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <PageSection title="快速开始" description="按顺序完成密钥创建、模型查看和接口体验。">
+        <div className="flex flex-col divide-y">
           {guideSteps.map((step) => (
             <Link
               key={step.num}
               to={step.to}
-              className="group flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2.5 text-sm transition hover:border-primary/40 hover:bg-primary/5"
+              className="group flex items-center gap-3 px-1 py-3 text-sm transition-colors hover:bg-muted/50"
             >
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-md border bg-background text-xs font-semibold text-foreground">
                 {step.num}
               </span>
               <step.Icon className="size-4 text-muted-foreground" />
@@ -129,11 +120,11 @@ export function UserDashboardPage() {
               </span>
             </Link>
           ))}
-        </CardContent>
-      </Card>
+        </div>
+      </PageSection>
 
-      <Alert>
-        <AlertDescription className="flex flex-wrap items-center gap-2">
+      <PageSection title="API 网关" description="OpenAI 兼容接口使用当前站点地址作为模型基址。">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm">本站大模型接口网关：</span>
           <code className="rounded bg-muted px-2 py-1 font-mono text-xs">{apiBase || '—'}</code>
           <Button size="sm" variant="ghost" onClick={copyApiBase} disabled={!apiBase}>
@@ -143,29 +134,23 @@ export function UserDashboardPage() {
           <span className="text-xs text-muted-foreground">
             将模型基址替换为该网关，完全兼容 OpenAI 协议。
           </span>
-        </AlertDescription>
-      </Alert>
+        </div>
+      </PageSection>
 
       {(settings.contactInfo || settings.qqGroupUrl || settings.wechatCsUrl) && (
         <div className="grid gap-4 xl:grid-cols-[1fr_auto]">
           {settings.contactInfo && (
-            <Card>
-              <CardHeader>
-                <CardTitle>联系方式</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-2 text-sm text-muted-foreground">
+            <PageSection title="联系方式">
+              <div className="flex flex-col gap-2 text-sm text-muted-foreground">
                 {settings.contactInfo.split('\n').filter(Boolean).map((line, i) => (
                   <p key={i}>{line}</p>
                 ))}
-              </CardContent>
-            </Card>
+              </div>
+            </PageSection>
           )}
           {(settings.qqGroupUrl || settings.wechatCsUrl) && (
-            <Card>
-              <CardHeader>
-                <CardTitle>扫码联系</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-wrap gap-4">
+            <PageSection title="扫码联系">
+              <div className="flex flex-wrap gap-4">
                 {settings.qqGroupUrl && (
                   <div className="flex flex-col items-center gap-1">
                     <img src={settings.qqGroupUrl} alt="QQ 交流群" className="h-48 w-48 rounded-lg border object-contain p-1" />
@@ -178,8 +163,8 @@ export function UserDashboardPage() {
                     <span className="text-xs text-muted-foreground">微信客服</span>
                   </div>
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </PageSection>
           )}
         </div>
       )}

@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { KeyRoundIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 
-import { EmptyState } from '@/components/shared/EmptyState'
+import { FilterBar } from '@/components/shared/FilterBar'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { TableEmpty } from '@/components/shared/TableEmpty'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
@@ -133,9 +134,10 @@ export function UserKeysPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
+      <FilterBar filters={<p className="text-sm text-muted-foreground">共 {keys.length} 个密钥</p>} />
       {loading ? (
-        <Card>
-          <Table>
+        <Card className="overflow-hidden">
+          <Table className="min-w-[860px]">
             <TableHeader>
               <TableRow>
                 <TableHead>名称</TableHead>
@@ -151,14 +153,32 @@ export function UserKeysPage() {
           </Table>
         </Card>
       ) : keys.length === 0 ? (
-        <EmptyState
-          icon={<KeyRoundIcon className="size-6 text-muted-foreground" />}
-          title="还没有 API 密钥"
-          description="点击右上角「新建密钥」即可创建，生成后的完整密钥只会展示一次。"
-        />
+        <Card className="overflow-hidden">
+          <Table className="min-w-[860px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead>名称</TableHead>
+                <TableHead>Key</TableHead>
+                <TableHead>类型</TableHead>
+                <TableHead className="text-right">今日消耗</TableHead>
+                <TableHead className="text-right">累计消耗</TableHead>
+                <TableHead>状态</TableHead>
+                <TableHead className="text-right">操作</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableEmpty
+                cols={7}
+                Icon={KeyRoundIcon}
+                title="还没有 API 密钥"
+                description="点击右上角「新建密钥」即可创建，生成后的完整密钥只会展示一次。"
+              />
+            </TableBody>
+          </Table>
+        </Card>
       ) : (
-        <Card>
-          <Table>
+        <Card className="overflow-hidden">
+          <Table className="min-w-[860px]">
             <TableHeader>
               <TableRow>
                 <TableHead>名称</TableHead>
@@ -186,7 +206,7 @@ export function UserKeysPage() {
                     <span
                       className={
                         (item.today_consumed ?? 0) > 0
-                          ? 'font-semibold text-red-500'
+                          ? 'font-semibold text-destructive'
                           : 'text-muted-foreground'
                       }
                     >
@@ -197,7 +217,7 @@ export function UserKeysPage() {
                     <span
                       className={
                         (item.total_consumed ?? 0) > 0
-                          ? 'font-semibold text-red-500'
+                          ? 'font-semibold text-destructive'
                           : 'text-muted-foreground'
                       }
                     >

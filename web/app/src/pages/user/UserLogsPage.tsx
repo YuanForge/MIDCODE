@@ -3,6 +3,7 @@ import { FileClockIcon, Loader2, Search } from 'lucide-react'
 
 import { useAsync } from '@/hooks/use-async'
 import { DateRangeFilter, formatDateTimeFilterValue } from '@/components/shared/DateRangeFilter'
+import { FilterBar } from '@/components/shared/FilterBar'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { TableEmpty } from '@/components/shared/TableEmpty'
 import { TablePagination } from '@/components/shared/TablePagination'
@@ -10,7 +11,7 @@ import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/select'
 import {
@@ -32,13 +33,13 @@ import { formatCredits, formatTokenPricePerMillion } from '@/lib/formatters/cred
 
 function renderStatus(status?: string) {
   if (status === 'ok') {
-    return <Badge variant="secondary" className="bg-green-100 text-green-800">成功</Badge>
+    return <Badge variant="secondary">成功</Badge>
   }
   if (status === 'error') {
     return <Badge variant="destructive">失败</Badge>
   }
   if (status === 'refunded') {
-    return <Badge variant="outline" className="border-orange-200 text-orange-600">已退款</Badge>
+    return <Badge variant="outline">已退款</Badge>
   }
   if (status === 'pending') {
     return <Badge variant="secondary">进行中</Badge>
@@ -127,9 +128,9 @@ export function UserLogsPage() {
         </Alert>
       ) : null}
 
-      <Card className="mb-4">
-        <CardContent className="pt-6">
-          <div className="flex flex-wrap items-center gap-3">
+      <FilterBar
+        filters={
+          <>
             <Input
               placeholder="模型名称"
               value={filters.model}
@@ -153,17 +154,21 @@ export function UserLogsPage() {
               endAt={filters.endAt}
               onChange={({ startAt, endAt }) => setFilters({ ...filters, startAt, endAt })}
             />
+          </>
+        }
+        actions={
+          <>
             <Button onClick={handleSearch}>
               <Search className="mr-2 h-4 w-4" />
               查询
             </Button>
             <Button variant="outline" onClick={handleReset}>重置</Button>
-          </div>
-        </CardContent>
-      </Card>
+          </>
+        }
+      />
 
-      <Card>
-        <Table>
+      <Card className="overflow-hidden">
+        <Table className="min-w-[1040px]">
           <TableHeader>
             <TableRow>
               <TableHead>模型</TableHead>
@@ -221,7 +226,7 @@ export function UserLogsPage() {
                         <div className="flex flex-col items-end gap-1">
                           <span className="text-sm">{row.usage.completion_tokens.toLocaleString()}</span>
                           {row.usage.estimated ? (
-                            <Badge variant="outline" className="h-4 border-orange-200 px-1 py-0 text-[10px] text-orange-600">
+                            <Badge variant="outline" className="h-4 px-1 py-0 text-[10px]">
                               估算
                             </Badge>
                           ) : null}
@@ -234,7 +239,7 @@ export function UserLogsPage() {
                     <TableCell className="text-right">{renderTokenPrice(row.output_price_per_1m_tokens)}</TableCell>
                     <TableCell className="text-right">
                       {(row.credits_charged ?? row.cost_credits) ? (
-                        <span className="font-semibold text-red-500">
+                        <span className="font-semibold text-destructive">
                           -{formatCredits(row.credits_charged ?? row.cost_credits)}
                         </span>
                       ) : (
@@ -270,7 +275,7 @@ export function UserLogsPage() {
             </div>
           ) : currentLog ? (
             <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="grid gap-4 text-sm sm:grid-cols-2">
                 <div>
                   <div className="mb-1 text-muted-foreground">ID</div>
                   <div className="font-mono text-xs">{currentLog.id}</div>
@@ -279,11 +284,11 @@ export function UserLogsPage() {
                   <div className="mb-1 text-muted-foreground">状态</div>
                   <div>{renderStatus(currentLog.status)}</div>
                 </div>
-                <div className="col-span-2">
+                <div className="sm:col-span-2">
                   <div className="mb-1 text-muted-foreground">模型</div>
                   <div className="font-medium">{currentLog.model}</div>
                 </div>
-                <div className="col-span-2">
+                <div className="sm:col-span-2">
                   <div className="mb-1 text-muted-foreground">Corr ID</div>
                   <div className="break-all font-mono text-xs">{currentLog.corr_id}</div>
                 </div>
@@ -310,7 +315,7 @@ export function UserLogsPage() {
                 </div>
                 <div>
                   <div className="mb-1 text-muted-foreground">消耗积分</div>
-                  <div className={(currentLog.credits_charged ?? currentLog.cost_credits) ? 'font-medium text-red-500' : ''}>
+                  <div className={(currentLog.credits_charged ?? currentLog.cost_credits) ? 'font-medium text-destructive' : ''}>
                     {(currentLog.credits_charged ?? currentLog.cost_credits)
                       ? `-${formatCredits(currentLog.credits_charged ?? currentLog.cost_credits)}`
                       : '-'}
@@ -319,6 +324,21 @@ export function UserLogsPage() {
                 <div>
                   <div className="mb-1 text-muted-foreground">流式</div>
                   <div>{currentLog.is_stream ? '是' : '否'}</div>
+                </div>
+                <div>
+                  <div className="mb-1 text-muted-foreground">服务档位</div>
+                  <div>
+                    {currentLog.usage?.tier_downgraded
+                      ? 'Fast → 标准（已退差价）'
+                      : currentLog.usage?.actual_tier === 'fast'
+                        ? 'Fast'
+                        : currentLog.usage?.actual_tier === 'standard'
+                          ? '标准'
+                          : '-'}
+                    {currentLog.usage?.tier_unconfirmed ? (
+                      <Badge variant="outline" className="ml-1 h-4 py-0 text-[10px]">未确认</Badge>
+                    ) : null}
+                  </div>
                 </div>
                 <div>
                   <div className="mb-1 text-muted-foreground">请求时间</div>
@@ -332,8 +352,8 @@ export function UserLogsPage() {
 
               {currentLog.error_msg ? (
                 <div>
-                  <div className="mb-2 text-sm font-semibold text-red-600">错误信息</div>
-                  <div className="rounded-md bg-red-50 p-3 text-sm whitespace-pre-wrap text-red-900">
+                  <div className="mb-2 text-sm font-semibold text-destructive">错误信息</div>
+                  <div className="rounded-md border border-destructive/25 bg-destructive/5 p-3 text-sm whitespace-pre-wrap text-destructive">
                     {currentLog.error_msg}
                   </div>
                 </div>
@@ -342,7 +362,7 @@ export function UserLogsPage() {
               {currentLog.client_request ? (
                 <div>
                   <div className="mb-2 text-sm font-semibold">您的请求</div>
-                  <pre className="max-h-[300px] overflow-x-auto break-all rounded-md bg-zinc-950 p-4 font-mono text-xs whitespace-pre-wrap text-zinc-50">
+                  <pre className="max-h-[300px] overflow-x-auto break-all rounded-md bg-foreground p-4 font-mono text-xs whitespace-pre-wrap text-background">
                     {JSON.stringify(currentLog.client_request, null, 2)}
                   </pre>
                 </div>
@@ -351,7 +371,7 @@ export function UserLogsPage() {
               {currentLog.upstream_headers ? (
                 <div>
                   <div className="mb-2 text-sm font-semibold">上游请求头</div>
-                  <pre className="max-h-[200px] overflow-x-auto break-all rounded-md bg-zinc-950 p-4 font-mono text-xs whitespace-pre-wrap text-zinc-50">
+                  <pre className="max-h-[200px] overflow-x-auto break-all rounded-md bg-foreground p-4 font-mono text-xs whitespace-pre-wrap text-background">
                     {JSON.stringify(currentLog.upstream_headers, null, 2)}
                   </pre>
                 </div>
@@ -360,7 +380,7 @@ export function UserLogsPage() {
               {currentLog.upstream_request ? (
                 <div>
                   <div className="mb-2 text-sm font-semibold">上游请求体</div>
-                  <pre className="max-h-[300px] overflow-x-auto break-all rounded-md bg-zinc-950 p-4 font-mono text-xs whitespace-pre-wrap text-zinc-50">
+                  <pre className="max-h-[300px] overflow-x-auto break-all rounded-md bg-foreground p-4 font-mono text-xs whitespace-pre-wrap text-background">
                     {JSON.stringify(currentLog.upstream_request, null, 2)}
                   </pre>
                 </div>
@@ -369,7 +389,7 @@ export function UserLogsPage() {
               {currentLog.upstream_response ? (
                 <div>
                   <div className="mb-2 text-sm font-semibold">上游响应</div>
-                  <pre className="max-h-[300px] overflow-x-auto break-all rounded-md bg-zinc-950 p-4 font-mono text-xs whitespace-pre-wrap text-zinc-50">
+                  <pre className="max-h-[300px] overflow-x-auto break-all rounded-md bg-foreground p-4 font-mono text-xs whitespace-pre-wrap text-background">
                     {JSON.stringify(currentLog.upstream_response, null, 2)}
                   </pre>
                 </div>
@@ -378,7 +398,7 @@ export function UserLogsPage() {
               {currentLog.client_response ? (
                 <div>
                   <div className="mb-2 text-sm font-semibold">返回给您的响应</div>
-                  <pre className="max-h-[300px] overflow-x-auto break-all rounded-md bg-zinc-950 p-4 font-mono text-xs whitespace-pre-wrap text-zinc-50">
+                  <pre className="max-h-[300px] overflow-x-auto break-all rounded-md bg-foreground p-4 font-mono text-xs whitespace-pre-wrap text-background">
                     {JSON.stringify(currentLog.client_response, null, 2)}
                   </pre>
                 </div>

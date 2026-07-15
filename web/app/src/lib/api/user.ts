@@ -94,6 +94,13 @@ export interface UserLogUsage {
   cache_read_tokens?: number;
   cache_creation_tokens?: number;
   estimated?: boolean;
+  requested_tier?: 'standard' | 'fast';
+  actual_tier?: 'standard' | 'fast';
+  tier_confirmed?: boolean;
+  tier_downgraded?: boolean;
+  tier_unconfirmed?: boolean;
+  actual_service_tier?: string;
+  actual_speed?: string;
 }
 
 export type UserLog = {

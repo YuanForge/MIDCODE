@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { BlocksIcon, Copy, Search, TerminalSquare } from 'lucide-react'
 
 import { EmptyState } from '@/components/shared/EmptyState'
+import { FilterBar } from '@/components/shared/FilterBar'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -393,8 +394,10 @@ export function UserModelsPage() {
         </Alert>
       ) : null}
 
-      <div className="mb-6 flex flex-col gap-4">
-        <div className="flex flex-wrap items-center gap-2">
+      <FilterBar
+        filters={
+          <div className="flex min-w-0 flex-1 flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
           {availableTypeOptions.map((option) => (
             <Badge
               key={option.value}
@@ -405,7 +408,7 @@ export function UserModelsPage() {
               {t(option.labelKey)}
             </Badge>
           ))}
-        </div>
+            </div>
         {protocolOptions.length > 1 ? (
           <div className="flex flex-wrap items-center gap-2">
             <Badge
@@ -450,19 +453,23 @@ export function UserModelsPage() {
             ))}
           </div>
         ) : null}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          </div>
+        }
+        actions={
+          <div className="flex w-full flex-col items-start gap-2 sm:w-auto sm:items-end">
           <span className="text-sm font-medium text-muted-foreground">{t('models.modelCount', { count: filteredChannels.length })}</span>
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              className="w-[280px] pl-9"
+              className="w-full pl-9 sm:w-[280px]"
               placeholder={t('models.searchPlaceholder')}
               value={filterName}
               onChange={(event) => setFilterName(event.target.value)}
             />
           </div>
-        </div>
-      </div>
+          </div>
+        }
+      />
 
       {loading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -525,7 +532,7 @@ export function UserModelsPage() {
                       ) : (
                         <div>{t('models.meteredBilling')}</div>
                       )}
-                      {channel.group_price ? <div className="mt-1 font-medium text-emerald-600">{t('models.groupPrice', { price: channel.group_price })}</div> : null}
+                      {channel.group_price ? <div className="mt-1 font-medium text-primary">{t('models.groupPrice', { price: channel.group_price })}</div> : null}
                     </div>
                   </div>
                 </div>
@@ -536,9 +543,7 @@ export function UserModelsPage() {
                   <div className="rounded bg-muted/40 px-2 py-1 font-mono text-muted-foreground">
                     {channel.routing_model || channel.model || channel.name}
                   </div>
-                  <div className="flex items-center text-emerald-600">
-                    <span className="mr-1.5 h-2 w-2 rounded-full bg-emerald-500" />{t('common.available')}
-                  </div>
+                  <Badge variant="secondary">{t('common.available')}</Badge>
                 </div>
               </CardContent>
             </Card>
@@ -557,13 +562,13 @@ export function UserModelsPage() {
             {docMode === 'balance' ? (
               <div className="space-y-6">
                 <div className="flex items-center gap-4">
-                  <div className="rounded border border-emerald-200 bg-emerald-100 px-3 py-1 text-sm font-bold tracking-wide text-emerald-800">GET</div>
+                  <Badge variant="secondary" className="rounded-md px-3 py-1 text-sm font-bold tracking-wide">GET</Badge>
                   <div className="flex flex-1 items-center rounded border bg-background px-3 py-1 font-mono">
                     <span className="flex-1">/user/balance</span>
                     <button onClick={() => copyText(`GET ${window.location.origin}/user/balance`, t('common.copied'))} className="hover:text-primary"><Copy className="h-4 w-4" /></button>
                   </div>
                 </div>
-                <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-4 text-sm leading-relaxed text-blue-900">
+                <div className="rounded-xl border bg-muted/40 p-4 text-sm leading-relaxed text-foreground">
                   {t('models.balanceDescription')}
                 </div>
                 <div>
@@ -574,7 +579,7 @@ export function UserModelsPage() {
                       {t('common.copyHeaders')}
                     </Button>
                   </h4>
-                  <pre className="overflow-auto rounded-xl bg-zinc-950 p-4 font-mono text-sm text-zinc-50">Authorization: Bearer YOUR_API_KEY</pre>
+                  <pre className="overflow-auto rounded-xl bg-foreground p-4 font-mono text-sm text-background">Authorization: Bearer YOUR_API_KEY</pre>
                 </div>
                 <div>
                   <h4 className="mb-2 flex items-center justify-between font-semibold">
@@ -593,11 +598,11 @@ export function UserModelsPage() {
                       <TabsTrigger value="java">Java</TabsTrigger>
                     </TabsList>
                   </Tabs>
-                  <pre className="min-h-[140px] overflow-auto rounded-xl bg-zinc-950 p-4 font-mono text-sm whitespace-pre-wrap text-zinc-50">{getBalanceCode(langTab)}</pre>
+                  <pre className="min-h-[140px] overflow-auto rounded-xl bg-foreground p-4 font-mono text-sm whitespace-pre-wrap text-background">{getBalanceCode(langTab)}</pre>
                 </div>
                 <div>
                   <h4 className="mb-2 font-semibold">{t('models.responseExample')}</h4>
-                  <pre className="overflow-auto rounded-xl bg-zinc-950 p-4 font-mono text-sm text-green-400">{JSON.stringify({ balance_cny: 1.971573 }, null, 2)}</pre>
+                  <pre className="overflow-auto rounded-xl bg-foreground p-4 font-mono text-sm text-background">{JSON.stringify({ balance_cny: 1.971573 }, null, 2)}</pre>
                 </div>
               </div>
             ) : null}
@@ -605,13 +610,13 @@ export function UserModelsPage() {
             {docMode === 'task' ? (
               <div className="space-y-6">
                 <div className="flex items-center gap-4">
-                  <div className="rounded border border-emerald-200 bg-emerald-100 px-3 py-1 text-sm font-bold tracking-wide text-emerald-800">GET</div>
+                  <Badge variant="secondary" className="rounded-md px-3 py-1 text-sm font-bold tracking-wide">GET</Badge>
                   <div className="flex flex-1 items-center rounded border bg-background px-3 py-1 font-mono">
                     <span className="flex-1">/v1/tasks/{'{id}'}</span>
                     <button onClick={() => copyText(`${window.location.origin}/v1/tasks/YOUR_TASK_ID`, t('common.copied'))} className="hover:text-primary"><Copy className="h-4 w-4" /></button>
                   </div>
                 </div>
-                <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-4 text-sm leading-relaxed text-blue-900">
+                <div className="rounded-xl border bg-muted/40 p-4 text-sm leading-relaxed text-foreground">
                   {t('models.taskDescription')}
                 </div>
                 <div>
@@ -631,11 +636,11 @@ export function UserModelsPage() {
                       <TabsTrigger value="java">Java</TabsTrigger>
                     </TabsList>
                   </Tabs>
-                  <pre className="min-h-[140px] overflow-auto rounded-xl bg-zinc-950 p-4 font-mono text-sm whitespace-pre-wrap text-zinc-50">{getTaskCode(langTab)}</pre>
+                  <pre className="min-h-[140px] overflow-auto rounded-xl bg-foreground p-4 font-mono text-sm whitespace-pre-wrap text-background">{getTaskCode(langTab)}</pre>
                 </div>
                 <div>
                   <h4 className="mb-2 font-semibold">{t('models.responseExample')}</h4>
-                  <pre className="overflow-auto rounded-xl bg-zinc-950 p-4 font-mono text-sm text-green-400">{JSON.stringify({ task_id: '12345', status: 1, code: 200, msg: 'success', url: '', credits_charged: 3600 }, null, 2)}</pre>
+                  <pre className="overflow-auto rounded-xl bg-foreground p-4 font-mono text-sm text-background">{JSON.stringify({ task_id: '12345', status: 1, code: 200, msg: 'success', url: '', credits_charged: 3600 }, null, 2)}</pre>
                 </div>
               </div>
             ) : null}
@@ -643,7 +648,7 @@ export function UserModelsPage() {
             {docMode === 'channel' && docChannel ? (
               <div className="space-y-6">
                 <div className="flex items-center gap-4">
-                  <div className="rounded border border-blue-200 bg-blue-100 px-3 py-1 text-sm font-bold tracking-wide text-blue-800">POST</div>
+                  <Badge className="rounded-md px-3 py-1 text-sm font-bold tracking-wide">POST</Badge>
                   <div className="flex flex-1 items-center rounded border bg-background px-3 py-1 font-mono">
                     <span className="flex-1">{getChannelEndpoint(docChannel)}</span>
                     <button onClick={() => copyText(`${window.location.origin}${getChannelEndpoint(docChannel)}`, t('common.copied'))} className="hover:text-primary"><Copy className="h-4 w-4" /></button>
@@ -669,7 +674,7 @@ export function UserModelsPage() {
                   </div>
                   <div>
                     <div className="text-xs text-muted-foreground">{t('models.exclusivePrice')}</div>
-                    <div className="mt-1 whitespace-pre-wrap text-sm font-medium text-emerald-600">{docChannel.group_price || t('common.noDifference')}</div>
+                    <div className="mt-1 whitespace-pre-wrap text-sm font-medium text-primary">{docChannel.group_price || t('common.noDifference')}</div>
                   </div>
                   <div>
                     <div className="text-xs text-muted-foreground">原价</div>
@@ -711,12 +716,12 @@ export function UserModelsPage() {
                       <TabsTrigger value="java">Java</TabsTrigger>
                     </TabsList>
                   </Tabs>
-                  <pre className="min-h-[140px] overflow-auto rounded-xl bg-zinc-950 p-4 font-mono text-sm whitespace-pre-wrap text-zinc-50">{getChannelCode(docChannel, langTab, sunoMode, i18n.language)}</pre>
+                  <pre className="min-h-[140px] overflow-auto rounded-xl bg-foreground p-4 font-mono text-sm whitespace-pre-wrap text-background">{getChannelCode(docChannel, langTab, sunoMode, i18n.language)}</pre>
                 </div>
 
                 <div>
                   <h4 className="mb-2 font-semibold">{t('models.responseExample')}</h4>
-                  <pre className={cn('overflow-auto rounded-xl bg-zinc-950 p-4 font-mono text-sm text-green-400', docChannel.type !== 'llm' && 'opacity-80')}>
+                  <pre className={cn('overflow-auto rounded-xl bg-foreground p-4 font-mono text-sm text-background', docChannel.type !== 'llm' && 'opacity-80')}>
                     {getChannelResponse(docChannel, i18n.language)}
                   </pre>
                 </div>

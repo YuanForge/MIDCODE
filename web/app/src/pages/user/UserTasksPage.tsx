@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ListIcon } from 'lucide-react'
 
 import { DateRangeFilter, formatDateTimeFilterValue } from '@/components/shared/DateRangeFilter'
+import { FilterBar } from '@/components/shared/FilterBar'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { TableEmpty } from '@/components/shared/TableEmpty'
 import { TablePagination } from '@/components/shared/TablePagination'
@@ -46,9 +47,9 @@ function resolveStatus(row: UserTask): string {
 }
 
 function statusBadge(s: string) {
-  if (s === 'pending') return <Badge className="bg-yellow-500 text-white hover:bg-yellow-500">排队中</Badge>
-  if (s === 'processing') return <Badge className="bg-blue-500 text-white hover:bg-blue-500">处理中</Badge>
-  if (s === 'done') return <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">已完成</Badge>
+  if (s === 'pending') return <Badge variant="outline">排队中</Badge>
+  if (s === 'processing') return <Badge variant="secondary">处理中</Badge>
+  if (s === 'done') return <Badge>已完成</Badge>
   if (s === 'failed') return <Badge variant="destructive">失败</Badge>
   return <Badge variant="outline">{s}</Badge>
 }
@@ -249,8 +250,9 @@ export function UserTasksPage() {
         </Alert>
       ) : null}
 
-      <Card>
-        <CardContent className="flex flex-wrap items-end gap-3 py-4">
+      <FilterBar
+        filters={
+          <>
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground">任务 ID</label>
             <Input
@@ -296,13 +298,18 @@ export function UserTasksPage() {
               setEndAt(e)
             }}
           />
+          </>
+        }
+        actions={
+          <>
           <Button onClick={doSearch}>查询</Button>
           <Button variant="outline" onClick={resetFilters}>重置</Button>
-        </CardContent>
-      </Card>
+          </>
+        }
+      />
 
-      <Card>
-        <Table>
+      <Card className="overflow-hidden">
+        <Table className="min-w-[820px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-20">ID</TableHead>
@@ -343,13 +350,13 @@ export function UserTasksPage() {
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm">
                         {row.credits_charged != null ? (
-                          <span className="font-semibold text-red-500">-{(row.credits_charged / 1e6).toFixed(4)}</span>
+                          <span className="font-semibold text-destructive">-{(row.credits_charged / 1e6).toFixed(4)}</span>
                         ) : (
                           <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
                       <TableCell>{statusBadge(st)}</TableCell>
-                      <TableCell className="max-w-48 truncate text-xs text-red-500" title={errMsg}>
+                      <TableCell className="max-w-48 truncate text-xs text-destructive" title={errMsg}>
                         {errMsg ?? <span className="text-muted-foreground">-</span>}
                       </TableCell>
                       <TableCell className="text-center">
@@ -387,36 +394,36 @@ export function UserTasksPage() {
             </div>
           ) : detail ? (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border p-4 text-sm">
+              <div className="grid gap-x-4 gap-y-2 rounded-lg border p-4 text-sm sm:grid-cols-2">
                 <div><span className="text-muted-foreground">任务 ID：</span><strong>{detail.id ?? detail.task_id}</strong></div>
                 <div><span className="text-muted-foreground">类型：</span>{typeLabel(detail.type ?? detail.task_type)}</div>
-                <div className="col-span-2"><span className="text-muted-foreground">状态：</span>{statusBadge(resolveStatus(detail))}</div>
-                <div className="col-span-2">
+                <div className="sm:col-span-2"><span className="text-muted-foreground">状态：</span>{statusBadge(resolveStatus(detail))}</div>
+                <div className="sm:col-span-2">
                   <span className="text-muted-foreground">消耗积分：</span>
                   {detail.credits_charged != null
-                    ? <span className="font-semibold text-red-500">-{(detail.credits_charged / 1e6).toFixed(6)}</span>
+                    ? <span className="font-semibold text-destructive">-{(detail.credits_charged / 1e6).toFixed(6)}</span>
                     : '-'}
                 </div>
-                <div className="col-span-2">
+                <div className="sm:col-span-2">
                   <span className="text-muted-foreground">创建时间：</span>
                   {detail.created_at ? new Date(detail.created_at).toLocaleString('zh-CN') : '-'}
                 </div>
                 {detail.finished_at ? (
-                  <div className="col-span-2">
+                  <div className="sm:col-span-2">
                     <span className="text-muted-foreground">完成时间：</span>
                     {new Date(detail.finished_at).toLocaleString('zh-CN')}
                   </div>
                 ) : null}
                 {detail.upstream_task_id ? (
-                  <div className="col-span-2">
+                  <div className="sm:col-span-2">
                     <span className="text-muted-foreground">上游任务 ID：</span>
                     <span className="font-mono text-xs">{detail.upstream_task_id}</span>
                   </div>
                 ) : null}
                 {(detail.error_msg ?? detail.msg) ? (
-                  <div className="col-span-2">
+                  <div className="sm:col-span-2">
                     <span className="text-muted-foreground">备注：</span>
-                    <span className="text-red-500">{detail.error_msg ?? detail.msg}</span>
+                    <span className="text-destructive">{detail.error_msg ?? detail.msg}</span>
                   </div>
                 ) : null}
               </div>
@@ -445,7 +452,7 @@ export function UserTasksPage() {
                   <div className="grid gap-3">
                     {referenceVideos.map((url) => (
                       <div key={url} className="overflow-hidden rounded-xl border border-border/70 bg-muted/20">
-                        <video src={url} controls className="aspect-video w-full bg-black" />
+                        <video src={url} controls className="aspect-video w-full bg-muted" />
                         <div className="truncate px-3 py-2 text-xs text-muted-foreground">{url}</div>
                       </div>
                     ))}
@@ -458,7 +465,7 @@ export function UserTasksPage() {
                   <div className="grid gap-3">
                     {resultVideoUrls.map((url) => (
                       <div key={url} className="overflow-hidden rounded-xl border border-border/70 bg-muted/20">
-                        <video src={url} controls className="aspect-video w-full bg-black" />
+                        <video src={url} controls className="aspect-video w-full bg-muted" />
                         <div className="flex items-center justify-between gap-2 px-3 py-2">
                           <div className="truncate text-xs text-muted-foreground">{url}</div>
                           <a href={url} target="_blank" rel="noopener noreferrer" className="shrink-0 text-xs text-primary underline">
@@ -475,9 +482,9 @@ export function UserTasksPage() {
               <JsonBlock title="结果" value={detail.result} />
 
               {billing?.transactions && billing.transactions.length > 0 ? (
-                <div className="rounded-lg border">
+                <div className="overflow-x-auto rounded-lg border">
                   <div className="border-b px-3 py-2 text-xs font-semibold text-muted-foreground">账单明细</div>
-                  <table className="w-full text-xs">
+                  <table className="min-w-[560px] w-full text-xs">
                     <thead>
                       <tr className="border-b text-muted-foreground">
                         <th className="px-3 py-1.5 text-left">类型</th>
