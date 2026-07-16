@@ -329,6 +329,34 @@ func TestSendLLMRequestAppendsMatchedRouteForV1Base(t *testing.T) {
 	}
 }
 
+func TestSendLLMRequestAddsClaudeFastBetaHeader(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	var beta string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		beta = r.Header.Get("Anthropic-Beta")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":1,"output_tokens":1,"speed":"fast"}}`))
+	}))
+	defer server.Close()
+
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	ch := &model.Channel{
+		BaseURL:   server.URL,
+		Protocol:  protocolClaude,
+		Headers:   model.JSON{"Anthropic-Beta": "tools-2025-01-01"},
+		TimeoutMs: 1000,
+	}
+	_, resp, err := sendLLMRequest(c, ch, map[string]interface{}{"model": "claude-test", "speed": "fast"}, nil, protocolClaude, "claude-test", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if !strings.Contains(beta, "tools-2025-01-01") || !strings.Contains(beta, "fast-mode-2026-02-01") {
+		t.Fatalf("Anthropic-Beta = %q", beta)
+	}
+}
+
 func TestReadLLMUpstreamErrorBodyLimitsBytes(t *testing.T) {
 	got, err := readLLMUpstreamErrorBody(strings.NewReader(strings.Repeat("x", maxLLMUpstreamErrorBodyBytes+512)))
 	if err != nil {
@@ -508,6 +536,51 @@ func TestPrepareLLMUpstreamAttemptKeepsResponsesCompactBodyUnconverted(t *testin
 	}
 }
 
+func TestPrepareLLMUpstreamAttemptMapsFastTierToClaude(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	c.Set(llmRouteContextKey, "/v1/chat/completions")
+
+	ch := &model.Channel{
+		BaseURL:       "https://api.anthropic.com/v1/messages",
+		Protocol:      protocolClaude,
+		BillingType:   "token",
+		BillingConfig: model.JSON{"fast_ratio": 2.0},
+	}
+	source := map[string]interface{}{
+		"model":        "claude-test",
+		"service_tier": "priority",
+		"messages": []interface{}{
+			map[string]interface{}{"role": "user", "content": "hello"},
+		},
+	}
+	attempt, err := prepareLLMUpstreamAttempt(c, ch, nil, source, protocolOpenAI, "claude-test", false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempt.Request["speed"] != "fast" {
+		t.Fatalf("speed = %#v", attempt.Request["speed"])
+	}
+	if _, exists := attempt.Request["service_tier"]; exists {
+		t.Fatalf("Claude request retained service_tier: %#v", attempt.Request)
+	}
+}
+
+func TestPrepareLLMUpstreamAttemptRejectsFastWithoutRatio(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Set(llmRouteContextKey, "/v1/responses")
+
+	_, err := prepareLLMUpstreamAttempt(c, &model.Channel{
+		BaseURL: "https://api.openai.com/v1/responses", Protocol: protocolResponses, BillingType: "token",
+	}, nil, map[string]interface{}{"model": "gpt-test", "service_tier": "priority"}, protocolResponses, "gpt-test", false, "")
+	if err == nil || llmUpstreamPreparationStatus(err) != http.StatusBadRequest {
+		t.Fatalf("expected 400 preparation error, got %v", err)
+	}
+}
+
 func TestResponsesPassthroughSSEFilterDropsEmptyChatCompletionChunk(t *testing.T) {
 	filter := &responsesPassthroughSSEFilter{}
 	input := []string{
@@ -532,6 +605,25 @@ func TestResponsesPassthroughSSEFilterDropsEmptyChatCompletionChunk(t *testing.T
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("unexpected filtered SSE:\nwant %q\ngot  %q", strings.Join(want, "\n"), strings.Join(got, "\n"))
+	}
+}
+
+func TestUsageStateCapturesOpenAIAndClaudeActualTier(t *testing.T) {
+	openAI := &usageState{protocol: protocolOpenAI}
+	openAI.processLine(`data: {"service_tier":"default","usage":{"prompt_tokens":10,"completion_tokens":2}}`)
+	openAIUsage := openAI.normalized(nil)
+	if openAIUsage["actual_service_tier"] != "default" {
+		t.Fatalf("OpenAI usage = %#v", openAIUsage)
+	}
+
+	claude := &usageState{protocol: protocolClaude}
+	claude.processLine("event: message_start")
+	claude.processLine(`data: {"message":{"usage":{"input_tokens":10,"speed":"standard"}}}`)
+	claude.processLine("event: message_delta")
+	claude.processLine(`data: {"usage":{"output_tokens":2,"speed":"standard"}}`)
+	claudeUsage := claude.normalized(nil)
+	if claudeUsage["actual_speed"] != "standard" {
+		t.Fatalf("Claude usage = %#v", claudeUsage)
 	}
 }
 

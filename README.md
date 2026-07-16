@@ -1,4 +1,4 @@
-# FanAPI
+# MidCode
 
 多渠道 LLM & AI 生成服务聚合平台，统一接口代理多个第三方 AI API（OpenAI、Claude 等），内置计费、用户和频道管理系统。
 
@@ -373,12 +373,32 @@ fanapi/
 | 售价 · 输出 | 用户每消耗 100 万输出 token 被扣多少 credits |
 | 进价 · 输入 / 输出 | 平台支付给上游的成本，仅用于利润统计，不影响用户扣费 |
 | 输入从响应取 | 开启后输入 token 数从响应 `usage` 字段读取（更精确），适合上游不在请求中返回 token 计数的场景 |
+| Fast 倍率 | 可选的渠道级倍率；留空表示不支持 Fast。Fast 请求的售价和上游成本均按标准值乘以该倍率 |
 
 示例（¥15/M 输入，¥60/M 输出）：
 ```
 售价 · 输入 = 15000000
 售价 · 输出 = 60000000
 ```
+
+Fast 模式由客户端请求参数触发，不解析消息正文中的字面 `/fast`：
+
+- GPT/OpenAI：`service_tier: "priority"`
+- Claude：`speed: "fast"`，平台会自动向 Claude 上游合并 `anthropic-beta: fast-mode-2026-02-01`
+
+后台在渠道编辑页直接填写“Fast 倍率”，运营无需编辑 JSON。底层配置示例：
+
+```json
+{
+  "input_price_per_1m_tokens": 2500000,
+  "output_price_per_1m_tokens": 15000000,
+  "input_cost_per_1m_tokens": 2000000,
+  "output_cost_per_1m_tokens": 12000000,
+  "fast_ratio": 2.0
+}
+```
+
+倍率按渠道配置，不是全站统一值。请求阶段按 Fast 价格预扣；结算阶段优先读取上游实际返回的 OpenAI `service_tier` 或 Claude `usage.speed`。若上游实际降级为标准档位，系统自动退还差价。
 
 ##### image 计费（图片生成）
 

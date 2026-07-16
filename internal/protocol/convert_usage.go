@@ -21,6 +21,9 @@ func NormalizeUsage(resp map[string]interface{}, sourceProtocol string) map[stri
 			if cacheRead > 0 {
 				result["cache_read_tokens"] = int64(cacheRead)
 			}
+			if speed, _ := usg["speed"].(string); speed != "" {
+				result["actual_speed"] = speed
+			}
 			return result
 		}
 	case ProtocolGemini:
@@ -55,6 +58,9 @@ func NormalizeUsage(resp map[string]interface{}, sourceProtocol string) map[stri
 					result["cache_read_tokens"] = int64(n)
 				}
 			}
+			if serviceTier, _ := resp["service_tier"].(string); serviceTier != "" {
+				result["actual_service_tier"] = serviceTier
+			}
 			return result
 		}
 	default:
@@ -71,6 +77,9 @@ func NormalizeUsage(resp map[string]interface{}, sourceProtocol string) map[stri
 				if n, _ := details["cached_tokens"].(float64); n > 0 {
 					result["cache_read_tokens"] = int64(n)
 				}
+			}
+			if serviceTier, _ := resp["service_tier"].(string); serviceTier != "" {
+				result["actual_service_tier"] = serviceTier
 			}
 			return result
 		}

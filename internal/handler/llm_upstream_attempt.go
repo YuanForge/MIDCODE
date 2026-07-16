@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"fanapi/internal/billing"
 	"fanapi/internal/model"
 	"fanapi/internal/protocol"
 	"fanapi/internal/script"
@@ -68,6 +69,12 @@ func prepareLLMUpstreamAttempt(c *gin.Context, ch *model.Channel, poolKey *model
 		responsesOperation,
 	)
 	proto := target.Protocol
+	requestedTier := billing.RequestedTier(source)
+	if requestedTier == billing.TierFast {
+		if _, ok := billing.FastRatio(ch); !ok {
+			return llmUpstreamAttempt{}, newLLMUpstreamPreparationError(400, fmt.Errorf("当前渠道未配置有效的 Fast 倍率"))
+		}
+	}
 	isResponsesCompact := responsesOperation == responsesOperationCompact
 	if isResponsesCompact && proto != protocolResponses {
 		return llmUpstreamAttempt{}, newLLMUpstreamPreparationError(400, fmt.Errorf("对话压缩需要 protocol=responses 的上游渠道"))
@@ -100,6 +107,17 @@ func prepareLLMUpstreamAttempt(c *gin.Context, ch *model.Channel, poolKey *model
 			return llmUpstreamAttempt{}, newLLMUpstreamPreparationError(500, fmt.Errorf("入参映射错误: %w", scriptErr))
 		}
 		request = mapped
+	}
+
+	if requestedTier == billing.TierFast {
+		switch proto {
+		case protocolClaude:
+			request["speed"] = "fast"
+			delete(request, "service_tier")
+		case protocolOpenAI, protocolResponses:
+			request["service_tier"] = "priority"
+			delete(request, "speed")
+		}
 	}
 
 	if !ch.PassthroughBody && proto == protocolClaude {

@@ -497,6 +497,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 	for k, v := range reqData {
 		origReqData[k] = v
 	}
+	requestedTier := billing.RequestedTier(origReqData)
 
 	// 1. 号池 Sticky Key 分配（在 request_script 之前，以便脚本可用 poolKey 变量）
 	entityID := apiKeyIDVal
@@ -530,13 +531,13 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 
 	// 4. 计算预扣金额（含用户分组定价）
 	// 使用原始客户端格式请求（origReqData）：Gemini 转换后不含 messages 字段，会导致 token 估算为 0
-	inputHold, outputHold, calcErr := billing.CalcForUser(ch, origReqData, userGroup)
+	inputHold, outputHold, calcErr := billing.CalcForUserWithTier(ch, origReqData, userGroup, requestedTier)
 	if calcErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "计费计算错误: " + calcErr.Error()})
 		return
 	}
 	totalHold := inputHold + outputHold
-	upstreamCostHold, _ := billing.CalcUpstreamCost(ch, origReqData)
+	upstreamCostHold, _ := billing.CalcUpstreamCostWithTier(ch, origReqData, requestedTier)
 
 	var modelCreditCharged int64
 	var generalCreditCharged int64
@@ -587,9 +588,10 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 	c.Header("X-Corr-Id", corrID)
 	if totalHold > 0 {
 		if err := service.WriteTx(c.Request.Context(), userID, channelID, apiKeyIDVal, poolKeyIDVal, corrID, "hold", totalHold, upstreamCostHold, modelCreditCharged, model.JSON{
-			"input_hold":  inputHold,
-			"output_hold": outputHold,
-			"user_group":  userGroup,
+			"input_hold":     inputHold,
+			"output_hold":    outputHold,
+			"user_group":     userGroup,
+			"requested_tier": requestedTier,
 		}); err != nil {
 			if modelCreditCharged > 0 {
 				_ = billing.RefundModelCredit(c.Request.Context(), userID, routingKey, modelCreditCharged)
@@ -608,7 +610,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 	if upstreamMethod == "" {
 		upstreamMethod = "POST"
 	}
-	inputPricePer1M, outputPricePer1M := resolveTokenPriceMetaValue(ch, userGroup)
+	inputPricePer1M, outputPricePer1M := resolveTokenPriceMetaValueForTier(ch, userGroup, requestedTier)
 	llmLog := &model.LLMLog{
 		UserID:                 userID,
 		ChannelID:              channelID,

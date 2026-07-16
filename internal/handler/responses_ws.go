@@ -192,14 +192,24 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 	for k, v := range openAIReq {
 		origReqData[k] = v
 	}
+	requestedTier := billing.RequestedTier(origReqData)
+	if requestedTier == billing.TierFast {
+		if _, ok := billing.FastRatio(ch); !ok {
+			return fmt.Errorf("当前渠道未配置有效的 Fast 倍率")
+		}
+		if proto == protocolResponses || proto == protocolOpenAI {
+			openAIReq["service_tier"] = "priority"
+			origReqData["service_tier"] = "priority"
+		}
+	}
 
 	// 计费预扣
-	inputHold, outputHold, calcErr := billing.CalcForUser(ch, origReqData, userGroup)
+	inputHold, outputHold, calcErr := billing.CalcForUserWithTier(ch, origReqData, userGroup, requestedTier)
 	if calcErr != nil {
 		return calcErr
 	}
 	totalHold := inputHold + outputHold
-	upstreamCostHold, _ := billing.CalcUpstreamCost(ch, origReqData)
+	upstreamCostHold, _ := billing.CalcUpstreamCostWithTier(ch, origReqData, requestedTier)
 
 	var modelCreditCharged int64
 	var generalCreditCharged int64
@@ -254,10 +264,11 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 	corrID := uuid.New().String()
 	if totalHold > 0 {
 		if err := service.WriteTx(c.Request.Context(), userID, ch.ID, apiKeyIDVal, poolKeyIDVal, corrID, "hold", totalHold, upstreamCostHold, modelCreditCharged, model.JSON{
-			"input_hold":  inputHold,
-			"output_hold": outputHold,
-			"user_group":  userGroup,
-			"via":         "websocket",
+			"input_hold":     inputHold,
+			"output_hold":    outputHold,
+			"user_group":     userGroup,
+			"requested_tier": requestedTier,
+			"via":            "websocket",
 		}); err != nil {
 			if modelCreditCharged > 0 {
 				_ = billing.RefundModelCredit(c.Request.Context(), userID, routingKey, modelCreditCharged)
@@ -267,7 +278,7 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 	}
 
 	// LLM 日志
-	inputPricePer1M, outputPricePer1M := resolveTokenPriceMetaValue(ch, userGroup)
+	inputPricePer1M, outputPricePer1M := resolveTokenPriceMetaValueForTier(ch, userGroup, requestedTier)
 	llmLog := &model.LLMLog{
 		UserID:                 userID,
 		ChannelID:              ch.ID,
@@ -494,6 +505,9 @@ func forwardResponsesWS(ctx context.Context, clientConn *websocket.Conn, c *gin.
 							"prompt_tokens":     pt,
 							"completion_tokens": ct,
 							"total_tokens":      pt + ct,
+						}
+						if serviceTier, _ := respObj["service_tier"].(string); serviceTier != "" {
+							usage["actual_service_tier"] = serviceTier
 						}
 					}
 				}
@@ -758,6 +772,9 @@ func responsesUsageFromEvent(respObj map[string]interface{}) map[string]interfac
 		if cached := int64FromAny(details["cached_tokens"]); cached > 0 {
 			usage["cache_read_tokens"] = cached
 		}
+	}
+	if serviceTier, _ := respObj["service_tier"].(string); serviceTier != "" {
+		usage["actual_service_tier"] = serviceTier
 	}
 	return usage
 }

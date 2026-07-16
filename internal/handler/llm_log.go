@@ -38,11 +38,15 @@ func configInt64Ptr(cfg model.JSON, key string) *int64 {
 }
 
 func resolveTokenPriceMeta(ch *model.Channel, userGroup string) tokenPriceMeta {
+	return resolveTokenPriceMetaForTier(ch, userGroup, billingcalc.TierStandard)
+}
+
+func resolveTokenPriceMetaForTier(ch *model.Channel, userGroup, tier string) tokenPriceMeta {
 	if ch == nil || ch.BillingType != "token" || ch.BillingConfig == nil {
 		return tokenPriceMeta{}
 	}
 
-	cfg := model.JSON(billingcalc.EffectivePricingConfig(map[string]interface{}(ch.BillingConfig), userGroup))
+	cfg := model.JSON(billingcalc.EffectivePricingConfigForTier(map[string]interface{}(ch.BillingConfig), userGroup, tier))
 
 	return tokenPriceMeta{
 		InputPricePer1MTokens:  configInt64Ptr(cfg, "input_price_per_1m_tokens"),
@@ -52,6 +56,11 @@ func resolveTokenPriceMeta(ch *model.Channel, userGroup string) tokenPriceMeta {
 
 func resolveTokenPriceMetaValue(ch *model.Channel, userGroup string) (*int64, *int64) {
 	meta := resolveTokenPriceMeta(ch, userGroup)
+	return meta.InputPricePer1MTokens, meta.OutputPricePer1MTokens
+}
+
+func resolveTokenPriceMetaValueForTier(ch *model.Channel, userGroup, tier string) (*int64, *int64) {
+	meta := resolveTokenPriceMetaForTier(ch, userGroup, tier)
 	return meta.InputPricePer1MTokens, meta.OutputPricePer1MTokens
 }
 

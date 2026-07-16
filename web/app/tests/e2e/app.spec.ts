@@ -35,6 +35,50 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
+test('configures Fast ratio through the channel editor', async ({ page }) => {
+  let savedPayload: Record<string, unknown> | undefined
+
+  await page.addInitScript(() => {
+    window.localStorage.setItem('admin_token', 'mock-admin-token')
+    window.localStorage.setItem('MidCode_ui_mode', 'admin')
+  })
+
+  await page.route('**/api/admin/channels**', async (route) => {
+    if (route.request().method() === 'POST') {
+      savedPayload = route.request().postDataJSON() as Record<string, unknown>
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 1 }) })
+      return
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ channels: [], total: 0 }) })
+  })
+  await page.route('**/api/admin/key-pools**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pools: [] }) })
+  })
+  await page.route('**/api/admin/upstream-platforms', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ platforms: [] }) })
+  })
+
+  await page.goto('/admin/channels')
+  await page.getByRole('button', { name: '新增渠道' }).click()
+
+  await page.locator('label', { hasText: '路由名称' }).locator('..').locator('input').fill('Fast Test')
+  await page.locator('label', { hasText: '标准模型名' }).locator('..').locator('input').fill('gpt-5.4')
+  await page.locator('label', { hasText: '上游 URL' }).locator('..').locator('input').fill('https://api.openai.com/v1/chat/completions')
+  await page.getByRole('tab', { name: '计费' }).click()
+
+  await page.locator('label', { hasText: '利润倍率' }).locator('..').locator('input').fill('2')
+  await page.locator('label', { hasText: 'Fast 倍率' }).locator('..').locator('input').fill('2')
+  await page.locator('label', { hasText: '输入成本' }).locator('..').locator('input').fill('1')
+  await page.locator('label', { hasText: '输出成本' }).locator('..').locator('input').fill('2')
+
+  await expect(page.getByText(/Fast 输入约 CNY 4/)).toBeVisible()
+  await expect(page.getByText(/Fast 输出约 CNY 8/)).toBeVisible()
+  await page.getByRole('button', { name: '保存' }).click()
+
+  await expect.poll(() => savedPayload).toBeTruthy()
+  expect(savedPayload?.billing_config).toMatchObject({ fast_ratio: 2 })
+})
+
 test('renders user login page', async ({ page }) => {
   await page.goto('/login', { waitUntil: 'networkidle' })
 

@@ -23,6 +23,8 @@ type usageState struct {
 	outputChars         int64  // 实时累计输出字符数（兜底估算）
 	imageCount          int64  // 多模态图片生成：响应中检测到的图片数量
 	lastEvent           string // Claude 专用：记录上一个 "event:" 行的值
+	actualServiceTier   string // OpenAI/Responses 实际服务档位
+	actualSpeed         string // Claude 实际速度档位
 }
 
 func (u *usageState) processLine(line string) {
@@ -42,6 +44,9 @@ func (u *usageState) processLine(line string) {
 			case "message_start":
 				if msg, ok := chunk["message"].(map[string]interface{}); ok {
 					if usg, ok := msg["usage"].(map[string]interface{}); ok {
+						if speed, _ := usg["speed"].(string); speed != "" {
+							u.actualSpeed = speed
+						}
 						if n, _ := usg["input_tokens"].(float64); n > 0 {
 							u.promptTokens = int64(n)
 						}
@@ -55,6 +60,9 @@ func (u *usageState) processLine(line string) {
 				}
 			case "message_delta":
 				if usg, ok := chunk["usage"].(map[string]interface{}); ok {
+					if speed, _ := usg["speed"].(string); speed != "" {
+						u.actualSpeed = speed
+					}
 					if n, _ := usg["output_tokens"].(float64); n > 0 {
 						u.completTokens = int64(n)
 					}
@@ -128,6 +136,9 @@ func (u *usageState) processLine(line string) {
 				return
 			}
 			if usg, ok := chunk["usage"].(map[string]interface{}); ok {
+				if serviceTier, _ := chunk["service_tier"].(string); serviceTier != "" {
+					u.actualServiceTier = serviceTier
+				}
 				if n, _ := usg["prompt_tokens"].(float64); n > 0 {
 					u.promptTokens = int64(n)
 				}
@@ -144,6 +155,9 @@ func (u *usageState) processLine(line string) {
 			// Responses API (response.completed): usage 嵌套在 chunk["response"]["usage"]
 			// 字段名为 input_tokens / output_tokens，缓存命中在 input_tokens_details.cached_tokens
 			if resp, ok := chunk["response"].(map[string]interface{}); ok {
+				if serviceTier, _ := resp["service_tier"].(string); serviceTier != "" {
+					u.actualServiceTier = serviceTier
+				}
 				if usg, ok := resp["usage"].(map[string]interface{}); ok {
 					if n, _ := usg["input_tokens"].(float64); n > 0 {
 						u.promptTokens = int64(n)
@@ -203,6 +217,12 @@ func (u *usageState) normalized(req map[string]interface{}) map[string]interface
 		if u.imageCount > 0 {
 			result["image_count"] = u.imageCount
 		}
+		if u.actualServiceTier != "" {
+			result["actual_service_tier"] = u.actualServiceTier
+		}
+		if u.actualSpeed != "" {
+			result["actual_speed"] = u.actualSpeed
+		}
 		return result
 	}
 	if u.outputChars == 0 && u.imageCount == 0 {
@@ -226,6 +246,12 @@ func (u *usageState) normalized(req map[string]interface{}) map[string]interface
 	}
 	if u.imageCount > 0 {
 		result["image_count"] = u.imageCount
+	}
+	if u.actualServiceTier != "" {
+		result["actual_service_tier"] = u.actualServiceTier
+	}
+	if u.actualSpeed != "" {
+		result["actual_speed"] = u.actualSpeed
 	}
 	return result
 }

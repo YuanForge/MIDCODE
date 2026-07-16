@@ -371,3 +371,54 @@ func TestConvertSSEToSyncResponseResponses(t *testing.T) {
 		t.Fatalf("expected output text from deltas, got %#v", part["text"])
 	}
 }
+
+func TestRequestConversionsPreserveServiceTierAndClaudeSpeed(t *testing.T) {
+	responsesReq, err := openAIToResponsesRequest(map[string]interface{}{
+		"model": "gpt-test", "service_tier": "priority", "messages": []interface{}{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if responsesReq["service_tier"] != "priority" {
+		t.Fatalf("Responses service_tier = %#v", responsesReq["service_tier"])
+	}
+
+	chatReq, err := responsesToOpenAI(map[string]interface{}{
+		"model": "gpt-test", "service_tier": "priority", "input": "hello",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if chatReq["service_tier"] != "priority" {
+		t.Fatalf("Chat service_tier = %#v", chatReq["service_tier"])
+	}
+
+	claudeReq, err := openAIToClaude(map[string]interface{}{
+		"model": "claude-test", "speed": "fast", "messages": []interface{}{
+			map[string]interface{}{"role": "user", "content": "hello"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claudeReq["speed"] != "fast" {
+		t.Fatalf("Claude speed = %#v", claudeReq["speed"])
+	}
+}
+
+func TestNormalizeUsageIncludesActualTier(t *testing.T) {
+	openAI := NormalizeUsage(map[string]interface{}{
+		"service_tier": "default",
+		"usage":        map[string]interface{}{"prompt_tokens": float64(1), "completion_tokens": float64(2)},
+	}, ProtocolOpenAI)
+	if openAI["actual_service_tier"] != "default" {
+		t.Fatalf("OpenAI actual tier = %#v", openAI)
+	}
+
+	claude := NormalizeUsage(map[string]interface{}{
+		"usage": map[string]interface{}{"input_tokens": float64(1), "output_tokens": float64(2), "speed": "standard"},
+	}, ProtocolClaude)
+	if claude["actual_speed"] != "standard" {
+		t.Fatalf("Claude actual speed = %#v", claude)
+	}
+}

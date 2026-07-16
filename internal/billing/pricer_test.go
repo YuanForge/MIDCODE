@@ -183,3 +183,106 @@ func TestCalcUpstreamCost_VideoCostPerSecondWithStringDuration(t *testing.T) {
 		t.Fatalf("CalcUpstreamCost = %d, want %d", cost, want)
 	}
 }
+
+func TestRequestedTierRecognizesOpenAIAndClaudeFast(t *testing.T) {
+	for name, req := range map[string]map[string]interface{}{
+		"openai priority": {"service_tier": "priority"},
+		"legacy fast":     {"service_tier": "fast"},
+		"claude fast":     {"speed": "fast"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := RequestedTier(req); got != TierFast {
+				t.Fatalf("RequestedTier() = %q, want %q", got, TierFast)
+			}
+		})
+	}
+	if got := RequestedTier(map[string]interface{}{"service_tier": "default"}); got != TierStandard {
+		t.Fatalf("RequestedTier(default) = %q, want %q", got, TierStandard)
+	}
+}
+
+func TestCalcActualCostForUserWithTierAppliesFastRatioAfterVIPDiscount(t *testing.T) {
+	RegisterVIPDiscountLookup(func(group string) int64 {
+		if group == "vip" {
+			return 8000
+		}
+		return 10000
+	})
+	defer RegisterVIPDiscountLookup(nil)
+
+	channel := &model.Channel{
+		BillingType: "token",
+		Protocol:    "openai",
+		BillingConfig: model.JSON{
+			"input_from_response":        true,
+			"input_price_per_1m_tokens":  int64(1000000),
+			"output_price_per_1m_tokens": int64(2000000),
+			"fast_ratio":                 1.75,
+		},
+	}
+	resp := map[string]interface{}{"usage": map[string]interface{}{
+		"prompt_tokens": int64(1000000), "completion_tokens": int64(1000000),
+	}}
+
+	cost, err := CalcActualCostForUserWithTier(channel, nil, resp, "vip", TierFast)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Standard VIP prices are 800k + 1.6m; fast 1.75x => 1.4m + 2.8m.
+	if cost != 4200000 {
+		t.Fatalf("cost = %d, want 4200000", cost)
+	}
+}
+
+func TestCalcActualUpstreamCostWithTierAppliesFastRatio(t *testing.T) {
+	channel := &model.Channel{
+		BillingType: "token",
+		Protocol:    "responses",
+		BillingConfig: model.JSON{
+			"input_from_response":       true,
+			"input_cost_per_1m_tokens":  int64(1000000),
+			"output_cost_per_1m_tokens": int64(3000000),
+			"fast_ratio":                1.8,
+		},
+	}
+	resp := map[string]interface{}{"usage": map[string]interface{}{
+		"prompt_tokens": int64(1000000), "completion_tokens": int64(1000000),
+	}}
+
+	cost, err := CalcActualUpstreamCostWithTier(channel, nil, resp, TierFast)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cost != 7200000 {
+		t.Fatalf("cost = %d, want 7200000", cost)
+	}
+}
+
+func TestMultiplyCreditsByFastRatioRoundsUp(t *testing.T) {
+	for _, tc := range []struct {
+		ratio float64
+		want  int64
+	}{
+		{ratio: 1.7, want: 172},
+		{ratio: 1.75, want: 177},
+		{ratio: 1.8, want: 182},
+		{ratio: 2.0, want: 202},
+		{ratio: 6.0, want: 606},
+	} {
+		if got := multiplyCreditsByRatioCeil(101, tc.ratio); got != tc.want {
+			t.Fatalf("multiplyCreditsByRatioCeil(101, %v) = %d, want %d", tc.ratio, got, tc.want)
+		}
+	}
+}
+
+func TestActualTierUsesReportedTierAndFallsBackToRequested(t *testing.T) {
+	if got, confirmed := ActualTier(TierFast, map[string]interface{}{"actual_service_tier": "default"}); got != TierStandard || !confirmed {
+		t.Fatalf("ActualTier(default) = %q, %v", got, confirmed)
+	}
+	if got, confirmed := ActualTier(TierFast, map[string]interface{}{"actual_speed": "fast"}); got != TierFast || !confirmed {
+		t.Fatalf("ActualTier(fast) = %q, %v", got, confirmed)
+	}
+	if got, confirmed := ActualTier(TierFast, nil); got != TierFast || confirmed {
+		t.Fatalf("ActualTier(fallback) = %q, %v", got, confirmed)
+	}
+}

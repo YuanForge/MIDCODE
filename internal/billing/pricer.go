@@ -5,10 +5,16 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"strconv"
 	"strings"
 	"sync"
 
 	"fanapi/internal/model"
+)
+
+const (
+	TierStandard = "standard"
+	TierFast     = "fast"
 )
 
 var (
@@ -50,7 +56,13 @@ func Calc(ch *model.Channel, req map[string]interface{}) (inputHold int64, outpu
 //	  }
 //	}
 func CalcForUser(ch *model.Channel, req map[string]interface{}, userGroup string) (inputHold int64, outputHold int64, err error) {
-	cfg := EffectivePricingConfig(map[string]interface{}(ch.BillingConfig), userGroup)
+	return CalcForUserWithTier(ch, req, userGroup, TierStandard)
+}
+
+// CalcForUserWithTier calculates the pre-consume amount using the effective
+// user price for the requested service tier.
+func CalcForUserWithTier(ch *model.Channel, req map[string]interface{}, userGroup, tier string) (inputHold int64, outputHold int64, err error) {
+	cfg := EffectivePricingConfigForTier(map[string]interface{}(ch.BillingConfig), userGroup, tier)
 	data := map[string]map[string]interface{}{"request": req}
 
 	switch ch.BillingType {
@@ -99,6 +111,145 @@ func applyGroupPricing(cfg map[string]interface{}, group string) map[string]inte
 
 func EffectivePricingConfig(cfg map[string]interface{}, group string) map[string]interface{} {
 	return applyVIPDiscount(applyGroupPricing(cfg, group), group)
+}
+
+// EffectivePricingConfigForTier resolves group/VIP pricing first, then applies
+// the channel-specific fast multiplier. This preserves the same discount and
+// margin relationship for standard and fast requests.
+func EffectivePricingConfigForTier(cfg map[string]interface{}, group, tier string) map[string]interface{} {
+	effective := EffectivePricingConfig(cfg, group)
+	if NormalizeTier(tier) != TierFast {
+		return effective
+	}
+	return applyFastRatio(effective, priceRatioKeys)
+}
+
+var priceRatioKeys = []string{
+	"input_price_per_1m_tokens",
+	"output_price_per_1m_tokens",
+	"cache_creation_price_per_1m_tokens",
+	"cache_read_price_per_1m_tokens",
+}
+
+var costRatioKeys = []string{
+	"input_cost_per_1m_tokens",
+	"output_cost_per_1m_tokens",
+	"cache_creation_cost_per_1m_tokens",
+	"cache_read_cost_per_1m_tokens",
+}
+
+func NormalizeTier(tier string) string {
+	if strings.EqualFold(strings.TrimSpace(tier), TierFast) {
+		return TierFast
+	}
+	return TierStandard
+}
+
+func RequestedTier(req map[string]interface{}) string {
+	if req == nil {
+		return TierStandard
+	}
+	if value, _ := req["speed"].(string); strings.EqualFold(strings.TrimSpace(value), TierFast) {
+		return TierFast
+	}
+	if value, _ := req["service_tier"].(string); strings.EqualFold(strings.TrimSpace(value), "priority") || strings.EqualFold(strings.TrimSpace(value), TierFast) {
+		return TierFast
+	}
+	return TierStandard
+}
+
+// ActualTier resolves the upstream tier reported in normalized usage. When the
+// upstream omits the field (for example after an interrupted stream), it falls
+// back to the requested tier and reports confirmed=false.
+func ActualTier(requested string, usage map[string]interface{}) (tier string, confirmed bool) {
+	if usage != nil {
+		if speed, _ := usage["actual_speed"].(string); speed != "" {
+			switch strings.ToLower(strings.TrimSpace(speed)) {
+			case TierFast:
+				return TierFast, true
+			case TierStandard:
+				return TierStandard, true
+			}
+		}
+		if serviceTier, _ := usage["actual_service_tier"].(string); serviceTier != "" {
+			switch strings.ToLower(strings.TrimSpace(serviceTier)) {
+			case "priority", TierFast:
+				return TierFast, true
+			case "default", TierStandard:
+				return TierStandard, true
+			}
+		}
+	}
+	return NormalizeTier(requested), false
+}
+
+func FastRatio(ch *model.Channel) (float64, bool) {
+	if ch == nil || ch.BillingConfig == nil {
+		return 0, false
+	}
+	ratio, ok := configNumberFloat64(ch.BillingConfig["fast_ratio"])
+	if !ok || math.IsNaN(ratio) || math.IsInf(ratio, 0) || ratio <= 0 || ratio > 100 {
+		return 0, false
+	}
+	return ratio, true
+}
+
+func applyFastRatio(cfg map[string]interface{}, keys []string) map[string]interface{} {
+	ratio, ok := configNumberFloat64(cfg["fast_ratio"])
+	if !ok || math.IsNaN(ratio) || math.IsInf(ratio, 0) || ratio <= 0 || ratio > 100 {
+		return cfg
+	}
+	merged := cloneConfigMap(cfg)
+	for _, key := range keys {
+		value, exists := merged[key]
+		if !exists {
+			continue
+		}
+		n, ok := configNumberInt64(value)
+		if !ok || n <= 0 {
+			continue
+		}
+		merged[key] = multiplyCreditsByRatioCeil(n, ratio)
+	}
+	return merged
+}
+
+func configNumberFloat64(value interface{}) (float64, bool) {
+	switch n := value.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case int32:
+		return float64(n), true
+	case uint:
+		return float64(n), true
+	case uint64:
+		return float64(n), true
+	case json.Number:
+		parsed, err := n.Float64()
+		return parsed, err == nil
+	case string:
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func multiplyCreditsByRatioCeil(credits int64, ratio float64) int64 {
+	if credits <= 0 || ratio <= 0 {
+		return 0
+	}
+	value := math.Ceil(float64(credits) * ratio)
+	if value >= float64(math.MaxInt64) {
+		return math.MaxInt64
+	}
+	return int64(value)
 }
 
 func modelNameForPricing(ch *model.Channel, req map[string]interface{}) string {
@@ -256,10 +407,14 @@ func CalcActualCost(ch *model.Channel, req, resp map[string]interface{}) (int64,
 }
 
 func CalcActualCostForUser(ch *model.Channel, req, resp map[string]interface{}, userGroup string) (int64, error) {
+	return CalcActualCostForUserWithTier(ch, req, resp, userGroup, TierStandard)
+}
+
+func CalcActualCostForUserWithTier(ch *model.Channel, req, resp map[string]interface{}, userGroup, tier string) (int64, error) {
 	if ch.BillingType != "token" {
 		return 0, nil
 	}
-	cfg := EffectivePricingConfig(map[string]interface{}(ch.BillingConfig), userGroup)
+	cfg := EffectivePricingConfigForTier(map[string]interface{}(ch.BillingConfig), userGroup, tier)
 	data := map[string]map[string]interface{}{"request": req, "response": resp}
 
 	outputPricePer1m := getInt64Val(cfg, "output_price_per_1m_tokens")
@@ -642,7 +797,14 @@ func splitKey(key string) []string {
 //
 // 若渠道未配置进价字段，则进价默认为 0（即成本未知）。
 func CalcUpstreamCost(ch *model.Channel, req map[string]interface{}) (int64, error) {
+	return CalcUpstreamCostWithTier(ch, req, TierStandard)
+}
+
+func CalcUpstreamCostWithTier(ch *model.Channel, req map[string]interface{}, tier string) (int64, error) {
 	cfg := map[string]interface{}(ch.BillingConfig)
+	if NormalizeTier(tier) == TierFast {
+		cfg = applyFastRatio(cfg, costRatioKeys)
+	}
 	data := map[string]map[string]interface{}{"request": req}
 
 	switch ch.BillingType {
@@ -667,10 +829,17 @@ func CalcUpstreamCost(ch *model.Channel, req map[string]interface{}) (int64, err
 // CalcActualUpstreamCost 根据响应中的实际用量计算上游真实进价成本（仅用于 token 类型结算）。
 // 与 CalcActualCost 逻辑相同，但使用 *_cost_* 进价字段。
 func CalcActualUpstreamCost(ch *model.Channel, req, resp map[string]interface{}) (int64, error) {
+	return CalcActualUpstreamCostWithTier(ch, req, resp, TierStandard)
+}
+
+func CalcActualUpstreamCostWithTier(ch *model.Channel, req, resp map[string]interface{}, tier string) (int64, error) {
 	if ch.BillingType != "token" {
 		return 0, nil
 	}
 	cfg := map[string]interface{}(ch.BillingConfig)
+	if NormalizeTier(tier) == TierFast {
+		cfg = applyFastRatio(cfg, costRatioKeys)
+	}
 	data := map[string]map[string]interface{}{"request": req, "response": resp}
 
 	outputCostPer1m := getInt64Val(cfg, "output_cost_per_1m_tokens")

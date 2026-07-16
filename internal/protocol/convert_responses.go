@@ -16,6 +16,9 @@ func openAIToResponsesRequest(req map[string]interface{}) (map[string]interface{
 	if s, ok := req["stream"]; ok {
 		out["stream"] = s
 	}
+	if serviceTier, ok := req["service_tier"]; ok {
+		out["service_tier"] = serviceTier
+	}
 	if mt, ok := req["max_tokens"]; ok {
 		out["max_output_tokens"] = mt
 	} else if mt, ok := req["max_completion_tokens"]; ok {
@@ -175,6 +178,9 @@ func responsesToOpenAI(req map[string]interface{}) (map[string]interface{}, erro
 	}
 	if s, ok := req["stream"]; ok {
 		out["stream"] = s
+	}
+	if serviceTier, ok := req["service_tier"]; ok {
+		out["service_tier"] = serviceTier
 	}
 	if mt, ok := req["max_output_tokens"]; ok {
 		out["max_tokens"] = mt
@@ -482,6 +488,9 @@ func openAIToResponsesSync(body []byte) ([]byte, error) {
 			"output_tokens": outputTokens,
 		},
 	}
+	if serviceTier, _ := resp["service_tier"].(string); serviceTier != "" {
+		out["service_tier"] = serviceTier
+	}
 	return json.Marshal(out)
 }
 
@@ -550,6 +559,9 @@ func responsesToOpenAISync(body []byte) ([]byte, error) {
 			"completion_tokens": completionTokens,
 			"total_tokens":      promptTokens + completionTokens,
 		},
+	}
+	if serviceTier, _ := resp["service_tier"].(string); serviceTier != "" {
+		out["service_tier"] = serviceTier
 	}
 
 	return json.Marshal(out)

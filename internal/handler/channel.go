@@ -3,7 +3,9 @@ package handler
 import (
 	"fanapi/internal/model"
 	"fanapi/internal/service"
+	"fmt"
 	"github.com/gin-gonic/gin"
+	"math"
 	"net/http"
 	"strconv"
 )
@@ -12,6 +14,10 @@ import (
 func CreateChannel(c *gin.Context) {
 	var ch model.Channel
 	if err := c.ShouldBindJSON(&ch); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := validateChannelFastRatio(&ch); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -116,12 +122,39 @@ func UpdateChannel(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if err := validateChannelFastRatio(&ch); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	ch.ID = id
 	if err := service.UpdateChannel(c.Request.Context(), &ch); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, ch)
+}
+
+func validateChannelFastRatio(ch *model.Channel) error {
+	if ch == nil || ch.BillingConfig == nil {
+		return nil
+	}
+	raw, exists := ch.BillingConfig["fast_ratio"]
+	if !exists || raw == nil || raw == "" {
+		return nil
+	}
+	ratio, ok := numberToFloat64(raw)
+	if !ok {
+		if text, isString := raw.(string); isString {
+			parsed, err := strconv.ParseFloat(text, 64)
+			if err == nil {
+				ratio, ok = parsed, true
+			}
+		}
+	}
+	if !ok || math.IsNaN(ratio) || math.IsInf(ratio, 0) || ratio <= 0 || ratio > 100 {
+		return fmt.Errorf("fast_ratio 必须是大于 0 且不超过 100 的数字")
+	}
+	return nil
 }
 
 // PATCH /admin/channels/:id/active — 仅更新渠道启用状态，不影响其他字段

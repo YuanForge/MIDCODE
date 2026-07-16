@@ -31,6 +31,9 @@ func openAIToClaude(req map[string]interface{}) (map[string]interface{}, error) 
 	if s, ok := req["stream"]; ok {
 		out["stream"] = s
 	}
+	if speed, ok := req["speed"]; ok {
+		out["speed"] = speed
+	}
 
 	// system + messages
 	messages, _ := req["messages"].([]interface{})
@@ -257,6 +260,9 @@ func claudeRequestToOpenAI(req map[string]interface{}) (map[string]interface{}, 
 	}
 	if s, ok := req["stream"]; ok {
 		out["stream"] = s
+	}
+	if speed, ok := req["speed"]; ok {
+		out["speed"] = speed
 	}
 
 	var messages []interface{}

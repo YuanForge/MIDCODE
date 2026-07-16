@@ -28,7 +28,8 @@ func llmSettle(c *gin.Context, ch *model.Channel, reqData, usageData map[string]
 	totalHold, userID, channelID, apiKeyIDVal, poolKeyIDVal int64, corrID string, userGroup string) {
 	ctx, cancel := newLLMBillingContext()
 	defer cancel()
-	upstreamCostHold, _ := billing.CalcUpstreamCost(ch, reqData)
+	requestedTier := billing.RequestedTier(reqData)
+	upstreamCostHold, _ := billing.CalcUpstreamCostWithTier(ch, reqData, requestedTier)
 
 	// 非 token 计费（image/video/audio/count/custom）：预扣即精确值，上游成功即结算完毕，不依赖 usageData。
 	// 例外：billing_type=image 且响应中检测到实际图片数量（image_count），按实际图片数调差。
@@ -106,9 +107,22 @@ func llmSettle(c *gin.Context, ch *model.Channel, reqData, usageData map[string]
 		enqueueLLMLogPatch(corrID, []string{"status"}, model.LLMLog{Status: "refunded"})
 		return
 	}
+	actualTier, tierConfirmed := billing.ActualTier(requestedTier, usageData)
+	billingTier := actualTier
+	if requestedTier == billing.TierStandard {
+		// Never pass an unexpected upstream premium on to a user who did not request it.
+		billingTier = billing.TierStandard
+	}
+	usageData["requested_tier"] = requestedTier
+	usageData["actual_tier"] = actualTier
+	usageData["tier_confirmed"] = tierConfirmed
+	usageData["tier_downgraded"] = requestedTier == billing.TierFast && actualTier == billing.TierStandard
+	if !tierConfirmed {
+		usageData["tier_unconfirmed"] = true
+	}
 	respData := map[string]interface{}{"usage": usageData}
-	actualCost, settleErr := billing.CalcActualCostForUser(ch, reqData, respData, userGroup)
-	actualUpstreamCost, _ := billing.CalcActualUpstreamCost(ch, reqData, respData)
+	actualCost, settleErr := billing.CalcActualCostForUserWithTier(ch, reqData, respData, userGroup, billingTier)
+	actualUpstreamCost, _ := billing.CalcActualUpstreamCostWithTier(ch, reqData, respData, actualTier)
 	if settleErr == nil {
 		inputFromResponse, _ := ch.BillingConfig["input_from_response"].(bool)
 		if !inputFromResponse {
@@ -198,7 +212,14 @@ func llmSettle(c *gin.Context, ch *model.Channel, reqData, usageData map[string]
 			}
 		}
 	}
-	enqueueLLMLogPatch(corrID, []string{"status", "usage", "error_msg"}, model.LLMLog{Status: "ok", Usage: model.JSON(usageData), ErrorMsg: ""})
+	inputPricePer1M, outputPricePer1M := resolveTokenPriceMetaValueForTier(ch, userGroup, billingTier)
+	enqueueLLMLogPatch(corrID, []string{"status", "usage", "error_msg", "input_price_per_1m_tokens", "output_price_per_1m_tokens"}, model.LLMLog{
+		Status:                 "ok",
+		Usage:                  model.JSON(usageData),
+		ErrorMsg:               "",
+		InputPricePer1MTokens:  inputPricePer1M,
+		OutputPricePer1MTokens: outputPricePer1M,
+	})
 }
 
 // llmRefundAndAbort 退款并终止请求（上游失败时调用）。

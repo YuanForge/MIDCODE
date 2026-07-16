@@ -104,6 +104,11 @@ func sendLLMRequest(c *gin.Context, ch *model.Channel, reqData map[string]interf
 			upReq.Header.Set(k, script.ResolveHeaderValue(sv, poolKeyVal))
 		}
 	}
+	if channelProtocol == protocolClaude {
+		if speed, _ := reqData["speed"].(string); strings.EqualFold(strings.TrimSpace(speed), "fast") {
+			appendHeaderListValue(upReq.Header, "Anthropic-Beta", "fast-mode-2026-02-01")
+		}
+	}
 
 	// URL 里也支持 {{pool_key}} / {{}} 占位符（如 Gemini ?key={{}} 写法）
 	if strings.Contains(upReq.URL.RawQuery, "%7B%7B") || strings.Contains(targetURL, "{{") {
@@ -125,6 +130,19 @@ func sendLLMRequest(c *gin.Context, ch *model.Channel, reqData map[string]interf
 
 	resp, err := httpClient.Do(upReq)
 	return sanitizedHeaders, resp, err
+}
+
+func appendHeaderListValue(header http.Header, key, value string) {
+	for _, current := range strings.Split(header.Get(key), ",") {
+		if strings.EqualFold(strings.TrimSpace(current), value) {
+			return
+		}
+	}
+	if existing := strings.TrimSpace(header.Get(key)); existing != "" {
+		header.Set(key, existing+","+value)
+		return
+	}
+	header.Set(key, value)
 }
 
 type llmUpstreamTarget struct {
