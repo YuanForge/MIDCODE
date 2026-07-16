@@ -30,6 +30,12 @@ test('user console exposes the shared shell', async ({ page }) => {
     route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }),
   )
   await page.goto('/dashboard')
+  const themeToggle = page.getByRole('button', { name: 'Toggle theme' })
+  await expect(themeToggle).toBeVisible()
+  await themeToggle.click()
+  await expect(page.locator('html')).toHaveClass(/dark/)
+  await page.reload()
+  await expect(page.locator('html')).toHaveClass(/dark/)
   const appShell = page.locator('[data-slot="app-shell"]')
   await expect(appShell).toBeVisible()
   await expect(appShell).toHaveClass(/group\/sidebar-wrapper/)

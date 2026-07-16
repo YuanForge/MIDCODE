@@ -32,6 +32,7 @@ import {
 import { AppLogo } from '@/components/shared/AppLogo'
 import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher'
 import { PageContainer } from '@/components/shared/PageContainer'
+import { ThemeToggle } from '@/components/shared/ThemeToggle'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import {
@@ -296,6 +297,7 @@ export function ConsoleLayout({
           </div>
           <div className="flex items-center gap-1.5 sm:gap-2">
             {role === 'user' && <LanguageSwitcher />}
+            <ThemeToggle />
             <ContactPopover
               imageUrl={qqGroupUrl}
               label={translateUserText('layout.qqGroup', 'QQ 交流群')}

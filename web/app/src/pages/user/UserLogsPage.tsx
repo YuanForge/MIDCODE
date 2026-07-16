@@ -33,7 +33,7 @@ import { formatCredits, formatTokenPricePerMillion } from '@/lib/formatters/cred
 
 function renderStatus(status?: string) {
   if (status === 'ok') {
-    return <Badge variant="secondary">成功</Badge>
+    return <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">成功</Badge>
   }
   if (status === 'error') {
     return <Badge variant="destructive">失败</Badge>

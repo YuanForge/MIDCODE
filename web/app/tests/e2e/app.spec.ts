@@ -131,6 +131,29 @@ test('renders user dashboard with authenticated mocks', async ({ page }) => {
   await expect(page.getByText('1.20')).toBeVisible()
 })
 
+test('renders successful user logs with a green status badge', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('token', 'mock-user-token')
+  })
+
+  await page.route('**/api/v1/llm-logs**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [{ id: 1, model: 'gpt-test', status: 'ok', created_at: '2026-07-16T00:00:00Z' }],
+        total: 1,
+      }),
+    })
+  })
+
+  await page.goto('/llm-logs')
+
+  const successBadge = page.getByText('成功', { exact: true })
+  await expect(successBadge).toBeVisible()
+  await expect(successBadge).toHaveClass(/text-emerald-700/)
+})
+
 test('renders admin dashboard with authenticated mocks', async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem('admin_token', 'mock-admin-token')
