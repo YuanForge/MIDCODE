@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -160,7 +161,20 @@ func createTask(c *gin.Context, taskType string, reqData map[string]interface{})
 	var ch *model.Channel
 	var stableChannels []model.Channel // 稳定密钥：按价格排序的候选列表
 
-	if channelIDStr != "" {
+	if apiKeyIDVal > 0 && channelIDStr == "" {
+		routingModel, _ := reqData["model"].(string)
+		var routeErr error
+		stableChannels, routeErr = selectAPIKeyModelChannels(c.Request.Context(), apiKeyIDVal, routingModel, "")
+		if routeErr != nil {
+			if errors.Is(routeErr, service.ErrAPIKeyModelGroupsNotConfigured) {
+				c.JSON(http.StatusForbidden, gin.H{"error": "请先为 API Key 绑定模型分组"})
+			} else {
+				c.JSON(http.StatusNotFound, gin.H{"error": routeErr.Error()})
+			}
+			return
+		}
+		ch = &stableChannels[0]
+	} else if channelIDStr != "" {
 		channelID, parseErr := strconv.ParseInt(channelIDStr, 10, 64)
 		if parseErr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "channel_id 格式错误"})
@@ -170,6 +184,10 @@ func createTask(c *gin.Context, taskType string, reqData map[string]interface{})
 		ch, chErr = service.GetChannel(c.Request.Context(), channelID)
 		if chErr != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": chErr.Error()})
+			return
+		}
+		if err := authorizeAPIKeyChannel(c.Request.Context(), apiKeyIDVal, ch.ID, service.ChannelRoutingKey(*ch)); err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 			return
 		}
 	} else {
@@ -200,6 +218,7 @@ func createTask(c *gin.Context, taskType string, reqData map[string]interface{})
 			}
 		}
 	}
+	hasGroupRouting := apiKeyIDVal > 0 && len(stableChannels) > 0
 	channelID := ch.ID
 
 	// 捕获用户传入的路由键（用于专属模型积分扣减），必须在模型名覆盖之前保存
@@ -221,7 +240,7 @@ func createTask(c *gin.Context, taskType string, reqData map[string]interface{})
 			}
 
 			service.RecordChannelError(c.Request.Context(), channelID)
-			if !isStable || channelIDStr != "" {
+			if (!isStable && !hasGroupRouting) || channelIDStr != "" {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "号池分配失败: " + pkErr.Error()})
 				return
 			}
@@ -424,6 +443,10 @@ func createTask(c *gin.Context, taskType string, reqData map[string]interface{})
 }
 
 func estimateTaskCost(c *gin.Context, taskType string, reqData map[string]interface{}) {
+	var apiKeyIDVal int64
+	if apiKeyID, ok := c.Get("api_key_id"); ok && apiKeyID != nil {
+		apiKeyIDVal, _ = apiKeyID.(int64)
+	}
 	var userGroup string
 	if raw, ok := c.Get("user_group"); ok {
 		userGroup, _ = raw.(string)
@@ -431,7 +454,19 @@ func estimateTaskCost(c *gin.Context, taskType string, reqData map[string]interf
 	channelIDStr := c.Query("channel_id")
 
 	var ch *model.Channel
-	if channelIDStr != "" {
+	if apiKeyIDVal > 0 && channelIDStr == "" {
+		routingModel, _ := reqData["model"].(string)
+		stableChannels, err := selectAPIKeyModelChannels(c.Request.Context(), apiKeyIDVal, routingModel, "")
+		if err != nil {
+			if errors.Is(err, service.ErrAPIKeyModelGroupsNotConfigured) {
+				c.JSON(http.StatusForbidden, gin.H{"error": "请先为 API Key 绑定模型分组"})
+			} else {
+				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			}
+			return
+		}
+		ch = &stableChannels[0]
+	} else if channelIDStr != "" {
 		channelID, parseErr := strconv.ParseInt(channelIDStr, 10, 64)
 		if parseErr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "channel_id 格式错误"})

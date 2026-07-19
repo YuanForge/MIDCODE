@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -331,7 +332,27 @@ func llmProxy(c *gin.Context) {
 	var triedIDs []int64
 	var stableChannels []model.Channel // 稳定密钥：按价格排好序的渠道列表
 
-	if channelIDStr != "" {
+	if apiKeyIDVal > 0 && channelIDStr == "" {
+		routingModel, _ := reqData["model"].(string)
+		if routingModel == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "请在请求体 model 字段填写模型名称"})
+			return
+		}
+		protocolFilter := ""
+		if isResponsesCompact {
+			protocolFilter = protocolResponses
+		}
+		stableChannels, err = selectAPIKeyModelChannels(c.Request.Context(), apiKeyIDVal, routingModel, protocolFilter)
+		if err != nil {
+			if errors.Is(err, service.ErrAPIKeyModelGroupsNotConfigured) {
+				c.JSON(http.StatusForbidden, gin.H{"error": "请先为 API Key 绑定模型分组"})
+			} else {
+				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			}
+			return
+		}
+		ch = &stableChannels[0]
+	} else if channelIDStr != "" {
 		// 直接指定 channel_id，不走负载均衡
 		channelID, parseErr := strconv.ParseInt(channelIDStr, 10, 64)
 		if parseErr != nil {
@@ -341,6 +362,10 @@ func llmProxy(c *gin.Context) {
 		ch, err = service.GetChannel(c.Request.Context(), channelID)
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		if err := authorizeAPIKeyChannel(c.Request.Context(), apiKeyIDVal, ch.ID, service.ChannelRoutingKey(*ch)); err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 			return
 		}
 		if isResponsesCompact && effectiveProtocol(ch) != protocolResponses {

@@ -3,9 +3,36 @@ package handler
 import (
 	"fanapi/internal/model"
 	"fanapi/internal/service"
+	"fmt"
 
 	"context"
 )
+
+func selectAPIKeyModelChannels(ctx context.Context, apiKeyID int64, routingModel, protocol string) ([]model.Channel, error) {
+	routes, err := service.SelectHealthyModelGroupRoutes(ctx, apiKeyID, routingModel, protocol)
+	if err != nil {
+		return nil, err
+	}
+	channels := make([]model.Channel, 0, len(routes))
+	for _, route := range routes {
+		channels = append(channels, route.Channel)
+	}
+	return channels, nil
+}
+
+func authorizeAPIKeyChannel(ctx context.Context, apiKeyID, channelID int64, routingModel string) error {
+	if apiKeyID <= 0 {
+		return nil
+	}
+	authorized, err := service.IsChannelAuthorizedForAPIKey(ctx, apiKeyID, channelID, routingModel)
+	if err != nil {
+		return err
+	}
+	if !authorized {
+		return fmt.Errorf("channel is not authorized for this API key")
+	}
+	return nil
+}
 
 // selectNextChannel 为重试选择下一个渠道，排除已尝试过的渠道 ID。
 // 稳定密钥使用价格升序候选列表；普通路由使用现有加权重试选择。

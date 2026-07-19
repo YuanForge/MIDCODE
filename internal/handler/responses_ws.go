@@ -133,7 +133,17 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 		return fmt.Errorf("请在请求体 model 字段填写模型名称")
 	}
 
-	ch, chErr := service.SelectChannel(c.Request.Context(), routingKey)
+	var ch *model.Channel
+	var chErr error
+	if apiKeyIDVal > 0 {
+		routes, routeErr := service.SelectHealthyModelGroupRoutes(c.Request.Context(), apiKeyIDVal, routingKey, protocolResponses)
+		if routeErr != nil {
+			return routeErr
+		}
+		ch = &routes[0].Channel
+	} else {
+		ch, chErr = service.SelectChannel(c.Request.Context(), routingKey)
+	}
 	if chErr != nil {
 		ch, chErr = service.GetChannelByName(c.Request.Context(), routingKey)
 		if chErr != nil {

@@ -57,7 +57,7 @@ func RealtimeWSProxy(c *gin.Context) {
 		return
 	}
 
-	ch, err := selectRealtimeChannel(c.Request.Context(), routingModel)
+	ch, err := selectRealtimeChannel(c.Request.Context(), apiKeyIDVal, routingModel)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "渠道不存在: " + routingModel})
 		return
@@ -227,7 +227,14 @@ func RealtimeWSProxy(c *gin.Context) {
 	llmSettle(c, ch, reqData, usage, totalHold, userID, ch.ID, apiKeyIDVal, poolKeyIDVal, corrID, userGroup)
 }
 
-func selectRealtimeChannel(ctx context.Context, routingModel string) (*model.Channel, error) {
+func selectRealtimeChannel(ctx context.Context, apiKeyID int64, routingModel string) (*model.Channel, error) {
+	if apiKeyID > 0 {
+		routes, err := service.SelectHealthyModelGroupRoutes(ctx, apiKeyID, routingModel, protocolRealtime)
+		if err != nil {
+			return nil, err
+		}
+		return &routes[0].Channel, nil
+	}
 	if ch, err := service.SelectChannelByProtocol(ctx, routingModel, protocolRealtime); err == nil {
 		return ch, nil
 	}
