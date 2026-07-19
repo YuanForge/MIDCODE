@@ -58,6 +58,9 @@ func Init(cfg *config.DBConfig, migrate bool) error {
 		new(model.User),
 		new(model.EmailVerification),
 		new(model.APIKey),
+		new(model.ModelGroup),
+		new(model.ModelGroupModel),
+		new(model.APIKeyModelGroup),
 		new(model.Channel),
 		new(model.KeyPool),
 		new(model.PoolKey),
@@ -221,6 +224,27 @@ func ensureIndexes() error {
 			"idx_billing_tx_user_api_key_created",
 			`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_billing_tx_user_api_key_created
 			ON billing_transactions (user_id, api_key_id, created_at DESC)
+			WHERE api_key_id > 0`,
+		},
+		{
+			"idx_model_group_models_group_model",
+			`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_model_group_models_group_model
+			ON model_group_models (group_id, routing_model)`,
+		},
+		{
+			"idx_api_key_model_groups_key_priority",
+			`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_api_key_model_groups_key_priority
+			ON api_key_model_groups (api_key_id, priority ASC, id ASC)`,
+		},
+		{
+			"idx_api_key_model_groups_group",
+			`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_api_key_model_groups_group
+			ON api_key_model_groups (group_id, api_key_id)`,
+		},
+		{
+			"idx_llm_logs_user_api_key_created",
+			`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_llm_logs_user_api_key_created
+			ON llm_logs (user_id, api_key_id, created_at DESC)
 			WHERE api_key_id > 0`,
 		},
 		{
