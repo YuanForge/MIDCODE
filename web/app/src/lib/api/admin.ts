@@ -680,6 +680,22 @@ export const adminApi = {
     http.post<Record<string, unknown>>(`/admin/channels/${id}/refresh-runtime`, {}),
   deleteChannel: (id: number) =>
     http.delete<Record<string, unknown>>(`/admin/channels/${id}`),
+  listModelGroups: (includeInactive = true) =>
+    http.get<{ groups?: AdminModelGroup[] }>('/admin/model-groups', { params: { include_inactive: includeInactive } }),
+  createModelGroup: (payload: Partial<AdminModelGroup>) =>
+    http.post<AdminModelGroup>('/admin/model-groups', payload),
+  updateModelGroup: (id: number, payload: Partial<AdminModelGroup>) =>
+    http.put<AdminModelGroup>(`/admin/model-groups/${id}`, payload),
+  toggleModelGroup: (id: number, isActive: boolean) =>
+    http.patch<Record<string, unknown>>(`/admin/model-groups/${id}/toggle`, { is_active: isActive }),
+  deleteModelGroup: (id: number) =>
+    http.delete<Record<string, unknown>>(`/admin/model-groups/${id}`),
+  listModelGroupModels: (id: number) =>
+    http.get<{ models?: AdminModelGroupModel[] }>(`/admin/model-groups/${id}/models`),
+  bindModelGroupModel: (id: number, payload: { channel_id: number; routing_model: string }) =>
+    http.post<AdminModelGroupModel>(`/admin/model-groups/${id}/models`, payload),
+  unbindModelGroupModel: (id: number, modelID: number) =>
+    http.delete<Record<string, unknown>>(`/admin/model-groups/${id}/models/${modelID}`),
   previewChannelUpstreamCost: (id: number, params: { platform_id: number; model?: string; group?: string; markup?: number }) =>
     http.get<AdminChannelUpstreamCostPreview>(`/admin/channels/${id}/upstream-cost`, { params }),
   syncChannelUpstreamCost: (id: number, payload: { platform_id: number; model?: string; group?: string; markup?: number }) =>
@@ -974,4 +990,23 @@ export const adminApi = {
     uploadAuthedImage('admin', file, category),
   uploadVideo: (file: File, category: UploadVideoCategory) =>
     uploadAuthedVideo('admin', file, category),
+}
+
+export type AdminModelGroup = {
+  id?: number
+  code?: string
+  name?: string
+  description?: string
+  is_active?: boolean
+  model_count?: number
+  created_at?: string
+  updated_at?: string
+}
+
+export type AdminModelGroupModel = {
+  id?: number
+  group_id?: number
+  routing_model?: string
+  channel_id?: number
+  channel?: AdminChannel
 }

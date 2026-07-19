@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
+  BoxesIcon,
   BlocksIcon,
   BookOpenIcon,
   BriefcaseBusinessIcon,
@@ -430,6 +431,7 @@ export const adminNavItems: NavItem[] = [
   { label: '账单流水', href: '/admin/billing', icon: WalletCardsIcon },
   { label: '充值订单', href: '/admin/payments', icon: CreditCardIcon },
   { label: 'VIP 分组', href: '/admin/vip-groups', icon: UsersRoundIcon },
+  { label: '模型分组', href: '/admin/model-groups', icon: BoxesIcon },
   { label: '优惠券', href: '/admin/coupons', icon: TicketIcon },
   { label: '任务中心', href: '/admin/tasks', icon: ListIcon },
   { label: '调用日志', href: '/admin/llm-logs', icon: FileClockIcon },

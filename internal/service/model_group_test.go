@@ -43,3 +43,15 @@ func TestValidateModelGroupModelRequiresMatchingRoutingKey(t *testing.T) {
 		t.Fatalf("expected matching routing model, got %v", err)
 	}
 }
+
+func TestValidateModelGroupInput(t *testing.T) {
+	if err := validateModelGroupInput(&model.ModelGroup{Code: " ", Name: "x"}); err == nil {
+		t.Fatal("expected blank code to be rejected")
+	}
+	if err := validateModelGroupInput(&model.ModelGroup{Code: "cheap", Name: " "}); err == nil {
+		t.Fatal("expected blank name to be rejected")
+	}
+	if err := validateModelGroupInput(&model.ModelGroup{Code: "cheap", Name: "Low price"}); err != nil {
+		t.Fatalf("expected valid group input, got %v", err)
+	}
+}
