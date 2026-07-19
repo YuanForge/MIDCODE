@@ -235,6 +235,21 @@ func GenerateResellerAPIKey(ctx context.Context, resellerID int64, name, keyType
 	return GenerateAPIKey(ctx, reseller.UserID, name, keyType, secret)
 }
 
+func GenerateResellerAPIKeyWithGroups(ctx context.Context, resellerID int64, name string, groupIDs []int64, secret string) (string, error) {
+	reseller := &model.Reseller{}
+	found, err := db.Engine.Context(ctx).ID(resellerID).Get(reseller)
+	if err != nil {
+		return "", err
+	}
+	if !found || !reseller.IsActive {
+		return "", fmt.Errorf("reseller account not found or disabled")
+	}
+	if strings.TrimSpace(name) == "" {
+		name = "代理站 Key"
+	}
+	return CreateAPIKeyWithGroups(ctx, reseller.UserID, name, groupIDs, secret)
+}
+
 func CreateResellerSite(ctx context.Context, resellerID int64, input CreateResellerSiteInput, cfg *config.Config) (*ResellerSiteBuildResult, error) {
 	reseller := &model.Reseller{}
 	found, err := db.Engine.Context(ctx).ID(resellerID).Get(reseller)

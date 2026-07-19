@@ -84,17 +84,14 @@ func (h *ResellerHandler) ListKeys(c *gin.Context) {
 func (h *ResellerHandler) CreateKey(c *gin.Context) {
 	resellerID := c.MustGet("reseller_id").(int64)
 	var req struct {
-		Name    string `json:"name" binding:"required,max=64"`
-		KeyType string `json:"key_type"`
+		Name     string  `json:"name" binding:"required,max=64"`
+		GroupIDs []int64 `json:"group_ids"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if req.KeyType != "stable" {
-		req.KeyType = "low_price"
-	}
-	rawKey, err := service.GenerateResellerAPIKey(c.Request.Context(), resellerID, req.Name, req.KeyType, h.cfg.Server.JWTSecret)
+	rawKey, err := service.GenerateResellerAPIKeyWithGroups(c.Request.Context(), resellerID, req.Name, req.GroupIDs, h.cfg.Server.JWTSecret)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

@@ -18,7 +18,6 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { NativeSelect } from '@/components/ui/select'
 import {
   Table,
   TableBody,
@@ -29,7 +28,7 @@ import {
 } from '@/components/ui/table'
 import { copyToClipboard } from '@/lib/clipboard'
 import { getApiErrorMessage } from '@/lib/api/http'
-import { resellerApi, type ResellerKey } from '@/lib/api/reseller'
+import { resellerApi, type ResellerKey, type ResellerModelGroup } from '@/lib/api/reseller'
 import { useAsync } from '@/hooks/use-async'
 
 function formatTime(value?: string | null) {
@@ -41,10 +40,14 @@ export function ResellerKeysPage() {
     const response = await resellerApi.getKeys()
     return Array.isArray(response) ? response : response.keys ?? response.items ?? []
   }, [] as ResellerKey[])
+  const { data: modelGroups } = useAsync(async () => {
+    const response = await resellerApi.listModelGroups()
+    return response.groups ?? []
+  }, [] as ResellerModelGroup[])
 
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('代理站 API Key')
-  const [keyType, setKeyType] = useState<'low_price' | 'stable'>('low_price')
+  const [groupIds, setGroupIds] = useState<number[]>([])
   const [createdKey, setCreatedKey] = useState('')
   const [mutError, setMutError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -54,7 +57,7 @@ export function ResellerKeysPage() {
     setOpen(nextOpen)
     if (!nextOpen) {
       setName('代理站 API Key')
-      setKeyType('low_price')
+      setGroupIds([])
       setCreatedKey('')
       setMutError('')
     }
@@ -65,10 +68,14 @@ export function ResellerKeysPage() {
       setMutError('请输入 Key 名称')
       return
     }
+    if (groupIds.length === 0) {
+      setMutError('请至少选择一个模型分组')
+      return
+    }
     setSubmitting(true)
     setMutError('')
     try {
-      const response = await resellerApi.createKey({ name: name.trim(), key_type: keyType })
+      const response = await resellerApi.createKey({ name: name.trim(), group_ids: groupIds })
       setCreatedKey(response.key ?? '')
       reload()
     } catch (err) {
@@ -105,7 +112,7 @@ export function ResellerKeysPage() {
             <TableRow>
               <TableHead>ID</TableHead>
               <TableHead>名称</TableHead>
-              <TableHead>类型</TableHead>
+              <TableHead>路由方式</TableHead>
               <TableHead>Key 前缀</TableHead>
               <TableHead>绑定站点</TableHead>
               <TableHead>最后使用</TableHead>
@@ -129,7 +136,7 @@ export function ResellerKeysPage() {
                   <TableRow key={row.id ?? index}>
                     <TableCell>{row.id ?? '-'}</TableCell>
                     <TableCell>{row.name ?? '-'}</TableCell>
-                    <TableCell>{row.key_type === 'stable' ? '稳定优先' : '低价优先'}</TableCell>
+                    <TableCell>模型分组</TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">
                       {row.key_prefix ?? '-'}
                     </TableCell>
@@ -161,11 +168,10 @@ export function ResellerKeysPage() {
               <Input value={name} onChange={(event) => setName(event.target.value)} />
             </div>
             <div className="flex flex-col gap-2">
-              <Label>调用策略</Label>
-              <NativeSelect value={keyType} onChange={(event) => setKeyType(event.target.value as 'low_price' | 'stable')}>
-                <option value="low_price">低价优先</option>
-                <option value="stable">稳定优先</option>
-              </NativeSelect>
+              <Label>模型分组顺序</Label>
+              <div className="space-y-2 rounded-md border p-3">
+                {modelGroups.map((group) => <label key={group.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={group.id ? groupIds.includes(group.id) : false} onChange={() => group.id && setGroupIds((current) => current.includes(group.id!) ? current.filter((id) => id !== group.id) : [...current, group.id!])} /><span>{group.name || group.code}</span></label>)}
+              </div>
             </div>
             {createdKey ? (
               <Alert>

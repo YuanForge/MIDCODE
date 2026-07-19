@@ -31,6 +31,13 @@ export type ResellerKey = {
   created_at?: string
 }
 
+export type ResellerModelGroup = {
+  id?: number
+  code?: string
+  name?: string
+  model_count?: number
+}
+
 export type ResellerSite = {
   id?: number
   reseller_id?: number
@@ -93,7 +100,9 @@ export const resellerApi = {
   getProfile: () => http.get<ResellerProfile>('/reseller/profile'),
   getKeys: () =>
     http.get<{ keys?: ResellerKey[]; items?: ResellerKey[] } | ResellerKey[]>('/reseller/keys'),
-  createKey: (payload: { name: string; key_type?: 'low_price' | 'stable' }) =>
+  listModelGroups: () =>
+    http.get<{ groups?: ResellerModelGroup[] }>('/user/model-groups'),
+  createKey: (payload: { name: string; group_ids: number[] }) =>
     http.post<{ key?: string; note?: string }>('/reseller/keys', payload),
   getSites: () =>
     http.get<{ sites?: ResellerSite[]; items?: ResellerSite[] } | ResellerSite[]>('/reseller/sites'),

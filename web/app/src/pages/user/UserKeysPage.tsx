@@ -28,7 +28,6 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { NativeSelect } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import {
   Table,
@@ -43,17 +42,11 @@ import { userApi, type ApiKeyModelGroup, type ApiKeyRecord } from '@/lib/api/use
 import { formatCredits } from '@/lib/formatters/credits'
 import { useAsync } from '@/hooks/use-async'
 
-function keyTypeLabel(type: string | undefined) {
-  if (type === 'stable') return '稳定密钥'
-  return '低价密钥'
-}
-
 function spendText(value: number | undefined) {
   return `${formatCredits(value ?? 0)} 积分`
 }
 
 export function UserKeysPage() {
-  void keyTypeLabel
   const { data: keys, loading, error: loadError, reload } = useAsync(async () => {
     const response = await userApi.listApiKeys()
     return Array.isArray(response) ? response : response.api_keys ?? response.keys ?? []
@@ -63,14 +56,12 @@ export function UserKeysPage() {
     const response = await userApi.listModelGroups()
     return response.groups ?? []
   }, [] as ApiKeyModelGroup[])
-  const showLowPriceKey = false
 
   const [mutError, setMutError] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const [createdKey, setCreatedKey] = useState('')
   const [newKeyName, setNewKeyName] = useState('')
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>([])
-  const [newKeyType, setNewKeyType] = useState('low_price')
   const [bindingKey, setBindingKey] = useState<ApiKeyRecord>()
   const [bindingIds, setBindingIds] = useState<number[]>([])
   const [submitting, setSubmitting] = useState(false)
@@ -331,18 +322,6 @@ export function UserKeysPage() {
                 placeholder="例如：我的项目"
               />
             </div>
-            {showLowPriceKey ? (
-              <div className="flex flex-col gap-2">
-                <Label>类型</Label>
-                <NativeSelect
-                  value={newKeyType}
-                  onChange={(event) => setNewKeyType(event.target.value)}
-                >
-                  <option value="low_price">低价密钥</option>
-                  <option value="stable">稳定密钥</option>
-                </NativeSelect>
-              </div>
-            ) : null}
             <div className="flex flex-col gap-2">
               <Label>模型分组顺序</Label>
               <div className="space-y-2 rounded-md border p-3">
