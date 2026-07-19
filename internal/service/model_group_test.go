@@ -55,3 +55,12 @@ func TestValidateModelGroupInput(t *testing.T) {
 		t.Fatalf("expected valid group input, got %v", err)
 	}
 }
+
+func TestValidateAPIKeyGroupSelectionRequiresAtLeastOneGroup(t *testing.T) {
+	if err := validateAPIKeyGroupSelection(nil); err == nil {
+		t.Fatal("expected an API key to require at least one model group")
+	}
+	if err := validateAPIKeyGroupSelection([]int64{1, 2}); err != nil {
+		t.Fatalf("expected group selection to be accepted, got %v", err)
+	}
+}

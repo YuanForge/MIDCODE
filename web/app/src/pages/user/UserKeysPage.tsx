@@ -39,10 +39,9 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { copyToClipboard } from '@/lib/clipboard'
-import { userApi, type ApiKeyRecord } from '@/lib/api/user'
+import { userApi, type ApiKeyModelGroup, type ApiKeyRecord } from '@/lib/api/user'
 import { formatCredits } from '@/lib/formatters/credits'
 import { useAsync } from '@/hooks/use-async'
-import { useSiteSettings } from '@/hooks/use-site-settings'
 
 function keyTypeLabel(type: string | undefined) {
   if (type === 'stable') return '稳定密钥'
@@ -54,19 +53,26 @@ function spendText(value: number | undefined) {
 }
 
 export function UserKeysPage() {
+  void keyTypeLabel
   const { data: keys, loading, error: loadError, reload } = useAsync(async () => {
     const response = await userApi.listApiKeys()
     return Array.isArray(response) ? response : response.api_keys ?? response.keys ?? []
   }, [] as ApiKeyRecord[])
 
-  const { settings } = useSiteSettings()
-  const showLowPriceKey = settings.showLowPriceKey
+  const { data: availableGroups } = useAsync(async () => {
+    const response = await userApi.listModelGroups()
+    return response.groups ?? []
+  }, [] as ApiKeyModelGroup[])
+  const showLowPriceKey = false
 
   const [mutError, setMutError] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const [createdKey, setCreatedKey] = useState('')
   const [newKeyName, setNewKeyName] = useState('')
+  const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>([])
   const [newKeyType, setNewKeyType] = useState('low_price')
+  const [bindingKey, setBindingKey] = useState<ApiKeyRecord>()
+  const [bindingIds, setBindingIds] = useState<number[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<number | undefined>()
 
@@ -77,21 +83,58 @@ export function UserKeysPage() {
       setMutError('请输入密钥名称')
       return
     }
+    if (selectedGroupIds.length === 0) {
+      setMutError('请至少选择一个模型分组')
+      return
+    }
     setSubmitting(true)
     setMutError('')
     try {
-      const keyType = showLowPriceKey ? newKeyType : 'stable'
-      const response = await userApi.createApiKey(newKeyName.trim(), keyType)
+      const response = await userApi.createApiKey(newKeyName.trim(), selectedGroupIds)
       setCreatedKey(String((response as { key?: string }).key ?? ''))
       setCreateOpen(false)
       setNewKeyName('')
-      setNewKeyType('low_price')
+      setSelectedGroupIds([])
       reload()
     } catch (err) {
       const { getApiErrorMessage } = await import('@/lib/api/http')
       setMutError(getApiErrorMessage(err))
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  function toggleGroup(id: number) {
+    setSelectedGroupIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
+  }
+
+  function moveGroup(index: number, direction: -1 | 1) {
+    setSelectedGroupIds((current) => {
+      const next = [...current]
+      const target = index + direction
+      if (target < 0 || target >= next.length) return current
+      const value = next[index]
+      next[index] = next[target]
+      next[target] = value
+      return next
+    })
+  }
+
+  function openBindings(item: ApiKeyRecord) {
+    setBindingKey(item)
+    setBindingIds((item.model_groups ?? []).slice().sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0)).map((group) => group.group_id ?? 0).filter(Boolean))
+  }
+
+  async function saveBindings() {
+    if (!bindingKey?.id || bindingIds.length === 0) return
+    setMutError('')
+    try {
+      await userApi.replaceApiKeyModelGroups(bindingKey.id, bindingIds)
+      setBindingKey(undefined)
+      reload()
+    } catch (err) {
+      const { getApiErrorMessage } = await import('@/lib/api/http')
+      setMutError(getApiErrorMessage(err))
     }
   }
 
@@ -142,7 +185,7 @@ export function UserKeysPage() {
               <TableRow>
                 <TableHead>名称</TableHead>
                 <TableHead>Key</TableHead>
-                <TableHead>类型</TableHead>
+                <TableHead>模型分组</TableHead>
                 <TableHead className="text-right">今日消耗</TableHead>
                 <TableHead className="text-right">累计消耗</TableHead>
                 <TableHead>状态</TableHead>
@@ -159,7 +202,7 @@ export function UserKeysPage() {
               <TableRow>
                 <TableHead>名称</TableHead>
                 <TableHead>Key</TableHead>
-                <TableHead>类型</TableHead>
+                <TableHead>模型分组</TableHead>
                 <TableHead className="text-right">今日消耗</TableHead>
                 <TableHead className="text-right">累计消耗</TableHead>
                 <TableHead>状态</TableHead>
@@ -183,7 +226,7 @@ export function UserKeysPage() {
               <TableRow>
                 <TableHead>名称</TableHead>
                 <TableHead>Key</TableHead>
-                <TableHead>类型</TableHead>
+                <TableHead>模型分组</TableHead>
                 <TableHead className="text-right">今日消耗</TableHead>
                 <TableHead className="text-right">累计消耗</TableHead>
                 <TableHead>状态</TableHead>
@@ -201,7 +244,14 @@ export function UserKeysPage() {
                         ? `${item.key_prefix}...`
                         : (item.masked_key ?? '***')}
                   </TableCell>
-                  <TableCell>{keyTypeLabel(item.key_type)}</TableCell>
+                  <TableCell>
+                    <div className="flex max-w-72 flex-wrap gap-1">
+                      {(item.model_groups ?? []).map((binding) => (
+                        <Badge key={binding.group_id} variant="outline">{binding.group?.name || binding.group?.code || binding.group_id}</Badge>
+                      ))}
+                      {item.needs_group_binding ? <Badge variant="destructive">需要配置分组</Badge> : null}
+                    </div>
+                  </TableCell>
                   <TableCell className="text-right font-mono text-sm">
                     <span
                       className={
@@ -240,6 +290,13 @@ export function UserKeysPage() {
                           复制
                         </Button>
                       ) : null}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openBindings(item)}
+                      >
+                        分组排序
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -286,6 +343,24 @@ export function UserKeysPage() {
                 </NativeSelect>
               </div>
             ) : null}
+            <div className="flex flex-col gap-2">
+              <Label>模型分组顺序</Label>
+              <div className="space-y-2 rounded-md border p-3">
+                {availableGroups.map((group) => (
+                  <label key={group.id} className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={group.id ? selectedGroupIds.includes(group.id) : false} onChange={() => group.id && toggleGroup(group.id)} />
+                    <span>{group.name || group.code}</span>
+                    <span className="text-muted-foreground">({group.model_count ?? 0} 个模型)</span>
+                  </label>
+                ))}
+              </div>
+              <div className="space-y-1">
+                {selectedGroupIds.map((id, index) => {
+                  const group = availableGroups.find((item) => item.id === id)
+                  return <div key={id} className="flex items-center justify-between rounded border px-2 py-1 text-sm"><span>{index + 1}. {group?.name || group?.code || id}</span><span className="flex gap-1"><Button type="button" size="sm" variant="ghost" onClick={() => moveGroup(index, -1)} disabled={index === 0}>↑</Button><Button type="button" size="sm" variant="ghost" onClick={() => moveGroup(index, 1)} disabled={index === selectedGroupIds.length - 1}>↓</Button></span></div>
+                })}
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
@@ -295,6 +370,25 @@ export function UserKeysPage() {
               {submitting ? '创建中...' : '创建'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(bindingKey)} onOpenChange={() => setBindingKey(undefined)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>调整模型分组顺序</DialogTitle>
+            <DialogDescription>第一组优先调用，后续分组只在可重试失败时作为回退。</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1 rounded-md border p-3">
+            {availableGroups.map((group) => <label key={group.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={group.id ? bindingIds.includes(group.id) : false} onChange={() => group.id && setBindingIds((current) => current.includes(group.id!) ? current.filter((id) => id !== group.id) : [...current, group.id!])} /><span>{group.name || group.code}</span></label>)}
+          </div>
+          <div className="space-y-2">
+            {bindingIds.map((id, index) => {
+              const group = availableGroups.find((item) => item.id === id)
+              return <div key={id} className="flex items-center justify-between rounded border px-2 py-1 text-sm"><span>{index + 1}. {group?.name || group?.code || id}</span><span className="flex gap-1"><Button type="button" size="sm" variant="ghost" onClick={() => setBindingIds((current) => { const next = [...current]; const value = next[index]; next[index] = next[index - 1]; next[index - 1] = value; return next })} disabled={index === 0}>↑</Button><Button type="button" size="sm" variant="ghost" onClick={() => setBindingIds((current) => { const next = [...current]; const value = next[index]; next[index] = next[index + 1]; next[index + 1] = value; return next })} disabled={index === bindingIds.length - 1}>↓</Button></span></div>
+            })}
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setBindingKey(undefined)}>取消</Button><Button onClick={() => void saveBindings()} disabled={bindingIds.length === 0}>保存排序</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

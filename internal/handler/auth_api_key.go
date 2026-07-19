@@ -13,22 +13,17 @@ import (
 // POST /user/apikeys  (requires auth)
 func (h *AuthHandler) CreateAPIKey(c *gin.Context) {
 	var req struct {
-		Name    string `json:"name" binding:"required,max=64"`
-		KeyType string `json:"key_type"`
+		Name     string  `json:"name" binding:"required,max=64"`
+		GroupIDs []int64 `json:"group_ids"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if getSettingValue("show_low_price_key") == "false" {
-		req.KeyType = "stable"
-	} else if req.KeyType != "stable" {
-		req.KeyType = "low_price"
-	}
 	userID := c.MustGet("user_id").(int64)
-	rawKey, err := service.GenerateAPIKey(c.Request.Context(), userID, req.Name, req.KeyType, h.cfg.APIKeySecret)
+	rawKey, err := service.CreateAPIKeyWithGroups(c.Request.Context(), userID, req.Name, req.GroupIDs, h.cfg.APIKeySecret)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"key": rawKey, "note": "store this key safely, it will not be shown again"})
@@ -61,6 +56,8 @@ func (h *AuthHandler) ListAPIKeys(c *gin.Context) {
 		IsActive      bool        `json:"is_active"`
 		TotalConsumed int64       `json:"total_consumed"`
 		TodayConsumed int64       `json:"today_consumed"`
+		ModelGroups   interface{} `json:"model_groups"`
+		NeedsBinding  bool        `json:"needs_group_binding"`
 		LastUsedAt    interface{} `json:"last_used_at"`
 		CreatedAt     interface{} `json:"created_at"`
 	}
@@ -86,6 +83,11 @@ func (h *AuthHandler) ListAPIKeys(c *gin.Context) {
 			keyType = "low_price"
 		}
 		stats := spendStats[k.ID]
+		groups, groupErr := service.ListAPIKeyModelGroups(c.Request.Context(), userID, k.ID)
+		if groupErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": groupErr.Error()})
+			return
+		}
 		items = append(items, apiKeyItem{
 			ID:            k.ID,
 			Name:          k.Name,
@@ -96,12 +98,67 @@ func (h *AuthHandler) ListAPIKeys(c *gin.Context) {
 			IsActive:      k.IsActive,
 			TotalConsumed: stats.TotalConsumed,
 			TodayConsumed: stats.TodayConsumed,
+			ModelGroups:   groups,
+			NeedsBinding:  len(groups) == 0,
 			LastUsedAt:    k.LastUsedAt,
 			CreatedAt:     k.CreatedAt,
 		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{"api_keys": items})
+}
+
+// GET /user/model-groups
+func (h *AuthHandler) ListAvailableModelGroups(c *gin.Context) {
+	groups, err := service.ListAvailableAPIKeyModelGroups(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"groups": groups})
+}
+
+// GET /user/apikeys/:id/model-groups
+func (h *AuthHandler) ListAPIKeyModelGroups(c *gin.Context) {
+	userID := c.MustGet("user_id").(int64)
+	keyID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || keyID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "API Key ID invalid"})
+		return
+	}
+	groups, err := service.ListAPIKeyModelGroups(c.Request.Context(), userID, keyID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"groups": groups})
+}
+
+// PUT /user/apikeys/:id/model-groups
+func (h *AuthHandler) ReplaceAPIKeyModelGroups(c *gin.Context) {
+	userID := c.MustGet("user_id").(int64)
+	keyID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || keyID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "API Key ID invalid"})
+		return
+	}
+	var req struct {
+		GroupIDs []int64 `json:"group_ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := service.ReplaceAPIKeyModelGroups(c.Request.Context(), userID, keyID, req.GroupIDs); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	groups, err := service.ListAPIKeyModelGroups(c.Request.Context(), userID, keyID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"groups": groups})
 }
 
 type apiKeySpendStats struct {

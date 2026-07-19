@@ -44,6 +44,8 @@ export type ApiKeyRecord = {
   viewable?: boolean
   masked_key?: string
   key_type?: string
+  model_groups?: ApiKeyModelGroupBinding[]
+  needs_group_binding?: boolean
   is_active?: boolean
   total_consumed?: number
   today_consumed?: number
@@ -101,6 +103,23 @@ export interface UserLogUsage {
   tier_unconfirmed?: boolean;
   actual_service_tier?: string;
   actual_speed?: string;
+}
+
+export type ApiKeyModelGroup = {
+  id?: number
+  code?: string
+  name?: string
+  description?: string
+  is_active?: boolean
+  model_count?: number
+}
+
+export type ApiKeyModelGroupBinding = {
+  id?: number
+  api_key_id?: number
+  group_id?: number
+  priority?: number
+  group?: ApiKeyModelGroup
 }
 
 export type TokenUsageRow = {
@@ -225,8 +244,14 @@ export const userApi = {
     }),
   listApiKeys: () =>
     http.get<{ api_keys?: ApiKeyRecord[]; keys?: ApiKeyRecord[] } | ApiKeyRecord[]>('/user/apikeys'),
-  createApiKey: (name: string, keyType = 'low_price') =>
-    http.post<Record<string, unknown>>('/user/apikeys', { name, key_type: keyType }),
+  createApiKey: (name: string, groupIds: number[]) =>
+    http.post<Record<string, unknown>>('/user/apikeys', { name, group_ids: groupIds }),
+  listModelGroups: () =>
+    http.get<{ groups?: ApiKeyModelGroup[] }>('/user/model-groups'),
+  listApiKeyModelGroups: (id: number) =>
+    http.get<{ groups?: ApiKeyModelGroupBinding[] }>(`/user/apikeys/${id}/model-groups`),
+  replaceApiKeyModelGroups: (id: number, groupIds: number[]) =>
+    http.put<{ groups?: ApiKeyModelGroupBinding[] }>(`/user/apikeys/${id}/model-groups`, { group_ids: groupIds }),
   deleteApiKey: (id: number) =>
     http.delete<Record<string, unknown>>(`/user/apikeys/${id}`),
   listChannels: () =>
