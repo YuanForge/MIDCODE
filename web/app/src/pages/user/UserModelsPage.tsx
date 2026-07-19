@@ -520,6 +520,7 @@ export function UserModelsPage() {
                       </button>
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                      {channel.group_name ? <Badge>{channel.group_name}</Badge> : null}
                       {channel.model_provider ? <Badge variant="outline">{channel.model_provider}</Badge> : null}
                       <Badge variant="outline">{getProtocolLabel(channel.protocol || 'openai')}</Badge>
                       {channel.billing_type ? <Badge variant="outline">{getBillingTypeLabel(channel.billing_type)}</Badge> : null}

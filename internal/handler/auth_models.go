@@ -36,6 +36,9 @@ func (h *AuthHandler) ListModels(c *gin.Context) {
 
 	type channelInfo struct {
 		ID            int64  `json:"id"`
+		GroupID       int64  `json:"group_id,omitempty"`
+		GroupName     string `json:"group_name,omitempty"`
+		GroupPriority int    `json:"group_priority,omitempty"`
 		Name          string `json:"name"`
 		RoutingModel  string `json:"routing_model"`
 		ModelProvider string `json:"model_provider"`
@@ -46,6 +49,32 @@ func (h *AuthHandler) ListModels(c *gin.Context) {
 		GroupPrice    string `json:"group_price,omitempty"` // 用户专属价格（与默认不同时才返回）
 		IconURL       string `json:"icon_url"`
 		Description   string `json:"description"`
+	}
+
+	grouped, groupedErr := listGroupedModelChannels()
+	if groupedErr == nil && len(grouped) > 0 {
+		result := make([]channelInfo, 0, len(grouped))
+		for _, item := range grouped {
+			ch := item.Channel
+			defaultPrice := buildPriceDisplay(ch.BillingType, ch.BillingConfig)
+			groupPrice := ""
+			if userGroup != "" {
+				groupCfg := model.JSON(billingcalc.EffectivePricingConfig(map[string]interface{}(ch.BillingConfig), userGroup))
+				gp := buildPriceDisplay(ch.BillingType, groupCfg)
+				if gp != defaultPrice {
+					groupPrice = gp
+				}
+			}
+			result = append(result, channelInfo{
+				ID: ch.ID, GroupID: item.Group.ID, GroupName: item.Group.Name, GroupPriority: item.Priority,
+				Name: service.ChannelRoutingKey(ch), RoutingModel: item.RoutingModel,
+				ModelProvider: service.EffectiveModelProvider(ch), Type: ch.Type, Protocol: ch.Protocol,
+				BillingType: ch.BillingType, PriceDisplay: defaultPrice, GroupPrice: groupPrice,
+				IconURL: ch.IconURL, Description: ch.Description,
+			})
+		}
+		c.JSON(http.StatusOK, gin.H{"channels": result})
+		return
 	}
 
 	// 按展示键去重：display_name 非空时以 display_name 为分组键，否则以 model 为分组键。
@@ -121,6 +150,39 @@ func applyGroupPricingMap(cfg map[string]interface{}, group string) model.JSON {
 		merged[k] = v
 	}
 	return model.JSON(merged)
+}
+
+type groupedModelChannel struct {
+	Group        model.ModelGroup
+	RoutingModel string
+	Priority     int
+	Channel      model.Channel
+}
+
+func listGroupedModelChannels() ([]groupedModelChannel, error) {
+	var groups []model.ModelGroup
+	if err := db.Engine.Where("is_active = true").OrderBy("id ASC").Find(&groups); err != nil {
+		return nil, err
+	}
+	result := make([]groupedModelChannel, 0)
+	for _, group := range groups {
+		var bindings []model.ModelGroupModel
+		if err := db.Engine.Where("group_id = ?", group.ID).OrderBy("routing_model ASC, id ASC").Find(&bindings); err != nil {
+			return nil, err
+		}
+		for _, binding := range bindings {
+			var channel model.Channel
+			found, err := db.Engine.Where("id = ? AND is_active = true", binding.ChannelID).Get(&channel)
+			if err != nil {
+				return nil, err
+			}
+			if !found {
+				continue
+			}
+			result = append(result, groupedModelChannel{Group: group, RoutingModel: binding.RoutingModel, Priority: int(binding.ID), Channel: channel})
+		}
+	}
+	return result, nil
 }
 
 func preferDisplayChannel(candidate, current model.Channel, userGroup string) bool {

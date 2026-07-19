@@ -55,6 +55,9 @@ export type ApiKeyRecord = {
 
 export type UserChannel = {
   id?: number
+  group_id?: number
+  group_name?: string
+  group_priority?: number
   name?: string
   routing_model?: string
   model?: string
