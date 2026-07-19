@@ -179,7 +179,7 @@ func listGroupedModelChannels() ([]groupedModelChannel, error) {
 			if !found {
 				continue
 			}
-			result = append(result, groupedModelChannel{Group: group, RoutingModel: binding.RoutingModel, Priority: int(binding.ID), Channel: channel})
+			result = append(result, groupedModelChannel{Group: group, RoutingModel: binding.RoutingModel, Channel: channel})
 		}
 	}
 	return result, nil
