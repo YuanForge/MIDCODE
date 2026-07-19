@@ -241,9 +241,9 @@ export const userApi = {
   getStats: () => http.get<UserStatsResponse>('/user/stats'),
   getTokenStats: (params: { start_at: string; end_at: string; model?: string; page: number; page_size: number }) =>
     http.get<TokenStatsResponse>('/user/stats/tokens', { params }),
-  getTransactions: (page = 1, size = 20, taskId?: string, corrId?: string) =>
+  getTransactions: (page = 1, size = 20, taskId?: string, corrId?: string, apiKeyId?: number) =>
     http.get<{ items?: UserTransaction[]; transactions?: UserTransaction[]; total?: number }>('/user/transactions', {
-      params: { page, size, ...(taskId ? { task_id: taskId } : {}), ...(corrId ? { corr_id: corrId } : {}) },
+      params: { page, size, ...(taskId ? { task_id: taskId } : {}), ...(corrId ? { corr_id: corrId } : {}), ...(apiKeyId ? { api_key_id: apiKeyId } : {}) },
     }),
   listApiKeys: () =>
     http.get<{ api_keys?: ApiKeyRecord[]; keys?: ApiKeyRecord[] } | ApiKeyRecord[]>('/user/apikeys'),

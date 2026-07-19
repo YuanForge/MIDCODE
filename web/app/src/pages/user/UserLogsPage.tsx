@@ -28,7 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { userApi, type UserLog } from '@/lib/api/user'
+import { userApi, type ApiKeyRecord, type UserLog } from '@/lib/api/user'
 import { formatCredits, formatTokenPricePerMillion } from '@/lib/formatters/credits'
 
 function renderStatus(status?: string) {
@@ -57,7 +57,7 @@ function renderTokenPrice(value?: number | null) {
 export function UserLogsPage() {
   const [page, setPage] = useState(1)
   const pageSize = 20
-  const [filters, setFilters] = useState({ model: '', status: '', startAt: '', endAt: '' })
+  const [filters, setFilters] = useState({ model: '', status: '', apiKeyId: '', startAt: '', endAt: '' })
   const [queryParams, setQueryParams] = useState<Record<string, string | number>>({ page: 1, page_size: pageSize })
 
   const { data, loading, error, reload } = useAsync(async () => {
@@ -67,6 +67,11 @@ export function UserLogsPage() {
       total: (res && !Array.isArray(res) ? res.total : 0) as number,
     }
   }, { logs: [] as UserLog[], total: 0 }, [queryParams])
+
+  const { data: apiKeys } = useAsync(async () => {
+    const response = await userApi.listApiKeys()
+    return (Array.isArray(response) ? response : response.api_keys ?? response.keys ?? []) as ApiKeyRecord[]
+  }, [] as ApiKeyRecord[])
 
   const rows = data.logs
   const total = data.total
@@ -97,6 +102,7 @@ export function UserLogsPage() {
     const params: Record<string, string | number> = { page: 1, page_size: pageSize }
     if (filters.model) params.model = filters.model
     if (filters.status) params.status = filters.status
+    if (filters.apiKeyId) params.api_key_id = filters.apiKeyId
     if (filters.startAt) params.start_at = formatDateTimeFilterValue(filters.startAt)
     if (filters.endAt) params.end_at = formatDateTimeFilterValue(filters.endAt)
     setPage(1)
@@ -104,7 +110,7 @@ export function UserLogsPage() {
   }
 
   function handleReset() {
-    setFilters({ model: '', status: '', startAt: '', endAt: '' })
+    setFilters({ model: '', status: '', apiKeyId: '', startAt: '', endAt: '' })
     setPage(1)
     setQueryParams({ page: 1, page_size: pageSize })
   }
@@ -148,6 +154,14 @@ export function UserLogsPage() {
               <option value="error">失败 (error)</option>
               <option value="refunded">已退款 (refunded)</option>
               <option value="pending">进行中 (pending)</option>
+            </NativeSelect>
+            <NativeSelect
+              value={filters.apiKeyId}
+              onChange={(event) => setFilters({ ...filters, apiKeyId: event.target.value })}
+              className="w-[180px]"
+            >
+              <option value="">全部 API Key</option>
+              {apiKeys.map((key) => <option key={key.id} value={key.id}>{key.name || `Key #${key.id}`}</option>)}
             </NativeSelect>
             <DateRangeFilter
               startAt={filters.startAt}

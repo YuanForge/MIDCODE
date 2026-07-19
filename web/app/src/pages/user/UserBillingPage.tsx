@@ -7,6 +7,7 @@ import { FilterBar } from '@/components/shared/FilterBar'
 import { TablePagination } from '@/components/shared/TablePagination'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NativeSelect } from '@/components/ui/select'
 import {
   Table,
   TableBody,
@@ -17,7 +18,7 @@ import {
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
-import { userApi } from '@/lib/api/user'
+import { userApi, type ApiKeyRecord } from '@/lib/api/user'
 import { payApi } from '@/lib/api/pay'
 import { useAsync } from '@/hooks/use-async'
 import { useSiteSettings } from '@/hooks/use-site-settings'
@@ -103,18 +104,24 @@ export function UserBillingPage() {
   const [txPage, setTxPage] = useState(1)
   const [txTaskIdFilter, setTxTaskIdFilter] = useState('')
   const [txCorrIdFilter, setTxCorrIdFilter] = useState('')
+  const [txApiKeyFilter, setTxApiKeyFilter] = useState('')
+  const { data: apiKeys } = useAsync(async () => {
+    const response = await userApi.listApiKeys()
+    return (Array.isArray(response) ? response : response.api_keys ?? response.keys ?? []) as ApiKeyRecord[]
+  }, [] as ApiKeyRecord[])
   const { data: txData, reload: txReload } = useAsync(async () => {
     const res = await userApi.getTransactions(
       txPage,
       20,
       txTaskIdFilter || undefined,
       txCorrIdFilter || undefined,
+      txApiKeyFilter ? Number(txApiKeyFilter) : undefined,
     )
     return {
       items: Array.isArray(res) ? res : res.items ?? res.transactions ?? [],
       total: !Array.isArray(res) ? res.total ?? 0 : 0
     }
-  }, { items: [], total: 0 } as { items: unknown[]; total: number }, [txPage, txTaskIdFilter, txCorrIdFilter])
+  }, { items: [], total: 0 } as { items: unknown[]; total: number }, [txPage, txTaskIdFilter, txCorrIdFilter, txApiKeyFilter])
 
   // Orders State
   const [orderPage, setOrderPage] = useState(1)
@@ -460,6 +467,10 @@ export function UserBillingPage() {
                   onChange={(e) => setTxCorrIdFilter(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && setTxPage(1)}
                 />
+                <NativeSelect value={txApiKeyFilter} onChange={(e) => { setTxApiKeyFilter(e.target.value); setTxPage(1) }}>
+                  <option value="">全部 API Key</option>
+                  {apiKeys.map((key) => <option key={key.id} value={key.id}>{key.name || `Key #${key.id}`}</option>)}
+                </NativeSelect>
               </>
             }
             actions={

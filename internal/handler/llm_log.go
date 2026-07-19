@@ -193,6 +193,7 @@ func AdminListLLMLogs(c *gin.Context) {
 
 	type filterSet struct {
 		userID    string
+		apiKeyID  string
 		channelID string
 		status    string
 		corrID    string
@@ -202,6 +203,7 @@ func AdminListLLMLogs(c *gin.Context) {
 	}
 	f := filterSet{
 		userID:    c.Query("user_id"),
+		apiKeyID:  c.Query("api_key_id"),
 		channelID: c.Query("channel_id"),
 		status:    c.Query("status"),
 		corrID:    c.Query("corr_id"),
@@ -214,6 +216,9 @@ func AdminListLLMLogs(c *gin.Context) {
 		s := db.Engine.NewSession()
 		if f.userID != "" {
 			s.And("user_id = ?", f.userID)
+		}
+		if f.apiKeyID != "" {
+			s.And("api_key_id = ?", f.apiKeyID)
 		}
 		if f.channelID != "" {
 			s.And("channel_id = ?", f.channelID)
@@ -413,6 +418,7 @@ func UserListLLMLogs(c *gin.Context) {
 
 	type filterSet struct {
 		status    string
+		apiKeyID  string
 		corrID    string
 		model     string
 		channelID string
@@ -421,6 +427,7 @@ func UserListLLMLogs(c *gin.Context) {
 	}
 	f := filterSet{
 		status:    c.Query("status"),
+		apiKeyID:  c.Query("api_key_id"),
 		corrID:    c.Query("corr_id"),
 		model:     c.Query("model"),
 		channelID: c.Query("channel_id"),
@@ -432,6 +439,9 @@ func UserListLLMLogs(c *gin.Context) {
 		s := db.Engine.Where("user_id = ?", userID)
 		if f.status != "" {
 			s.And("status = ?", f.status)
+		}
+		if f.apiKeyID != "" {
+			s.And("api_key_id = ?", f.apiKeyID)
 		}
 		if f.corrID != "" {
 			s.And("corr_id = ?", f.corrID)
@@ -467,7 +477,7 @@ func UserListLLMLogs(c *gin.Context) {
 	// 用户列表不返回 upstream_request / upstream_response / upstream_url 等上游信息
 	listSess := applyFilters()
 	defer listSess.Close()
-	err = listSess.Cols("id", "channel_id", "corr_id", "model",
+	err = listSess.Cols("id", "api_key_id", "channel_id", "corr_id", "model",
 		"input_price_per_1m_tokens", "output_price_per_1m_tokens", "is_stream",
 		"upstream_status", "usage", "status", "error_msg", "created_at").
 		OrderBy("id DESC").Limit(pageSize, offset).Find(&logs)

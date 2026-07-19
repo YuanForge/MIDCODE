@@ -63,6 +63,7 @@ export function AdminBillingPage() {
   const [endAt, setEndAt] = useState('')
   const [txType, setTxType] = useState('')
   const [userId, setUserId] = useState('')
+  const [apiKeyId, setApiKeyId] = useState('')
   const [searchParams, setSearchParams] = useState<Record<string, unknown>>({ page: 1 })
 
   // 手动调账 dialog
@@ -89,6 +90,7 @@ export function AdminBillingPage() {
     if (endAt) params.end_at = endAt.replace('T', ' ') + ':00'
     if (txType) params.type = txType
     if (userId) params.user_id = userId
+    if (apiKeyId) params.api_key_id = apiKeyId
     setPage(1)
     setSearchParams(params)
   }
@@ -98,6 +100,7 @@ export function AdminBillingPage() {
     setEndAt('')
     setTxType('')
     setUserId('')
+    setApiKeyId('')
     setPage(1)
     setSearchParams({ page: 1 })
   }
@@ -236,6 +239,12 @@ export function AdminBillingPage() {
             <label className="text-xs text-muted-foreground">用户 ID</label>
             <Input className="w-28" placeholder="精确" value={userId}
               onChange={(e) => setUserId(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && doSearch()} />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">API Key ID</label>
+            <Input className="w-28" placeholder="精确" value={apiKeyId}
+              onChange={(e) => setApiKeyId(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && doSearch()} />
           </div>
           </>

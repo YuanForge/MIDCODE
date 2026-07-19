@@ -56,11 +56,12 @@ func (h *AuthHandler) GetTransactions(c *gin.Context) {
 	}
 	corrID := c.Query("corr_id")
 	taskID := c.Query("task_id")
-	txs, err := service.ListTransactions(c.Request.Context(), userID, page, size, corrID, taskID)
+	apiKeyID, _ := strconv.ParseInt(c.Query("api_key_id"), 10, 64)
+	txs, err := service.ListTransactions(c.Request.Context(), userID, page, size, corrID, taskID, apiKeyID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	total, _ := service.CountTransactions(c.Request.Context(), userID, corrID, taskID)
+	total, _ := service.CountTransactions(c.Request.Context(), userID, corrID, taskID, apiKeyID)
 	c.JSON(http.StatusOK, gin.H{"transactions": txs, "total": total})
 }

@@ -41,6 +41,9 @@ func ListAllTransactions(c *gin.Context) {
 	if userID := c.Query("user_id"); userID != "" {
 		query = query.And("user_id = ?", userID)
 	}
+	if apiKeyID := c.Query("api_key_id"); apiKeyID != "" {
+		query = query.And("api_key_id = ?", apiKeyID)
+	}
 	total, err := query.Limit(size, (page-1)*size).FindAndCount(&txs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -70,6 +73,10 @@ func ListAllTransactions(c *gin.Context) {
 	if userID := c.Query("user_id"); userID != "" {
 		where += " AND user_id = ?"
 		args = append(args, userID)
+	}
+	if apiKeyID := c.Query("api_key_id"); apiKeyID != "" {
+		where += " AND api_key_id = ?"
+		args = append(args, apiKeyID)
 	}
 	summary := summaryRow{}
 	sql := `SELECT

@@ -75,7 +75,7 @@ export function AdminLogsPage() {
   const [page, setPage] = useState(1)
   const pageSize = 20
   const [filters, setFilters] = useState({
-    model: '', user_id: '', channel_id: '', status: '', corr_id: '', startAt: '', endAt: '',
+    model: '', user_id: '', channel_id: '', api_key_id: '', status: '', corr_id: '', startAt: '', endAt: '',
   })
 
   const { data, loading, error, reload } = useAsync(async () => {
@@ -83,6 +83,7 @@ export function AdminLogsPage() {
     if (filters.model) params.model = filters.model
     if (filters.user_id) params.user_id = filters.user_id
     if (filters.channel_id) params.channel_id = filters.channel_id
+    if (filters.api_key_id) params.api_key_id = filters.api_key_id
     if (filters.status) params.status = filters.status
     if (filters.corr_id) params.corr_id = filters.corr_id
     if (filters.startAt) params.start_at = new Date(filters.startAt).toISOString()
@@ -117,7 +118,7 @@ export function AdminLogsPage() {
 
   function handleSearch() { setPage(1); setTimeout(reload, 0) }
   function handleReset() {
-    setFilters({ model: '', user_id: '', channel_id: '', status: '', corr_id: '', startAt: '', endAt: '' })
+    setFilters({ model: '', user_id: '', channel_id: '', api_key_id: '', status: '', corr_id: '', startAt: '', endAt: '' })
     setPage(1)
     setTimeout(reload, 0)
   }
@@ -172,6 +173,9 @@ export function AdminLogsPage() {
               onKeyDown={e => e.key === 'Enter' && handleSearch()} />
             <Input placeholder="渠道 ID" value={filters.channel_id}
               onChange={e => setFilters({ ...filters, channel_id: e.target.value })} className="w-[100px]"
+              onKeyDown={e => e.key === 'Enter' && handleSearch()} />
+            <Input placeholder="API Key ID" value={filters.api_key_id}
+              onChange={e => setFilters({ ...filters, api_key_id: e.target.value })} className="w-[110px]"
               onKeyDown={e => e.key === 'Enter' && handleSearch()} />
             <Input placeholder="Corr ID" value={filters.corr_id}
               onChange={e => setFilters({ ...filters, corr_id: e.target.value })} className="w-[220px] font-mono text-xs"

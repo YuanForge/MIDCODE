@@ -613,7 +613,7 @@ func ListModelCredits(ctx context.Context, userID int64) ([]model.UserModelCredi
 }
 
 // ListTransactions 返回用户的分页计费历史。corrID/taskID 非空时分别按对应字段过滤。
-func ListTransactions(ctx context.Context, userID int64, page, pageSize int, corrID, taskID string) ([]model.BillingTransaction, error) {
+func ListTransactions(ctx context.Context, userID int64, page, pageSize int, corrID, taskID string, apiKeyID int64) ([]model.BillingTransaction, error) {
 	var txs []model.BillingTransaction
 	sess := db.Engine.Where("user_id = ?", userID)
 	if corrID != "" {
@@ -626,6 +626,9 @@ func ListTransactions(ctx context.Context, userID int64, page, pageSize int, cor
 			sess.And("1 = 0")
 		}
 	}
+	if apiKeyID > 0 {
+		sess.And("api_key_id = ?", apiKeyID)
+	}
 	err := sess.Desc("created_at").
 		Limit(pageSize, (page-1)*pageSize).
 		Find(&txs)
@@ -633,7 +636,7 @@ func ListTransactions(ctx context.Context, userID int64, page, pageSize int, cor
 }
 
 // CountTransactions 返回用户的计费记录总数。corrID/taskID 非空时分别按对应字段过滤。
-func CountTransactions(ctx context.Context, userID int64, corrID, taskID string) (int64, error) {
+func CountTransactions(ctx context.Context, userID int64, corrID, taskID string, apiKeyID int64) (int64, error) {
 	sess := db.Engine.Where("user_id = ?", userID)
 	if corrID != "" {
 		sess.And("corr_id = ?", corrID)
@@ -644,6 +647,9 @@ func CountTransactions(ctx context.Context, userID int64, corrID, taskID string)
 		} else {
 			sess.And("1 = 0")
 		}
+	}
+	if apiKeyID > 0 {
+		sess.And("api_key_id = ?", apiKeyID)
 	}
 	count, err := sess.Count(&model.BillingTransaction{})
 	return count, err
