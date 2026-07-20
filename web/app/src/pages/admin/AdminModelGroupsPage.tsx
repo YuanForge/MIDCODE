@@ -1,27 +1,31 @@
 import { PlusIcon, SaveIcon, Trash2Icon } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { NativeSelect } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useAsync } from '@/hooks/use-async'
 import { adminApi, type AdminChannel, type AdminModelGroup, type AdminModelGroupModel } from '@/lib/api/admin'
 
 type GroupForm = { id?: number; code: string; name: string; description: string; is_active: boolean }
-
 const emptyForm: GroupForm = { code: '', name: '', description: '', is_active: true }
+
+function channelModel(channel: AdminChannel) {
+  return channel.display_name?.trim() || channel.model?.trim() || channel.name?.trim() || ''
+}
 
 export function AdminModelGroupsPage() {
   const { data, loading, error, reload } = useAsync(async () => {
     const [groupsResponse, channelsResponse] = await Promise.all([
       adminApi.listModelGroups(true),
-      adminApi.listChannels({ page: 1, size: 100 }),
+      adminApi.listChannels(),
     ])
     return {
       groups: groupsResponse.groups ?? [],
@@ -31,37 +35,48 @@ export function AdminModelGroupsPage() {
 
   const [form, setForm] = useState<GroupForm>(emptyForm)
   const [selectedGroupID, setSelectedGroupID] = useState<number>()
-  const [models, setModels] = useState<AdminModelGroupModel[]>([])
-  const [channelID, setChannelID] = useState('')
+  const [bindings, setBindings] = useState<AdminModelGroupModel[]>([])
+  const [selectedModelChannels, setSelectedModelChannels] = useState<Record<string, string>>({})
+  const [modelSearch, setModelSearch] = useState('')
   const [errorText, setErrorText] = useState('')
+  const [savingBindings, setSavingBindings] = useState(false)
 
-  useEffect(() => {
-    if (!selectedGroupID) {
-      setModels([])
-      return
+  const modelOptions = useMemo(() => {
+    const grouped = new Map<string, AdminChannel[]>()
+    for (const channel of data.channels) {
+      const model = channelModel(channel)
+      if (!channel.id || !model || (channel.is_active === false && !bindings.some((binding) => binding.channel_id === channel.id))) continue
+      const options = grouped.get(model) ?? []
+      options.push(channel)
+      grouped.set(model, options)
     }
-    void adminApi.listModelGroupModels(selectedGroupID).then((response) => setModels(response.models ?? []))
-  }, [selectedGroupID, data.groups])
+    return [...grouped.entries()]
+      .map(([model, channels]) => ({ model, channels: channels.sort((left, right) => (left.id ?? 0) - (right.id ?? 0)) }))
+      .sort((left, right) => left.model.localeCompare(right.model))
+  }, [bindings, data.channels])
+
+  const visibleModelOptions = useMemo(() => {
+    const keyword = modelSearch.trim().toLowerCase()
+    return keyword ? modelOptions.filter((item) => item.model.toLowerCase().includes(keyword)) : modelOptions
+  }, [modelOptions, modelSearch])
+
+  async function loadBindings(groupID: number) {
+    const response = await adminApi.listModelGroupModels(groupID)
+    const loaded = response.models ?? []
+    setBindings(loaded)
+    setSelectedModelChannels(Object.fromEntries(loaded.map((binding) => [binding.routing_model, String(binding.channel_id)])))
+  }
 
   function edit(group?: AdminModelGroup) {
-    setForm(group ? {
-      id: group.id,
-      code: group.code ?? '',
-      name: group.name ?? '',
-      description: group.description ?? '',
-      is_active: group.is_active !== false,
-    } : emptyForm)
+    setForm(group ? { id: group.id, code: group.code ?? '', name: group.name ?? '', description: group.description ?? '', is_active: group.is_active !== false } : emptyForm)
     setErrorText('')
   }
 
   async function save() {
     setErrorText('')
     try {
-      if (form.id) {
-        await adminApi.updateModelGroup(form.id, form)
-      } else {
-        await adminApi.createModelGroup(form)
-      }
+      if (form.id) await adminApi.updateModelGroup(form.id, form)
+      else await adminApi.createModelGroup(form)
       edit()
       reload()
     } catch (err) {
@@ -82,42 +97,38 @@ export function AdminModelGroupsPage() {
     }
   }
 
-  async function bindChannel() {
-    if (!selectedGroupID || !channelID) return
-    const channel = data.channels.find((item) => String(item.id) === channelID)
-    const routingModel = channel?.display_name?.trim() || channel?.model?.trim() || channel?.name?.trim() || ''
-    if (!routingModel || !channel?.id) return
-    try {
-      await adminApi.bindModelGroupModel(selectedGroupID, { channel_id: channel.id, routing_model: routingModel })
-      setChannelID('')
-      setModels((await adminApi.listModelGroupModels(selectedGroupID)).models ?? [])
-      reload()
-    } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      setErrorText(getApiErrorMessage(err))
+  async function saveModelBindings() {
+    if (!selectedGroupID) return
+    const desired = Object.entries(selectedModelChannels)
+    if (desired.some(([, channelID]) => !channelID)) {
+      setErrorText('已选模型中还有未选择渠道的项目')
+      return
     }
-  }
-
-  async function unbind(binding: AdminModelGroupModel) {
-    if (!selectedGroupID || !binding.id) return
+    const groupID = selectedGroupID
+    setSavingBindings(true)
+    setErrorText('')
     try {
-      await adminApi.unbindModelGroupModel(selectedGroupID, binding.id)
-      setModels((await adminApi.listModelGroupModels(selectedGroupID)).models ?? [])
+      const desiredMap = new Map(desired.map(([model, channelID]) => [model, Number(channelID)]))
+      const currentMap = new Map(bindings.map((binding) => [binding.routing_model, binding]))
+      for (const binding of bindings) {
+        if (desiredMap.get(binding.routing_model ?? '') !== binding.channel_id && binding.id) await adminApi.unbindModelGroupModel(groupID, binding.id)
+      }
+      for (const [model, channelID] of desiredMap) {
+        if (currentMap.get(model)?.channel_id !== channelID) await adminApi.bindModelGroupModel(groupID, { channel_id: channelID, routing_model: model })
+      }
+      await loadBindings(groupID)
       reload()
     } catch (err) {
       const { getApiErrorMessage } = await import('@/lib/api/http')
       setErrorText(getApiErrorMessage(err))
+    } finally {
+      setSavingBindings(false)
     }
   }
 
   return (
     <>
-      <PageHeader
-        eyebrow="Routing"
-        title="模型分组"
-        description="每个分组内同名模型只能绑定一个渠道；API Key 可以按顺序绑定多个分组。"
-        actions={<Button onClick={() => edit()}><PlusIcon data-icon="inline-start" />新建分组</Button>}
-      />
+      <PageHeader eyebrow="Routing" title="模型分组" description="每个分组内同名模型只能绑定一个渠道；API Key 可以按顺序绑定多个分组。" actions={<Button onClick={() => edit()}><PlusIcon data-icon="inline-start" />新建分组</Button>} />
       {error || errorText ? <Alert variant="destructive"><AlertDescription>{String(error ?? errorText)}</AlertDescription></Alert> : null}
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(420px,1.1fr)]">
         <Card className="overflow-hidden">
@@ -125,10 +136,8 @@ export function AdminModelGroupsPage() {
             <TableHeader><TableRow><TableHead>编码</TableHead><TableHead>名称</TableHead><TableHead>模型数</TableHead><TableHead>状态</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader>
             <TableBody>
               {loading ? <TableRow><TableCell colSpan={5}>加载中…</TableCell></TableRow> : data.groups.map((group) => (
-                <TableRow key={group.id} data-state={selectedGroupID === group.id ? 'selected' : undefined} onClick={() => setSelectedGroupID(group.id)}>
-                  <TableCell className="font-mono">{group.code}</TableCell>
-                  <TableCell>{group.name}</TableCell>
-                  <TableCell>{group.model_count ?? 0}</TableCell>
+                <TableRow key={group.id} data-state={selectedGroupID === group.id ? 'selected' : undefined} onClick={() => { setSelectedGroupID(group.id); void loadBindings(group.id as number) }}>
+                  <TableCell className="font-mono">{group.code}</TableCell><TableCell>{group.name}</TableCell><TableCell>{group.model_count ?? 0}</TableCell>
                   <TableCell><Badge variant={group.is_active === false ? 'secondary' : 'default'}>{group.is_active === false ? '停用' : '启用'}</Badge></TableCell>
                   <TableCell className="text-right"><Button size="sm" variant="ghost" onClick={(event) => { event.stopPropagation(); edit(group) }}>编辑</Button><Button size="sm" variant="ghost" onClick={(event) => { event.stopPropagation(); void remove(group) }}><Trash2Icon /></Button></TableCell>
                 </TableRow>
@@ -137,25 +146,17 @@ export function AdminModelGroupsPage() {
           </Table>
         </Card>
         <Card className="space-y-4 p-5">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div><Label>分组编码</Label><Input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))} placeholder="cheap" /></div>
-            <div><Label>分组名称</Label><Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="低价组" /></div>
-          </div>
+          <div className="grid gap-3 sm:grid-cols-2"><div><Label>分组编码</Label><Input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))} placeholder="standard" /></div><div><Label>分组名称</Label><Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="标准组" /></div></div>
           <div><Label>描述</Label><Input value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} /></div>
           <Button onClick={() => void save()}><SaveIcon data-icon="inline-start" />{form.id ? '保存分组' : '创建分组'}</Button>
           <div className="border-t pt-4">
-            <Label>当前分组绑定渠道模型</Label>
-            <div className="mt-2 flex gap-2">
-              <Select value={channelID} onValueChange={setChannelID} disabled={!selectedGroupID}>
-                <SelectTrigger><SelectValue placeholder="选择渠道" /></SelectTrigger>
-                <SelectContent>{data.channels.map((channel) => <SelectItem key={channel.id} value={String(channel.id)}>{channel.display_name || channel.model || channel.name} · #{channel.id}</SelectItem>)}</SelectContent>
-              </Select>
-              <Button variant="outline" onClick={() => void bindChannel()} disabled={!selectedGroupID || !channelID}>绑定</Button>
-            </div>
-            <div className="mt-3 space-y-2">
-              {models.map((binding) => <div key={binding.id} className="flex items-center justify-between rounded-md border p-2 text-sm"><span>{binding.routing_model} · 渠道 #{binding.channel_id}</span><Button size="sm" variant="ghost" onClick={() => void unbind(binding)}>移除</Button></div>)}
-              {selectedGroupID && models.length === 0 ? <p className="text-sm text-muted-foreground">该分组还没有模型。</p> : null}
-            </div>
+            <Label>当前分组模型绑定</Label>
+            <div className="mt-2 flex flex-wrap items-center gap-2"><Input className="max-w-sm" value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="搜索模型" /><Button variant="outline" onClick={() => setSelectedModelChannels(Object.fromEntries(modelOptions.map((item) => [item.model, item.channels.length === 1 ? String(item.channels[0].id) : selectedModelChannels[item.model] ?? ''])))}>全选</Button><Button variant="outline" onClick={() => setSelectedModelChannels({})}>清空</Button><span className="text-sm text-muted-foreground">已选 {Object.keys(selectedModelChannels).length} / {modelOptions.length}</span></div>
+            <Table className="mt-3"><TableHeader><TableRow><TableHead className="w-16">选择</TableHead><TableHead>公开模型</TableHead><TableHead>渠道</TableHead></TableRow></TableHeader><TableBody>
+              {visibleModelOptions.map((item) => { const selected = Object.prototype.hasOwnProperty.call(selectedModelChannels, item.model); return <TableRow key={item.model}><TableCell><Checkbox checked={selected} onCheckedChange={(checked) => setSelectedModelChannels((current) => { const next = { ...current }; if (checked) next[item.model] = item.channels.length === 1 ? String(item.channels[0].id) : ''; else delete next[item.model]; return next })} /></TableCell><TableCell className="font-mono">{item.model}</TableCell><TableCell><NativeSelect disabled={!selected} value={selectedModelChannels[item.model] ?? ''} onChange={(event) => setSelectedModelChannels((current) => ({ ...current, [item.model]: event.target.value }))}><option value="">{item.channels.length > 1 ? '请选择一个渠道' : '选择渠道'}</option>{item.channels.map((channel) => <option key={channel.id} value={channel.id}>#{channel.id} · {channel.name ?? channel.display_name ?? item.model}</option>)}</NativeSelect></TableCell></TableRow> })}
+              {visibleModelOptions.length === 0 ? <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground">没有匹配的模型</TableCell></TableRow> : null}
+            </TableBody></Table>
+            <div className="mt-3 flex justify-end"><Button onClick={() => void saveModelBindings()} disabled={savingBindings || !selectedGroupID}>{savingBindings ? '保存中...' : '保存模型绑定'}</Button></div>
           </div>
         </Card>
       </div>
