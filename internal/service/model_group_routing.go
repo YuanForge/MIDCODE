@@ -58,6 +58,13 @@ func SelectModelGroupRoutes(ctx context.Context, apiKeyID int64, routingModel, p
 	}
 	routes := make([]ModelGroupRoute, 0, len(bindings))
 	for _, binding := range bindings {
+		active, err := db.Engine.Where("id = ? AND is_active = true", binding.GroupID).Exist(new(model.ModelGroup))
+		if err != nil {
+			return nil, err
+		}
+		if !active {
+			continue
+		}
 		var groupModel model.ModelGroupModel
 		found, err := db.Engine.Where("group_id = ? AND routing_model = ?", binding.GroupID, routingModel).Get(&groupModel)
 		if err != nil {
@@ -67,7 +74,7 @@ func SelectModelGroupRoutes(ctx context.Context, apiKeyID int64, routingModel, p
 			continue
 		}
 		channel, err := GetChannel(ctx, groupModel.ChannelID)
-		if err != nil {
+		if err != nil || !channel.IsActive {
 			continue
 		}
 		if protocol != "" && effectiveChannelProtocol(channel) != protocol {
@@ -108,6 +115,13 @@ func IsChannelAuthorizedForAPIKey(ctx context.Context, apiKeyID, channelID int64
 		return false, err
 	}
 	for _, binding := range bindings {
+		active, err := db.Engine.Where("id = ? AND is_active = true", binding.GroupID).Exist(new(model.ModelGroup))
+		if err != nil {
+			return false, err
+		}
+		if !active {
+			continue
+		}
 		var groupModel model.ModelGroupModel
 		found, err := db.Engine.Where("group_id = ? AND routing_model = ? AND channel_id = ?", binding.GroupID, strings.TrimSpace(routingModel), channelID).Get(&groupModel)
 		if err != nil {

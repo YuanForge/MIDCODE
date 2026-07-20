@@ -70,6 +70,13 @@ export type UserChannel = {
   icon_url?: string
   price_display?: string
   group_price?: string
+  group_prices?: Array<{
+    group_id: number
+    group_code: string
+    group_name: string
+    price_display?: string
+    vip_prices?: Array<{ code: string; name: string; price_display?: string }>
+  }>
 }
 
 export type UserTask = {

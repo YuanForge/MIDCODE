@@ -520,7 +520,6 @@ export function UserModelsPage() {
                       </button>
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
-                      {channel.group_name ? <Badge>{channel.group_name}</Badge> : null}
                       {channel.model_provider ? <Badge variant="outline">{channel.model_provider}</Badge> : null}
                       <Badge variant="outline">{getProtocolLabel(channel.protocol || 'openai')}</Badge>
                       {channel.billing_type ? <Badge variant="outline">{getBillingTypeLabel(channel.billing_type)}</Badge> : null}
@@ -533,7 +532,6 @@ export function UserModelsPage() {
                       ) : (
                         <div>{t('models.meteredBilling')}</div>
                       )}
-                      {channel.group_price ? <div className="mt-1 font-medium text-primary">{t('models.groupPrice', { price: channel.group_price })}</div> : null}
                     </div>
                   </div>
                 </div>
@@ -673,14 +671,17 @@ export function UserModelsPage() {
                     <div className="text-xs text-muted-foreground">{t('models.billingType')}</div>
                     <div className="mt-1 text-sm font-medium">{getBillingTypeLabel(docChannel.billing_type)}</div>
                   </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">{t('models.exclusivePrice')}</div>
-                    <div className="mt-1 whitespace-pre-wrap text-sm font-medium text-primary">{docChannel.group_price || t('common.noDifference')}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">原价</div>
-                    <div className="mt-1 whitespace-pre-wrap text-sm font-medium">{docChannel.price_display || t('models.defaultPriceEmpty')}</div>
-                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="font-semibold">模型分组价格</h4>
+                  {docChannel.group_prices?.length ? docChannel.group_prices.map((group) => <Card key={group.group_id}>
+                    <CardContent className="space-y-3 p-4">
+                      <div className="flex items-center justify-between gap-3"><div><div className="font-medium">{group.group_name}</div><div className="font-mono text-xs text-muted-foreground">{group.group_code}</div></div><Badge variant="secondary">普通价</Badge></div>
+                      <div className="whitespace-pre-wrap text-sm font-medium">{group.price_display || t('models.defaultPriceEmpty')}</div>
+                      {group.vip_prices?.length ? <div className="space-y-2 border-t pt-3">{group.vip_prices.map((vip) => <div key={vip.code} className="grid gap-1 sm:grid-cols-[10rem_1fr]"><div className="text-sm"><span className="font-medium">{vip.name}</span><span className="ml-2 font-mono text-xs text-muted-foreground">{vip.code}</span></div><div className="whitespace-pre-wrap text-sm text-primary">{vip.price_display || t('models.defaultPriceEmpty')}</div></div>)}</div> : null}
+                    </CardContent>
+                  </Card>) : <div className="rounded-lg border p-4 text-sm text-muted-foreground">{docChannel.price_display || t('models.defaultPriceEmpty')}</div>}
                 </div>
 
                 <div className="rounded-xl border bg-accent/50 p-4 text-sm leading-relaxed">

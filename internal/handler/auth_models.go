@@ -20,111 +20,84 @@ import (
 // @Success      200  {object}  object{channels=[]object}
 // @Router       /user/channels [get]
 func (h *AuthHandler) ListModels(c *gin.Context) {
-	var channels []model.Channel
-	if err := db.Engine.Where("is_active = true").
-		Cols("id", "name", "model", "display_name", "model_provider", "type", "protocol", "billing_type", "billing_config", "icon_url", "description").
-		Find(&channels); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	type vipPriceInfo struct {
+		Code         string `json:"code"`
+		Name         string `json:"name"`
+		PriceDisplay string `json:"price_display"`
 	}
-
-	// 已登录时从 context 取用户分组，用于展示专属价格
-	userGroup := ""
-	if raw, ok := c.Get("user_group"); ok {
-		userGroup, _ = raw.(string)
+	type groupPriceInfo struct {
+		GroupID      int64          `json:"group_id"`
+		GroupCode    string         `json:"group_code"`
+		GroupName    string         `json:"group_name"`
+		PriceDisplay string         `json:"price_display"`
+		VIPPrices    []vipPriceInfo `json:"vip_prices"`
 	}
-
 	type channelInfo struct {
-		ID            int64  `json:"id"`
-		GroupID       int64  `json:"group_id,omitempty"`
-		GroupName     string `json:"group_name,omitempty"`
-		GroupPriority int    `json:"group_priority,omitempty"`
-		Name          string `json:"name"`
-		RoutingModel  string `json:"routing_model"`
-		ModelProvider string `json:"model_provider"`
-		Type          string `json:"type"`
-		Protocol      string `json:"protocol"`
-		BillingType   string `json:"billing_type"`
-		PriceDisplay  string `json:"price_display"`         // 默认价格
-		GroupPrice    string `json:"group_price,omitempty"` // 用户专属价格（与默认不同时才返回）
-		IconURL       string `json:"icon_url"`
-		Description   string `json:"description"`
+		ID            int64            `json:"id"`
+		Name          string           `json:"name"`
+		RoutingModel  string           `json:"routing_model"`
+		ModelProvider string           `json:"model_provider"`
+		Type          string           `json:"type"`
+		Protocol      string           `json:"protocol"`
+		BillingType   string           `json:"billing_type"`
+		PriceDisplay  string           `json:"price_display"`
+		GroupPrices   []groupPriceInfo `json:"group_prices"`
+		IconURL       string           `json:"icon_url"`
+		Description   string           `json:"description"`
 	}
 
 	grouped, groupedErr := listGroupedModelChannels()
-	if groupedErr == nil && len(grouped) > 0 {
-		result := make([]channelInfo, 0, len(grouped))
-		for _, item := range grouped {
-			ch := item.Channel
-			defaultPrice := buildPriceDisplay(ch.BillingType, ch.BillingConfig)
-			groupPrice := ""
-			if userGroup != "" {
-				groupCfg := model.JSON(billingcalc.EffectivePricingConfig(map[string]interface{}(ch.BillingConfig), userGroup))
-				gp := buildPriceDisplay(ch.BillingType, groupCfg)
-				if gp != defaultPrice {
-					groupPrice = gp
-				}
-			}
-			result = append(result, channelInfo{
-				ID: ch.ID, GroupID: item.Group.ID, GroupName: item.Group.Name, GroupPriority: item.Priority,
-				Name: service.ChannelRoutingKey(ch), RoutingModel: item.RoutingModel,
-				ModelProvider: service.EffectiveModelProvider(ch), Type: ch.Type, Protocol: ch.Protocol,
-				BillingType: ch.BillingType, PriceDisplay: defaultPrice, GroupPrice: groupPrice,
-				IconURL: ch.IconURL, Description: ch.Description,
-			})
-		}
-		c.JSON(http.StatusOK, gin.H{"channels": result})
+	if groupedErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": groupedErr.Error()})
 		return
 	}
-
-	// 按展示键去重：display_name 非空时以 display_name 为分组键，否则以 model 为分组键。
-	// 同一分组键的多个渠道只展示售价最低的渠道作为代表；卡片标题使用展示键（即 display_name 或 model）。
-	representatives := make(map[string]model.Channel)
-	groupOrder := make([]string, 0, len(channels))
-	for _, ch := range channels {
-		groupKey := service.ChannelRoutingKey(ch)
-		if groupKey == "" {
-			continue
-		}
-		current, exists := representatives[groupKey]
-		if exists {
-			if preferDisplayChannel(ch, current, userGroup) {
-				representatives[groupKey] = ch
-			}
-			continue
-		}
-		representatives[groupKey] = ch
-		groupOrder = append(groupOrder, groupKey)
+	vipGroups, vipErr := service.ListVIPGroups(c.Request.Context(), false)
+	if vipErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": vipErr.Error()})
+		return
 	}
-
-	result := make([]channelInfo, 0, len(groupOrder))
-	for _, groupKey := range groupOrder {
-		ch := representatives[groupKey]
-
-		displayName := groupKey // 展示名 = display_name（若设置），否则 = model
-
-		defaultPrice := buildPriceDisplay(ch.BillingType, ch.BillingConfig)
-		groupPrice := ""
-		if userGroup != "" {
-			groupCfg := model.JSON(billingcalc.EffectivePricingConfig(map[string]interface{}(ch.BillingConfig), userGroup))
-			gp := buildPriceDisplay(ch.BillingType, groupCfg)
-			if gp != defaultPrice {
-				groupPrice = gp
+	allowedGroups := map[int64]struct{}(nil)
+	if apiKeyID := c.GetInt64("api_key_id"); apiKeyID > 0 {
+		bindings, err := service.LoadAPIKeyModelGroupBindings(c.Request.Context(), apiKeyID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		allowedGroups = make(map[int64]struct{}, len(bindings))
+		for _, binding := range bindings {
+			allowedGroups[binding.GroupID] = struct{}{}
+		}
+	}
+	byModel := make(map[string]*channelInfo)
+	modelOrder := make([]string, 0)
+	for _, item := range grouped {
+		if allowedGroups != nil {
+			if _, ok := allowedGroups[item.Group.ID]; !ok {
+				continue
 			}
 		}
-		result = append(result, channelInfo{
-			ID:            ch.ID,
-			Name:          displayName,
-			RoutingModel:  groupKey,
-			ModelProvider: service.EffectiveModelProvider(ch),
-			Type:          ch.Type,
-			Protocol:      ch.Protocol,
-			BillingType:   ch.BillingType,
-			PriceDisplay:  defaultPrice,
-			GroupPrice:    groupPrice,
-			IconURL:       ch.IconURL,
-			Description:   ch.Description,
-		})
+		modelName := strings.TrimSpace(item.RoutingModel)
+		if modelName == "" {
+			continue
+		}
+		ch := item.Channel
+		basePrice := buildPriceDisplay(ch.BillingType, ch.BillingConfig)
+		vipPrices := make([]vipPriceInfo, 0, len(vipGroups))
+		for _, vip := range vipGroups {
+			cfg := model.JSON(billingcalc.EffectivePricingConfig(map[string]interface{}(ch.BillingConfig), vip.Code))
+			vipPrices = append(vipPrices, vipPriceInfo{Code: vip.Code, Name: vip.Name, PriceDisplay: buildPriceDisplay(ch.BillingType, cfg)})
+		}
+		itemInfo := byModel[modelName]
+		if itemInfo == nil {
+			itemInfo = &channelInfo{ID: ch.ID, Name: modelName, RoutingModel: modelName, ModelProvider: service.EffectiveModelProvider(ch), Type: ch.Type, Protocol: ch.Protocol, BillingType: ch.BillingType, PriceDisplay: basePrice, IconURL: ch.IconURL, Description: ch.Description}
+			byModel[modelName] = itemInfo
+			modelOrder = append(modelOrder, modelName)
+		}
+		itemInfo.GroupPrices = append(itemInfo.GroupPrices, groupPriceInfo{GroupID: item.Group.ID, GroupCode: item.Group.Code, GroupName: item.Group.Name, PriceDisplay: basePrice, VIPPrices: vipPrices})
+	}
+	result := make([]channelInfo, 0, len(modelOrder))
+	for _, modelName := range modelOrder {
+		result = append(result, *byModel[modelName])
 	}
 	c.JSON(http.StatusOK, gin.H{"channels": result})
 }
