@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -309,11 +310,76 @@ func GenerateAPIKey(ctx context.Context, userID int64, name, keyType, secret str
 	return rawHex, nil
 }
 
+var ErrAPIKeyNotFound = errors.New("API key not found")
+
+func apiKeyCacheKey(keyHash string) string {
+	return "apikey2:" + keyHash
+}
+
+func deleteAPIKeyCache(ctx context.Context, keyHash string) error {
+	if cache.Client == nil {
+		return errors.New("API key cache is unavailable")
+	}
+	if err := cache.Client.Del(ctx, apiKeyCacheKey(keyHash)).Err(); err != nil {
+		return fmt.Errorf("delete API key cache: %w", err)
+	}
+	return nil
+}
+
+func cachedAPIKeyActive(affected int64, err error) error {
+	if err != nil {
+		return fmt.Errorf("verify cached API key: %w", err)
+	}
+	if affected == 0 {
+		return errors.New("API Key invalid")
+	}
+	return nil
+}
+
+func finishAPIKeyMutation(ctx context.Context, keyHash string, affected int64, mutationErr error, invalidate func(context.Context, string) error) error {
+	if mutationErr != nil {
+		return mutationErr
+	}
+	if affected == 0 {
+		return ErrAPIKeyNotFound
+	}
+	if err := invalidate(ctx, keyHash); err != nil {
+		return fmt.Errorf("invalidate API key cache: %w", err)
+	}
+	return nil
+}
+
+func DeleteAPIKey(ctx context.Context, userID, keyID int64) error {
+	apiKey := &model.APIKey{}
+	found, err := db.Engine.Where("id = ? AND user_id = ?", keyID, userID).Cols("id", "key_hash").Get(apiKey)
+	if err != nil {
+		return fmt.Errorf("find API key: %w", err)
+	}
+	if !found {
+		return ErrAPIKeyNotFound
+	}
+	affected, err := db.Engine.ID(apiKey.ID).Delete(new(model.APIKey))
+	return finishAPIKeyMutation(ctx, apiKey.KeyHash, affected, err, deleteAPIKeyCache)
+}
+
+func RevokeAPIKey(ctx context.Context, keyID int64) error {
+	apiKey := &model.APIKey{}
+	found, err := db.Engine.ID(keyID).Cols("id", "key_hash").Get(apiKey)
+	if err != nil {
+		return fmt.Errorf("find API key: %w", err)
+	}
+	if !found {
+		return ErrAPIKeyNotFound
+	}
+	affected, err := db.Engine.ID(apiKey.ID).Cols("is_active").Update(&model.APIKey{IsActive: false})
+	return finishAPIKeyMutation(ctx, apiKey.KeyHash, affected, err, deleteAPIKeyCache)
+}
+
 // LookupAPIKey 通过哈希查找活跃的 APIKey（Redis 缓存加速）。
 func LookupAPIKey(ctx context.Context, rawKey string) (*model.APIKey, error) {
 	h := sha256.Sum256([]byte(rawKey))
 	keyHash := hex.EncodeToString(h[:])
-	cacheKey := fmt.Sprintf("apikey2:%s", keyHash)
+	cacheKey := apiKeyCacheKey(keyHash)
 
 	// 先查 Redis 缓存（存储完整 APIKey JSON）
 	cached, err := cache.Client.Get(ctx, cacheKey).Bytes()
@@ -321,7 +387,11 @@ func LookupAPIKey(ctx context.Context, rawKey string) (*model.APIKey, error) {
 		var apiKey model.APIKey
 		if jsonErr := json.Unmarshal(cached, &apiKey); jsonErr == nil {
 			now := time.Now()
-			db.Engine.Where("key_hash = ?", keyHash).Cols("last_used_at").Update(&model.APIKey{LastUsedAt: &now})
+			affected, updateErr := db.Engine.Where("key_hash = ? AND is_active = true", keyHash).
+				Cols("last_used_at").Update(&model.APIKey{LastUsedAt: &now})
+			if err := cachedAPIKeyActive(affected, updateErr); err != nil {
+				return nil, err
+			}
 			return &apiKey, nil
 		}
 	}

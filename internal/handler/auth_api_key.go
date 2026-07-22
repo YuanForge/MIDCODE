@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"fanapi/internal/db"
 	"fanapi/internal/model"
 	"fanapi/internal/service"
@@ -214,15 +215,18 @@ func parseInt64Field(row map[string]string, key string) int64 {
 // DELETE /user/apikeys/:id
 func (h *AuthHandler) DeleteAPIKey(c *gin.Context) {
 	userID := c.MustGet("user_id").(int64)
-	keyID := strings.TrimSpace(c.Param("id"))
-	affected, err := db.Engine.Where("id = ? AND user_id = ?", keyID, userID).
-		Delete(&model.APIKey{})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	keyID, err := strconv.ParseInt(strings.TrimSpace(c.Param("id")), 10, 64)
+	if err != nil || keyID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID 格式错误"})
 		return
 	}
-	if affected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "API Key 不存在"})
+	err = service.DeleteAPIKey(c.Request.Context(), userID, keyID)
+	if err != nil {
+		if errors.Is(err, service.ErrAPIKeyNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "API Key 不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "API Key 已删除"})
