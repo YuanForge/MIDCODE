@@ -12,7 +12,10 @@ const creditsPerYuan = 1_000_000 // 1 元 = 1,000,000 credits
 // planCredits 根据支付金额查找匹配的充值套餐，返回含赠送积分的总内部 credits。
 // 若无匹配套餐，则按标准汇率 amount*creditsPerYuan 计算（自定义金额，无赠送）。
 func planCredits(amount float64) int64 {
-	raw := getSettingValue("recharge_plans")
+	return planCreditsFromSetting(getSettingValue("recharge_plans"), amount)
+}
+
+func planCreditsFromSetting(raw string, amount float64) int64 {
 	if raw != "" {
 		var plans []map[string]interface{}
 		if err := json.Unmarshal([]byte(raw), &plans); err == nil {
