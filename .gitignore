@@ -4,6 +4,7 @@ web/admin/node_modules/
 web/user/node_modules/
 web/admin/dist/
 web/user/dist/
+web/app/test-results/
 
 # Go build outputs
 /tmp/fanapi-server
