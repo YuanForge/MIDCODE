@@ -291,6 +291,14 @@ export function AdminSettingsPage() {
                     <Input value={form.site_name ?? ''} onChange={(e) => set('site_name', e.target.value)} placeholder="例如：MidCode" />
                     <Tip>显示在浏览器标题栏和页面 Logo 旁；如果 env.js 配置了 site_name，则前台展示会优先使用 env.js</Tip>
                   </FieldRow>
+                  <FieldRow label="SEO 标题">
+                    <Input value={form.seo_title ?? ''} onChange={(e) => set('seo_title', e.target.value)} placeholder="留空则使用站点名称" />
+                    <Tip>用于浏览器标题和搜索引擎标题。</Tip>
+                  </FieldRow>
+                  <FieldRow label="SEO 描述">
+                    <Textarea value={form.seo_description ?? ''} onChange={(e) => set('seo_description', e.target.value)} rows={3} className={compactTextareaClass} placeholder="描述本站提供的模型与 API 服务" />
+                    <Tip>用于页面 description 元标签，按纯文本保存。</Tip>
+                  </FieldRow>
                   <FieldRow label="Logo 图片">
                     <div className="flex gap-2">
                       <Input value={form.logo_url ?? ''} onChange={(e) => set('logo_url', e.target.value)} placeholder="https://example.com/logo.png（留空则显示文字）" className="flex-1" />

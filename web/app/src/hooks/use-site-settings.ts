@@ -12,6 +12,8 @@ export type Plan = {
 
 export type SiteSettings = {
   siteName: string
+  seoTitle: string
+  seoDescription: string
   logoUrl: string
   tutorialMarkdown: string
   plans: Plan[]
@@ -36,6 +38,8 @@ export type SiteSettings = {
 
 const defaultSettings: SiteSettings = {
   siteName: getRuntimeString('site_name', 'MidCode'),
+  seoTitle: '',
+  seoDescription: '',
   logoUrl: getRuntimeString('logo_url'),
   tutorialMarkdown: '',
   plans: [],
@@ -91,6 +95,8 @@ export function useSiteSettings() {
             : (response as Record<string, any>)
         setSettings({
           siteName: getRuntimeString('site_name', record.site_name || 'MidCode'),
+          seoTitle: record.seo_title || '',
+          seoDescription: record.seo_description || '',
           logoUrl: getRuntimeString('logo_url', record.logo_url || ''),
           tutorialMarkdown: record.tutorial_markdown || '',
           plans: (() => {
@@ -125,8 +131,18 @@ export function useSiteSettings() {
   }, [])
 
   useEffect(() => {
-    document.title = settings.siteName
-  }, [settings.siteName])
+    document.title = settings.seoTitle || settings.siteName
+    const selector = 'meta[name="description"]'
+    const description = settings.seoDescription.trim()
+    const existing = document.head.querySelector<HTMLMetaElement>(selector)
+    if (!description) {
+      existing?.remove()
+      return
+    }
+    const meta = existing ?? document.head.appendChild(document.createElement('meta'))
+    meta.name = 'description'
+    meta.content = description
+  }, [settings.seoDescription, settings.seoTitle, settings.siteName])
 
   return { settings, loaded }
 }

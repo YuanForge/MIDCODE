@@ -14,6 +14,8 @@ import (
 // publicSettingKeys lists keys that are safe to expose to all visitors.
 var publicSettingKeys = map[string]bool{
 	"site_name":                    true,
+	"seo_title":                    true,
+	"seo_description":              true,
 	"logo_url":                     true,
 	"header_html":                  true,
 	"footer_html":                  true,
