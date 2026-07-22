@@ -20,7 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { copyToClipboard } from '@/lib/clipboard'
 import { useAsync } from '@/hooks/use-async'
-import { userApi, type UserChannel } from '@/lib/api/user'
+import { userApi, type ModelAvailability, type UserChannel } from '@/lib/api/user'
 import { cn } from '@/lib/utils'
 
 type DocMode = 'channel' | 'balance' | 'task'
@@ -55,6 +55,46 @@ const billingTypeLabels: Record<string, string> = {
 
 function copyText(text: string, label = '已复制') {
   void copyToClipboard(text, { successMessage: label })
+}
+
+function availabilityState(item: ModelAvailability | undefined, unavailable: boolean) {
+  if (unavailable) return { label: '统计暂不可用', tone: 'text-muted-foreground' }
+  if (!item || item.total === 0) return { label: '暂无调用数据', tone: 'text-muted-foreground' }
+  if (item.total < 20) return { label: '数据较少', tone: 'text-amber-600' }
+  if (item.availability_percent >= 99) return { label: '正常', tone: 'text-emerald-600' }
+  if (item.availability_percent >= 95) return { label: '降级', tone: 'text-amber-600' }
+  return { label: '异常', tone: 'text-destructive' }
+}
+
+function ModelAvailabilityPanel({ item, unavailable }: { item?: ModelAvailability; unavailable: boolean }) {
+  const state = availabilityState(item, unavailable)
+  const recent = item?.recent ?? []
+  const maxLatency = Math.max(1, ...recent.map((entry) => entry.latency_ms))
+  const bars = [...Array(Math.max(0, 60 - recent.length)).fill(null), ...recent]
+  return (
+    <div className="border-t pt-3" onClick={(event) => event.stopPropagation()}>
+      <div className="flex items-center justify-between gap-3 text-xs">
+        <span className="text-muted-foreground">可用性 · 7 天</span>
+        <span className={cn('font-medium', state.tone)}>{state.label}</span>
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+        <div><div className="text-muted-foreground">成功率</div><div className="mt-1 font-medium">{item?.total ? `${item.availability_percent.toFixed(2)}%` : '—'}</div></div>
+        <div><div className="text-muted-foreground">P50</div><div className="mt-1 font-medium">{item?.p50_latency_ms ? `${item.p50_latency_ms}ms` : '—'}</div></div>
+        <div><div className="text-muted-foreground">请求数</div><div className="mt-1 font-medium">{item?.total ?? 0}</div></div>
+      </div>
+      <div className="mt-3 flex h-8 items-end gap-px" aria-label={`最近 60 次调用，${item?.success ?? 0} 次成功`}>
+        {bars.map((entry, index) => (
+          <span
+            key={index}
+            className={cn('min-w-0 flex-1 rounded-t-[1px]', !entry ? 'bg-muted' : entry.status === 'ok' ? 'bg-emerald-500' : 'bg-destructive')}
+            style={{ height: entry ? `${Math.max(25, Math.round(entry.latency_ms / maxLatency * 100))}%` : '8%' }}
+            title={entry ? `${new Date(entry.created_at).toLocaleString('zh-CN')} · ${entry.status === 'ok' ? '成功' : '失败'} · ${entry.latency_ms}ms` : undefined}
+          />
+        ))}
+      </div>
+      <div className="mt-1 flex justify-between text-[10px] text-muted-foreground"><span>最近 60 次</span><span>现在</span></div>
+    </div>
+  )
 }
 
 function shouldUseChineseExamples(language: string) {
@@ -282,10 +322,21 @@ function ProviderLogoStack({ providers }: { providers: ProviderOption[] }) {
 
 export function UserModelsPage() {
   const { i18n, t } = useTranslation()
-  const { data: channels, loading, error, reload } = useAsync(async () => {
-    const response = await userApi.listChannels()
-    return Array.isArray(response) ? response : response.channels ?? []
-  }, [] as UserChannel[])
+  const { data, loading, error, reload } = useAsync(async () => {
+    const [response, availability] = await Promise.all([
+      userApi.listChannels(),
+      userApi.getModelAvailability().catch(() => null),
+    ])
+    return {
+      channels: Array.isArray(response) ? response : response.channels ?? [],
+      availability: availability?.models ?? null,
+    }
+  }, { channels: [] as UserChannel[], availability: null as ModelAvailability[] | null })
+  const channels = data.channels
+  const availabilityByModel = useMemo(
+    () => new Map((data.availability ?? []).map((item) => [item.routing_model, item])),
+    [data.availability],
+  )
 
   const [filterType, setFilterType] = useState('')
   const [filterName, setFilterName] = useState('')
@@ -472,7 +523,7 @@ export function UserModelsPage() {
       />
 
       {loading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 8 }).map((_, index) => (
             <Card key={index}>
               <CardContent className="flex flex-col gap-3 p-5">
@@ -490,7 +541,7 @@ export function UserModelsPage() {
           description={t('models.emptyDescription')}
         />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filteredChannels.map((channel, index) => (
             <Card
               key={channel.id ?? index}
@@ -538,6 +589,10 @@ export function UserModelsPage() {
                 <p className="min-h-10 text-xs leading-5 text-muted-foreground line-clamp-2">
                   {channel.description || t('models.fallbackDescription')}
                 </p>
+                <ModelAvailabilityPanel
+                  item={availabilityByModel.get(channel.routing_model || channel.model || channel.name || '')}
+                  unavailable={data.availability === null}
+                />
                 <div className="mt-auto flex items-center justify-between gap-3 border-t pt-3 text-xs font-medium">
                   <div className="rounded bg-muted/40 px-2 py-1 font-mono text-muted-foreground">
                     {channel.routing_model || channel.model || channel.name}

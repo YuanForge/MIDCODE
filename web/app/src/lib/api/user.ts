@@ -79,6 +79,21 @@ export type UserChannel = {
   }>
 }
 
+export type ModelAvailabilityRecent = {
+  status: string
+  latency_ms: number
+  created_at: string
+}
+
+export type ModelAvailability = {
+  routing_model: string
+  total: number
+  success: number
+  availability_percent: number
+  p50_latency_ms: number
+  recent: ModelAvailabilityRecent[]
+}
+
 export type UserTask = {
   id?: number
   task_id?: number
@@ -266,6 +281,8 @@ export const userApi = {
     http.delete<Record<string, unknown>>(`/user/apikeys/${id}`),
   listChannels: () =>
     http.get<{ channels?: UserChannel[] } | UserChannel[]>('/user/channels'),
+  getModelAvailability: () =>
+    http.get<{ models: ModelAvailability[] }>('/user/model-availability'),
   redeemCard: (code: string) =>
     http.post<Record<string, unknown>>('/user/cards/redeem', { code }),
   getRedeemHistory: (page = 1, size = 20) =>
