@@ -663,15 +663,7 @@ export function AdminChannelsPage() {
 
   const error = loadError || mutError
 
-  const poolOptions = useMemo(
-    () =>
-      pools.filter((pool) =>
-        form.id
-          ? pool.channel_id === form.id || String(pool.channel_id) === form.key_pool_id
-          : pool.channel_id === Number(form.key_pool_id || form.id || 0) || pool.channel_id === 0
-      ),
-    [form.id, form.key_pool_id, pools]
-  )
+  const poolOptions = useMemo(() => pools, [pools])
 
   const selectedUpstreamPlatform = useMemo(
     () => upstreamPlatforms.find((platform) => String(platform.id) === form.upstream_platform_id),

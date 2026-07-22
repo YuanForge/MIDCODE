@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -11,6 +12,32 @@ import (
 	"fanapi/internal/db"
 	"fanapi/internal/model"
 )
+
+func normalizeKeyPoolChannelIDs(ids []int64) ([]int64, error) {
+	seen := make(map[int64]struct{}, len(ids))
+	result := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			return nil, fmt.Errorf("channel_id must be positive")
+		}
+		if _, ok := seen[id]; ok {
+			return nil, fmt.Errorf("duplicate channel_id %d", id)
+		}
+		seen[id] = struct{}{}
+		result = append(result, id)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result, nil
+}
+
+func containsInt64(ids []int64, target int64) bool {
+	for _, id := range ids {
+		if id == target {
+			return true
+		}
+	}
+	return false
+}
 
 const (
 	// exhaustedTTL 是三方 Key 被标记为耗尽后的自动恢复时间。
@@ -251,7 +278,7 @@ func ListKeyPools(ctx context.Context, channelID int64) ([]model.KeyPool, error)
 	pools := make([]model.KeyPool, 0)
 	var err error
 	if channelID > 0 {
-		err = db.Engine.Where("channel_id = ?", channelID).OrderBy("id DESC").Find(&pools)
+		err = db.Engine.Where("id IN (SELECT key_pool_id FROM channels WHERE id = ? AND key_pool_id > 0)", channelID).OrderBy("id DESC").Find(&pools)
 	} else {
 		err = db.Engine.OrderBy("id DESC").Find(&pools)
 	}
@@ -260,11 +287,121 @@ func ListKeyPools(ctx context.Context, channelID int64) ([]model.KeyPool, error)
 
 // CreateKeyPool 创建一个新号池。
 func CreateKeyPool(ctx context.Context, pool *model.KeyPool) error {
-	_, err := db.Engine.Insert(pool)
-	if err == nil {
-		clearPoolAssignments(ctx, pool.ID)
+	sess := db.Engine.NewSession().Context(ctx)
+	defer sess.Close()
+	if err := sess.Begin(); err != nil {
+		return err
 	}
-	return err
+	rollback := true
+	defer func() {
+		if rollback {
+			_ = sess.Rollback()
+		}
+	}()
+	if pool.ChannelID != nil {
+		found, err := sess.ID(*pool.ChannelID).Exist(new(model.Channel))
+		if err != nil || !found {
+			return fmt.Errorf("channel %d not found", *pool.ChannelID)
+		}
+	}
+	if _, err := sess.Insert(pool); err != nil {
+		return err
+	}
+	if pool.ChannelID != nil {
+		if _, err := sess.Where("channel_id = ? AND id <> ?", *pool.ChannelID, pool.ID).Cols("channel_id").Update(&model.KeyPool{ChannelID: nil}); err != nil {
+			return err
+		}
+		if _, err := sess.ID(*pool.ChannelID).Cols("key_pool_id").Update(&model.Channel{KeyPoolID: pool.ID}); err != nil {
+			return err
+		}
+	}
+	if err := sess.Commit(); err != nil {
+		return err
+	}
+	rollback = false
+	if pool.ChannelID != nil {
+		InvalidateChannelCache(ctx, *pool.ChannelID)
+	}
+	clearPoolAssignments(ctx, pool.ID)
+	return nil
+}
+
+func ReplaceKeyPoolChannels(ctx context.Context, poolID int64, channelIDs []int64) error {
+	ids, err := normalizeKeyPoolChannelIDs(channelIDs)
+	if err != nil {
+		return err
+	}
+	sess := db.Engine.NewSession().Context(ctx)
+	defer sess.Close()
+	if err := sess.Begin(); err != nil {
+		return err
+	}
+	rollback := true
+	defer func() {
+		if rollback {
+			_ = sess.Rollback()
+		}
+	}()
+	var pool model.KeyPool
+	found, err := sess.ID(poolID).Get(&pool)
+	if err != nil || !found {
+		return fmt.Errorf("key pool %d not found", poolID)
+	}
+	var previous []model.Channel
+	if err = sess.Where("key_pool_id = ?", poolID).Cols("id").Find(&previous); err != nil {
+		return err
+	}
+	if _, err = sess.Where("key_pool_id = ?", poolID).Cols("key_pool_id").Update(&model.Channel{KeyPoolID: 0}); err != nil {
+		return err
+	}
+	if len(ids) > 0 {
+		var channels []model.Channel
+		if err = sess.In("id", ids).Find(&channels); err != nil {
+			return err
+		}
+		if len(channels) != len(ids) {
+			return fmt.Errorf("one or more channels not found")
+		}
+		if _, err = sess.In("id", ids).Cols("key_pool_id").Update(&model.Channel{KeyPoolID: poolID}); err != nil {
+			return err
+		}
+		if _, err = sess.Where("channel_id IN (?) AND id <> ?", ids, poolID).Cols("channel_id").Update(&model.KeyPool{ChannelID: nil}); err != nil {
+			return err
+		}
+	}
+	var defaultChannel int64
+	if pool.ChannelID != nil {
+		defaultChannel = *pool.ChannelID
+	}
+	if defaultChannel <= 0 || !containsInt64(ids, defaultChannel) {
+		if len(ids) > 0 {
+			defaultChannel = ids[0]
+		} else {
+			defaultChannel = 0
+		}
+	}
+	if defaultChannel > 0 {
+		if _, err = sess.ID(poolID).Cols("channel_id").Update(&model.KeyPool{ChannelID: &defaultChannel}); err != nil {
+			return err
+		}
+	} else if _, err = sess.ID(poolID).Cols("channel_id").Update(&model.KeyPool{ChannelID: nil}); err != nil {
+		return err
+	}
+	if err = sess.Commit(); err != nil {
+		return err
+	}
+	rollback = false
+	affected := make(map[int64]struct{}, len(previous)+len(ids))
+	for _, channel := range previous {
+		affected[channel.ID] = struct{}{}
+	}
+	for _, id := range ids {
+		affected[id] = struct{}{}
+	}
+	for id := range affected {
+		InvalidateChannelCache(ctx, id)
+	}
+	return nil
 }
 
 // ToggleKeyPool 切换号池启用/停用状态。
@@ -286,11 +423,18 @@ func ToggleKeyPool(ctx context.Context, poolID int64) error {
 
 // DeleteKeyPool 删除号池及其所有 Key。
 func DeleteKeyPool(ctx context.Context, poolID int64) error {
+	count, err := db.Engine.Where("key_pool_id = ?", poolID).Count(new(model.Channel))
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return fmt.Errorf("key pool %d is still bound to %d channel(s)", poolID, count)
+	}
 	_ = resetPoolRuntimeState(ctx, poolID)
 	if _, err := db.Engine.Where("pool_id = ?", poolID).Delete(&model.PoolKey{}); err != nil {
 		return err
 	}
-	_, err := db.Engine.ID(poolID).Delete(&model.KeyPool{})
+	_, err = db.Engine.ID(poolID).Delete(&model.KeyPool{})
 	return err
 }
 

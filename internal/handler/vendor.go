@@ -148,10 +148,14 @@ func (h *VendorHandler) GetPoolKeys(c *gin.Context) {
 		channelName := ""
 		var pool model.KeyPool
 		if found, _ := db.Engine.ID(k.PoolID).Get(&pool); found {
-			channelID = pool.ChannelID
+			if pool.ChannelID != nil {
+				channelID = *pool.ChannelID
+			}
 			var ch model.Channel
-			if found2, _ := db.Engine.ID(pool.ChannelID).Get(&ch); found2 {
-				channelName = ch.Name
+			if pool.ChannelID != nil {
+				if found2, _ := db.Engine.ID(*pool.ChannelID).Get(&ch); found2 {
+					channelName = ch.Name
+				}
 			}
 		}
 
@@ -214,8 +218,17 @@ func (h *VendorHandler) GetSubmittablePools(c *gin.Context) {
 	result := make([]PoolInfo, 0, len(pools))
 	for _, pool := range pools {
 		var ch model.Channel
-		if found, _ := db.Engine.ID(pool.ChannelID).Get(&ch); !found {
-			continue
+		if pool.ChannelID != nil {
+			if found, _ := db.Engine.ID(*pool.ChannelID).Get(&ch); !found {
+				pool.ChannelID = nil
+			}
+		}
+		if pool.ChannelID == nil {
+			var channels []model.Channel
+			if err := db.Engine.Where("key_pool_id = ? AND is_active = true", pool.ID).Cols("id", "name", "type").OrderBy("id ASC").Limit(1).Find(&channels); err != nil || len(channels) == 0 {
+				continue
+			}
+			ch = channels[0]
 		}
 		result = append(result, PoolInfo{
 			ID:          pool.ID,
@@ -266,21 +279,42 @@ func (h *VendorHandler) SubmitKey(c *gin.Context) {
 	if req.PoolID > 0 {
 		found, err = db.Engine.Where("id = ? AND vendor_submittable = true AND is_active = true", req.PoolID).Get(&pool)
 	} else {
-		found, err = db.Engine.Where("channel_id = ? AND vendor_submittable = true AND is_active = true", req.ChannelID).
-			OrderBy("id ASC").Get(&pool)
+		var channel model.Channel
+		if channelFound, channelErr := db.Engine.ID(req.ChannelID).Cols("id", "key_pool_id").Get(&channel); channelErr != nil || !channelFound || channel.KeyPoolID <= 0 {
+			found = false
+		} else {
+			found, err = db.Engine.Where("id = ? AND vendor_submittable = true AND is_active = true", channel.KeyPoolID).Get(&pool)
+		}
 	}
 	if err != nil || !found {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "目标渠道未找到可上传号池"})
 		return
 	}
-	if req.ChannelID > 0 && pool.ChannelID != req.ChannelID {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "pool_id 与 channel_id 不匹配"})
+	if req.ChannelID > 0 {
+		var channel model.Channel
+		if foundChannel, channelErr := db.Engine.ID(req.ChannelID).Cols("id", "key_pool_id").Get(&channel); channelErr != nil || !foundChannel || channel.KeyPoolID != pool.ID {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "pool_id 与 channel_id 不匹配"})
+			return
+		}
+	}
+	channelID := int64(0)
+	if req.ChannelID > 0 {
+		channelID = req.ChannelID
+	} else if pool.ChannelID != nil {
+		channelID = *pool.ChannelID
+	} else {
+		var channels []model.Channel
+		if err := db.Engine.Where("key_pool_id = ? AND is_active = true", pool.ID).Cols("id").OrderBy("id ASC").Limit(1).Find(&channels); err == nil && len(channels) > 0 {
+			channelID = channels[0].ID
+		}
+	}
+	if channelID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "号池没有可用于验证的渠道"})
 		return
 	}
-
 	// 2. 获取关联渠道
 	var ch model.Channel
-	if found2, _ := db.Engine.ID(pool.ChannelID).Get(&ch); !found2 {
+	if found2, _ := db.Engine.ID(channelID).Get(&ch); !found2 {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "关联渠道不存在"})
 		return
 	}

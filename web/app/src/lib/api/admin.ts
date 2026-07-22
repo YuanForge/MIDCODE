@@ -159,7 +159,8 @@ export type AdminTransactionSummary = {
 export type AdminTask = {
   id?: number
   user_id?: number
-  channel_id?: number
+  channel_id?: number | null
+  channel_ids?: number[]
   type?: string
   status?: string
   error_msg?: string
@@ -347,7 +348,8 @@ export type AdminWithdrawal = {
 export type AdminKeyPool = {
   id?: number
   name?: string
-  channel_id?: number
+  channel_id?: number | null
+  channel_ids?: number[]
   is_active?: boolean
   vendor_submittable?: boolean
 }
@@ -796,7 +798,7 @@ export const adminApi = {
     http.get<{ pools?: AdminKeyPool[] } | AdminKeyPool[]>('/admin/key-pools', {
       params: channelId ? { channel_id: channelId } : undefined,
     }),
-  createKeyPool: (payload: { channel_id: number; name: string }) =>
+  createKeyPool: (payload: { channel_id?: number; name: string }) =>
     http.post<Record<string, unknown>>('/admin/key-pools', payload),
   deleteKeyPool: (id: number) =>
     http.delete<Record<string, unknown>>(`/admin/key-pools/${id}`),
@@ -812,6 +814,8 @@ export const adminApi = {
     http.post<{ imported: number; skipped: number }>(`/admin/key-pools/${poolId}/keys/import`, { keys }),
   getKeyPoolChannels: (id: number) =>
     http.get<{ channels?: AdminChannel[] }>(`/admin/key-pools/${id}/channels`),
+  replaceKeyPoolChannels: (id: number, channelIds: number[]) =>
+    http.put<Record<string, unknown>>(`/admin/key-pools/${id}/channels`, { channel_ids: channelIds }),
   removePoolKey: (id: number) =>
     http.delete<Record<string, unknown>>(`/admin/pool-keys/${id}`),
   updatePoolKey: (id: number, payload: { priority: number; is_active: boolean; base_url_override?: string }) =>

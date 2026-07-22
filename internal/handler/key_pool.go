@@ -39,8 +39,8 @@ func CreateKeyPool(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if pool.ChannelID == 0 || pool.Name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供 channel_id 和号池名称"})
+	if pool.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供号池名称"})
 		return
 	}
 	pool.IsActive = true
@@ -51,6 +51,26 @@ func CreateKeyPool(c *gin.Context) {
 	c.JSON(http.StatusCreated, pool)
 }
 
+func ReplaceKeyPoolChannels(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID 格式错误"})
+		return
+	}
+	var body struct {
+		ChannelIDs []int64 `json:"channel_ids"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := service.ReplaceKeyPoolChannels(c.Request.Context(), id, body.ChannelIDs); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 // DeleteKeyPool DELETE /admin/key-pools/:id
 func DeleteKeyPool(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -59,7 +79,7 @@ func DeleteKeyPool(c *gin.Context) {
 		return
 	}
 	if err := service.DeleteKeyPool(c.Request.Context(), id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})

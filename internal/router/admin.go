@@ -36,6 +36,7 @@ func registerAdminRoutes(authed *gin.RouterGroup, deps Dependencies) {
 		admin.POST("/key-pools/:id/keys", handler.AddPoolKey)
 		admin.POST("/key-pools/:id/keys/import", handler.ImportPoolKeys)
 		admin.GET("/key-pools/:id/channels", handler.GetKeyPoolChannels)
+		admin.PUT("/key-pools/:id/channels", handler.ReplaceKeyPoolChannels)
 		admin.DELETE("/pool-keys/:id", handler.RemovePoolKey)
 		admin.PATCH("/pool-keys/:id", handler.UpdatePoolKey)
 		admin.PATCH("/pool-keys/:id/vendor", handler.AdminSetPoolKeyVendor)

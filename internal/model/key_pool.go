@@ -7,7 +7,7 @@ import "time"
 // 而不使用渠道 Headers 中的静态 Authorization Key。
 type KeyPool struct {
 	ID                int64     `xorm:"pk autoincr 'id'" json:"id"`
-	ChannelID         int64     `xorm:"notnull index 'channel_id'" json:"channel_id"`
+	ChannelID         *int64    `xorm:"index 'channel_id' null" json:"channel_id,omitempty"`
 	Name              string    `xorm:"notnull 'name'" json:"name"`
 	IsActive          bool      `xorm:"notnull default(true) 'is_active'" json:"is_active"`
 	VendorSubmittable bool      `xorm:"notnull default(false) 'vendor_submittable'" json:"vendor_submittable"` // 允许号商在门户自助上传 Key

@@ -79,7 +79,7 @@ export function AdminKeyPoolsPage() {
   const [importResult, setImportResult] = useState<{ imported: number; skipped: number } | null>(null)
   const [bindingOpen, setBindingOpen] = useState(false)
   const [bindingPool, setBindingPool] = useState<AdminKeyPool | null>(null)
-  const [boundChannels, setBoundChannels] = useState<AdminChannel[]>([])
+  const [selectedChannelIds, setSelectedChannelIds] = useState<number[]>([])
   const [bindingLoading, setBindingLoading] = useState(false)
 
   const error = loadError || mutError
@@ -108,7 +108,7 @@ export function AdminKeyPoolsPage() {
   async function createPool() {
     setMutError('')
     try {
-      await adminApi.createKeyPool({ channel_id: Number(channelId), name })
+      await adminApi.createKeyPool({ ...(channelId ? { channel_id: Number(channelId) } : {}), name })
       setCreateOpen(false)
       setName('')
       reload()
@@ -164,12 +164,26 @@ export function AdminKeyPoolsPage() {
     setMutError('')
     try {
       const res = await adminApi.getKeyPoolChannels(pool.id)
-      setBoundChannels(res.channels ?? [])
+      const channels = res.channels ?? []
+      setSelectedChannelIds(channels.map((channel) => channel.id).filter((id): id is number => Boolean(id)))
     } catch (err) {
       const { getApiErrorMessage } = await import('@/lib/api/http')
       setMutError(getApiErrorMessage(err))
     } finally {
       setBindingLoading(false)
+    }
+  }
+
+  async function saveBinding() {
+    if (!bindingPool?.id) return
+    setMutError('')
+    try {
+      await adminApi.replaceKeyPoolChannels(bindingPool.id, selectedChannelIds)
+      setBindingOpen(false)
+      reload()
+    } catch (err) {
+      const { getApiErrorMessage } = await import('@/lib/api/http')
+      setMutError(getApiErrorMessage(err))
     }
   }
 
@@ -305,7 +319,7 @@ export function AdminKeyPoolsPage() {
                   <TableRow key={pool.id ?? index}>
                     <TableCell>{pool.id ?? '-'}</TableCell>
                     <TableCell>{pool.name ?? '-'}</TableCell>
-                    <TableCell>{pool.channel_id ?? '-'}</TableCell>
+                    <TableCell>{pool.channel_ids?.length ?? (pool.channel_id ? 1 : 0)}</TableCell>
                     <TableCell>
                       <Badge variant={pool.is_active ? 'default' : 'secondary'}>
                         {pool.is_active ? '启用' : '停用'}
@@ -351,7 +365,7 @@ export function AdminKeyPoolsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>取消</Button>
-            <Button onClick={createPool} disabled={!channelId || !name.trim()}>创建</Button>
+            <Button onClick={createPool} disabled={!name.trim()}>创建</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -508,36 +522,19 @@ export function AdminKeyPoolsPage() {
           <DialogHeader><DialogTitle>{bindingPool?.name ?? ''} - 绑定渠道</DialogTitle></DialogHeader>
           {bindingLoading ? (
             <p className="py-4 text-center text-sm text-muted-foreground">加载中…</p>
-          ) : boundChannels.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">暂无渠道使用此号池</p>
           ) : (
-            <Table className="min-w-[760px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>ID</TableHead>
-                  <TableHead>渠道名称</TableHead>
-                  <TableHead>模型</TableHead>
-                  <TableHead>状态</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {boundChannels.map((ch, i) => (
-                  <TableRow key={ch.id ?? i}>
-                    <TableCell>{ch.id}</TableCell>
-                    <TableCell>{ch.name ?? '-'}</TableCell>
-                    <TableCell>{ch.model ?? '-'}</TableCell>
-                    <TableCell>
-                      <Badge variant={ch.is_active ? 'default' : 'secondary'}>
-                        {ch.is_active ? '启用' : '停用'}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <div className="flex max-h-[55vh] flex-col gap-2 overflow-y-auto">
+              {channels.map((ch) => (
+                <Label key={ch.id} className="flex items-center gap-2 rounded border p-2">
+                  <input type="checkbox" checked={selectedChannelIds.includes(ch.id ?? 0)} onChange={(event) => setSelectedChannelIds((ids) => event.target.checked ? [...ids.filter((id) => id !== ch.id), ch.id ?? 0].filter(Boolean) : ids.filter((id) => id !== ch.id))} />
+                  <span>{ch.name ?? '-'} · {ch.model ?? '-'} · #{ch.id}</span>
+                </Label>
+              ))}
+            </div>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setBindingOpen(false)}>关闭</Button>
+            <Button onClick={saveBinding}>保存绑定</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
