@@ -11,6 +11,7 @@ import (
 	"fanapi/internal/cache"
 	"fanapi/internal/db"
 	"fanapi/internal/model"
+	"xorm.io/builder"
 )
 
 func normalizeKeyPoolChannelIDs(ids []int64) ([]int64, error) {
@@ -37,6 +38,10 @@ func containsInt64(ids []int64, target int64) bool {
 		}
 	}
 	return false
+}
+
+func keyPoolDefaultChannelExclusionCondition(ids []int64, poolID int64) builder.Cond {
+	return builder.In("channel_id", ids).And(builder.Neq{"id": poolID})
 }
 
 const (
@@ -365,7 +370,7 @@ func ReplaceKeyPoolChannels(ctx context.Context, poolID int64, channelIDs []int6
 		if _, err = sess.In("id", ids).Cols("key_pool_id").Update(&model.Channel{KeyPoolID: poolID}); err != nil {
 			return err
 		}
-		if _, err = sess.Where("channel_id IN (?) AND id <> ?", ids, poolID).Cols("channel_id").Update(&model.KeyPool{ChannelID: nil}); err != nil {
+		if _, err = sess.Where(keyPoolDefaultChannelExclusionCondition(ids, poolID)).Cols("channel_id").Update(&model.KeyPool{ChannelID: nil}); err != nil {
 			return err
 		}
 	}

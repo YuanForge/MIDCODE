@@ -1,6 +1,11 @@
 package service
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+
+	"xorm.io/builder"
+)
 
 func TestNormalizeKeyPoolChannelIDs(t *testing.T) {
 	got, err := normalizeKeyPoolChannelIDs([]int64{9, 3})
@@ -12,5 +17,17 @@ func TestNormalizeKeyPoolChannelIDs(t *testing.T) {
 	}
 	if _, err := normalizeKeyPoolChannelIDs([]int64{0}); err == nil {
 		t.Fatal("non-positive channel IDs must fail")
+	}
+}
+
+func TestKeyPoolDefaultChannelExclusionConditionExpandsIDs(t *testing.T) {
+	condition := keyPoolDefaultChannelExclusionCondition([]int64{44, 43}, 45)
+	_, args, err := builder.ToSQL(condition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []interface{}{int64(44), int64(43), int64(45)}
+	if !reflect.DeepEqual(args, want) {
+		t.Fatalf("args = %#v, want %#v", args, want)
 	}
 }
