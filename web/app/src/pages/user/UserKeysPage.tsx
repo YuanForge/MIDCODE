@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { KeyRoundIcon, PlusIcon, Trash2Icon } from 'lucide-react'
+import { GripVerticalIcon, KeyRoundIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 
 import { FilterBar } from '@/components/shared/FilterBar'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -46,6 +46,15 @@ function spendText(value: number | undefined) {
   return `${formatCredits(value ?? 0)} 积分`
 }
 
+function reorderGroups(ids: number[], draggedId: number, targetId: number) {
+  const from = ids.indexOf(draggedId)
+  const to = ids.indexOf(targetId)
+  if (from < 0 || to < 0 || from === to) return ids
+  const next = [...ids]
+  next.splice(to, 0, next.splice(from, 1)[0])
+  return next
+}
+
 export function UserKeysPage() {
   const { data: keys, loading, error: loadError, reload } = useAsync(async () => {
     const response = await userApi.listApiKeys()
@@ -62,6 +71,7 @@ export function UserKeysPage() {
   const [createdKey, setCreatedKey] = useState('')
   const [newKeyName, setNewKeyName] = useState('')
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>([])
+  const [draggedGroupId, setDraggedGroupId] = useState<number>()
   const [bindingKey, setBindingKey] = useState<ApiKeyRecord>()
   const [bindingIds, setBindingIds] = useState<number[]>([])
   const [submitting, setSubmitting] = useState(false)
@@ -333,12 +343,13 @@ export function UserKeysPage() {
                   </label>
                 ))}
               </div>
-              <div className="space-y-1">
+              <div className="space-y-2">
                 {selectedGroupIds.map((id, index) => {
                   const group = availableGroups.find((item) => item.id === id)
-                  return <div key={id} className="flex items-center justify-between rounded border px-2 py-1 text-sm"><span>{index + 1}. {group?.name || group?.code || id}</span><span className="flex gap-1"><Button type="button" size="sm" variant="ghost" onClick={() => moveGroup(index, -1)} disabled={index === 0}>↑</Button><Button type="button" size="sm" variant="ghost" onClick={() => moveGroup(index, 1)} disabled={index === selectedGroupIds.length - 1}>↓</Button></span></div>
+                  return <div key={id} draggable onDragStart={(event) => { setDraggedGroupId(id); event.dataTransfer.effectAllowed = 'move' }} onDragEnd={() => setDraggedGroupId(undefined)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (draggedGroupId) setSelectedGroupIds((current) => reorderGroups(current, draggedGroupId, id)) }} className="flex cursor-grab items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm active:cursor-grabbing"><GripVerticalIcon className="size-4 text-muted-foreground" /><span className="min-w-0 flex-1 font-medium">{index + 1}. {group?.name || group?.code || id}</span>{index === 0 ? <Badge>优先使用</Badge> : <Badge variant="outline">故障回退 {index}</Badge>}<span className="flex gap-1"><Button type="button" size="sm" variant="ghost" onClick={() => moveGroup(index, -1)} disabled={index === 0}>↑</Button><Button type="button" size="sm" variant="ghost" onClick={() => moveGroup(index, 1)} disabled={index === selectedGroupIds.length - 1}>↓</Button></span></div>
                 })}
               </div>
+              <p className="text-xs text-muted-foreground">拖拽已选分组调整顺序；第一项优先使用，后续分组按顺序故障回退。</p>
             </div>
           </div>
           <DialogFooter>
