@@ -17,7 +17,7 @@
 - `channels.key_pool_id` 表示渠道使用的号池。
 - `key_pools.channel_id` 表示号池归属的渠道。
 
-运行时按 `channels.key_pool_id` 取号池，但管理端列表、号池创建、供应商上传和部分缓存重置逻辑依赖 `key_pools.channel_id`。直接让第二个渠道引用已有号池，会造成管理端归属错误、供应商校验错误，以及删除原渠道时误删共享号池的风险。
+运行时按 `channels.key_pool_id` 取号池，但管理端列表、号池创建、供应商上传和部分缓存重置逻辑依赖 `key_pools.channel_id`。`key_pools.channel_id` 还带有指向渠道的级联删除外键。直接让第二个渠道引用已有号池，会造成管理端归属错误、供应商校验错误，以及删除原渠道时误删共享号池的风险。
 
 ## 3. 权威数据模型
 
@@ -29,7 +29,7 @@ channels.key_pool_id -> key_pools.id
 
 多个渠道允许保存相同的非零 `key_pool_id`。首版继续使用 `0` 表示未绑定，避免扩大 Go 模型、接口和现有数据的空值兼容范围。
 
-`key_pools.channel_id` 从数据库和 Go 模型中删除。号池是平台独立资源，不再归属于任何单一渠道。删除渠道不会删除号池。
+保留 `key_pools.channel_id`，但改为可空的兼容字段，语义调整为“默认/测试渠道”，不再表示唯一绑定关系。真正的运行时绑定仍只认 `channels.key_pool_id`。号池可以为 NULL，或保留一个默认渠道 ID；多个渠道可以同时引用同一个号池。该字段不允许再使用级联删除，删除默认渠道时改为将其置 NULL。
 
 不新增中间表。中间表只有在未来支持一个渠道绑定多个号池时才有必要。
 
@@ -38,13 +38,13 @@ channels.key_pool_id -> key_pools.id
 新增 `scripts/migrate_20260722_shared_key_pools.sql`，执行以下操作：
 
 1. 检查所有非零 `channels.key_pool_id` 都指向存在的 `key_pools.id`；存在悬空引用时迁移必须失败并输出待修复记录。
-2. 为 `channels.key_pool_id` 增加查询索引。
-3. 删除依赖 `key_pools.channel_id` 的索引、唯一约束和外键。
-4. 删除 `key_pools.channel_id` 列。
+2. 将 `key_pools.channel_id` 改为可空。
+3. 将 `key_pools.channel_id` 的外键改为 `ON DELETE SET NULL`，禁止删除渠道级联删除号池。
+4. 为 `channels.key_pool_id` 增加查询索引。
 
-迁移只保留当前运行时已经生效的 `channels.key_pool_id`，不根据旧 `key_pools.channel_id` 自动激活任何渠道，避免把仅有管理归属但未实际启用的号池变成生产认证来源。`Sync2` 只负责新模型结构，不替代显式生产迁移。
+迁移只保留当前运行时已经生效的 `channels.key_pool_id`。已有 `key_pools.channel_id` 保留为默认/测试渠道提示，不会据此自动激活或改绑渠道。`Sync2` 只负责新模型结构，不替代显式生产迁移。
 
-回滚迁移可以恢复 `key_pools.channel_id` 为可空兼容列，但共享号池无法无损恢复为单一归属。生产回滚应优先回滚应用并保留新结构，或在回滚前人工拆分共享号池。
+回滚迁移可以恢复非空和级联约束，但共享绑定仍由多个渠道字段表达；回滚前必须先清理 NULL 默认渠道并确认删除级联风险。
 
 ## 5. 管理接口
 
