@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"fmt"
 	"math"
 	"net/http"
 	"strconv"
@@ -19,6 +18,23 @@ import (
 type tokenPriceMeta struct {
 	InputPricePer1MTokens  *int64 `json:"input_price_per_1m_tokens,omitempty"`
 	OutputPricePer1MTokens *int64 `json:"output_price_per_1m_tokens,omitempty"`
+}
+
+type userLogDetail struct {
+	ID                     int64      `json:"id"`
+	CorrID                 string     `json:"corr_id"`
+	Model                  string     `json:"model"`
+	IsStream               bool       `json:"is_stream"`
+	ClientRequest          model.JSON `json:"client_request,omitempty"`
+	ClientResponse         model.JSON `json:"client_response,omitempty"`
+	Usage                  model.JSON `json:"usage,omitempty"`
+	Status                 string     `json:"status"`
+	ErrorMsg               string     `json:"error_msg,omitempty"`
+	CreatedAt              string     `json:"created_at"`
+	UpdatedAt              string     `json:"updated_at"`
+	InputPricePer1MTokens  *int64     `json:"input_price_per_1m_tokens,omitempty"`
+	OutputPricePer1MTokens *int64     `json:"output_price_per_1m_tokens,omitempty"`
+	CreditsCharged         int64      `json:"credits_charged"`
 }
 
 func configInt64Ptr(cfg model.JSON, key string) *int64 {
@@ -284,7 +300,10 @@ func AdminListLLMLogs(c *gin.Context) {
 				COALESCE(MAX(pool_key_id), 0) AS pool_key_id
 				FROM billing_transactions WHERE ` + corrIDFilter + ` GROUP BY corr_id`
 			var rows []txRow
-			_ = db.Engine.SQL(sqlStr, args...).Find(&rows)
+			if err := db.Engine.SQL(sqlStr, args...).Find(&rows); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败，请稍后重试"})
+				return
+			}
 			for _, r := range rows {
 				creditsMap[r.CorrID] = r.Credits
 				costMap[r.CorrID] = r.Cost
@@ -392,12 +411,21 @@ func billingCorrIDFilter(logs []model.LLMLog) (string, []interface{}) {
 		}
 		seen[corrID] = true
 		args = append(args, corrID)
-		placeholders = append(placeholders, fmt.Sprintf("$%d", len(args)))
+		placeholders = append(placeholders, "?")
 	}
 	if len(args) == 0 {
 		return "", nil
 	}
 	return "corr_id != '' AND corr_id IN (" + strings.Join(placeholders, ",") + ")", args
+}
+
+func userBillingCorrIDFilter(logs []model.LLMLog, userID int64) (string, []interface{}) {
+	filter, corrArgs := billingCorrIDFilter(logs)
+	if filter == "" {
+		return "", nil
+	}
+	args := append([]interface{}{userID}, corrArgs...)
+	return "user_id = ? AND " + filter, args
 }
 
 // GET /v1/llm-logs  (用户查自己的日志，不含 upstream_request 详情)
@@ -496,13 +524,16 @@ func UserListLLMLogs(c *gin.Context) {
 			CorrID  string `xorm:"corr_id"`
 			Credits int64  `xorm:"credits"`
 		}
-		corrIDFilter, args := billingCorrIDFilter(logs)
+		corrIDFilter, args := userBillingCorrIDFilter(logs, userID)
 		if corrIDFilter != "" {
 			var rows []txRow
 			sqlStr := `SELECT corr_id,
 				COALESCE(SUM(CASE WHEN type IN ('hold','charge','settle') THEN credits WHEN type='refund' THEN -credits ELSE 0 END),0) AS credits
 				FROM billing_transactions WHERE ` + corrIDFilter + ` GROUP BY corr_id`
-			_ = db.Engine.SQL(sqlStr, args...).Find(&rows)
+			if err := db.Engine.SQL(sqlStr, args...).Find(&rows); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败，请稍后重试"})
+				return
+			}
 			for _, r := range rows {
 				creditsMap[r.CorrID] = r.Credits
 			}
@@ -559,22 +590,6 @@ func UserGetLLMLog(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "记录不存在"})
 		return
 	}
-	// 只返回用户可见字段，不暴露上游路由、Key、请求头等内部信息
-	type userLogDetail struct {
-		ID                     int64      `json:"id"`
-		CorrID                 string     `json:"corr_id"`
-		Model                  string     `json:"model"`
-		IsStream               bool       `json:"is_stream"`
-		ClientRequest          model.JSON `json:"client_request,omitempty"`  // 用户原始请求
-		ClientResponse         model.JSON `json:"client_response,omitempty"` // 平台返回给用户的响应
-		Usage                  model.JSON `json:"usage,omitempty"`
-		Status                 string     `json:"status"`
-		ErrorMsg               string     `json:"error_msg,omitempty"`
-		CreatedAt              string     `json:"created_at"`
-		UpdatedAt              string     `json:"updated_at"`
-		InputPricePer1MTokens  *int64     `json:"input_price_per_1m_tokens,omitempty"`
-		OutputPricePer1MTokens *int64     `json:"output_price_per_1m_tokens,omitempty"`
-	}
 	channelMap := loadChannelPricingMap([]int64{log.ChannelID})
 	channel := channelMap[log.ChannelID]
 	logGroupMap := loadLogUserGroupMap([]model.LLMLog{log})
@@ -582,6 +597,11 @@ func UserGetLLMLog(c *gin.Context) {
 		InputPricePer1MTokens:  log.InputPricePer1MTokens,
 		OutputPricePer1MTokens: log.OutputPricePer1MTokens,
 	}, logGroupMap[log.CorrID], groupName)
+	var creditsCharged int64
+	if err := db.Engine.DB().QueryRowContext(c.Request.Context(), `SELECT COALESCE(SUM(CASE WHEN type IN ('hold','charge','settle') THEN credits WHEN type='refund' THEN -credits ELSE 0 END),0) FROM billing_transactions WHERE user_id=$1 AND corr_id=$2`, userID, log.CorrID).Scan(&creditsCharged); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败，请稍后重试"})
+		return
+	}
 	c.JSON(http.StatusOK, userLogDetail{
 		ID:             log.ID,
 		CorrID:         log.CorrID,
@@ -601,5 +621,6 @@ func UserGetLLMLog(c *gin.Context) {
 		UpdatedAt:              log.UpdatedAt.Format("2006-01-02 15:04:05"),
 		InputPricePer1MTokens:  displayPrice.InputPricePer1MTokens,
 		OutputPricePer1MTokens: displayPrice.OutputPricePer1MTokens,
+		CreditsCharged:         creditsCharged,
 	})
 }

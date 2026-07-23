@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"fanapi/internal/billing"
@@ -108,5 +110,33 @@ func TestDisplayTokenPriceMetaReplacesLegacyStoredPrices(t *testing.T) {
 	}
 	if got := int64PtrValue(t, alreadySpecific.OutputPricePer1MTokens); got != 2222222 {
 		t.Fatalf("specific output price = %d, want 2222222", got)
+	}
+}
+
+func TestUserBillingCorrIDFilterScopesDriverPlaceholders(t *testing.T) {
+	filter, args := userBillingCorrIDFilter([]model.LLMLog{
+		{CorrID: "corr-a"},
+		{CorrID: "corr-b"},
+		{CorrID: "corr-a"},
+	}, 42)
+
+	if strings.Contains(filter, "$") {
+		t.Fatalf("filter mixes PostgreSQL-numbered placeholders: %q", filter)
+	}
+	if got, want := strings.Count(filter, "?"), 3; got != want {
+		t.Fatalf("placeholder count = %d, want %d: %q", got, want, filter)
+	}
+	if len(args) != 3 || args[0] != int64(42) || args[1] != "corr-a" || args[2] != "corr-b" {
+		t.Fatalf("args = %#v, want user id followed by unique corr ids", args)
+	}
+}
+
+func TestUserLogDetailJSONIncludesCreditsCharged(t *testing.T) {
+	encoded, err := json.Marshal(userLogDetail{CreditsCharged: 123})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"credits_charged":123`) {
+		t.Fatalf("detail JSON = %s, want credits_charged", encoded)
 	}
 }
