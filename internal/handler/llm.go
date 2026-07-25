@@ -680,7 +680,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 			attempt, prepErr = prepareLLMUpstreamAttempt(c, ch, poolKey, origReqData, clientProto, resolvedModel, isStream, responsesOperation)
 			if prepErr != nil {
 				service.RecordChannelError(c.Request.Context(), channelID)
-				llmRefundAndAbort(c, corrID, userID, totalHold, upstreamCostHold, poolKeyIDVal, 0, "上游请求准备失败: "+prepErr.Error())
+				llmRefundAndAbort(c, corrID, userID, apiKeyIDVal, totalHold, upstreamCostHold, poolKeyIDVal, 0, "上游请求准备失败: "+prepErr.Error())
 				return
 			}
 			proto = attempt.Protocol
@@ -690,7 +690,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 			persistLLMUpstreamHeaders(corrID, sentHeaders)
 			if err != nil {
 				service.RecordChannelError(c.Request.Context(), channelID)
-				llmRefundAndAbort(c, corrID, userID, totalHold, upstreamCostHold, poolKeyIDVal, 0, "上游请求失败(重试): "+err.Error())
+				llmRefundAndAbort(c, corrID, userID, apiKeyIDVal, totalHold, upstreamCostHold, poolKeyIDVal, 0, "上游请求失败(重试): "+err.Error())
 				return
 			}
 		}
@@ -707,7 +707,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 			attempt, prepErr = prepareLLMUpstreamAttempt(c, ch, poolKey, origReqData, clientProto, resolvedModel, isStream, responsesOperation)
 			if prepErr != nil {
 				service.RecordChannelError(c.Request.Context(), channelID)
-				llmRefundAndAbort(c, corrID, userID, totalHold, upstreamCostHold, poolKeyIDVal, 0, "上游请求准备失败: "+prepErr.Error())
+				llmRefundAndAbort(c, corrID, userID, apiKeyIDVal, totalHold, upstreamCostHold, poolKeyIDVal, 0, "上游请求准备失败: "+prepErr.Error())
 				return
 			}
 			proto = attempt.Protocol
@@ -734,12 +734,12 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 				return
 			}
 		}
-		llmRefundAndAbort(c, corrID, userID, totalHold, upstreamCostHold, poolKeyIDVal, 0, "上游请求失败: "+err.Error())
+		llmRefundAndAbort(c, corrID, userID, apiKeyIDVal, totalHold, upstreamCostHold, poolKeyIDVal, 0, "上游请求失败: "+err.Error())
 		return
 	}
 
 	if resp == nil {
-		llmRefundAndAbort(c, corrID, userID, totalHold, upstreamCostHold, poolKeyIDVal, 0, "上游请求失败: empty response")
+		llmRefundAndAbort(c, corrID, userID, apiKeyIDVal, totalHold, upstreamCostHold, poolKeyIDVal, 0, "上游请求失败: empty response")
 		return
 	}
 
@@ -803,7 +803,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 		if abortMsg == "" {
 			abortMsg = summarizeLLMUpstreamError(resp.StatusCode, bodyErr)
 		}
-		llmRefundAndAbort(c, corrID, userID, totalHold, upstreamCostHold, poolKeyIDVal, resp.StatusCode, abortMsg)
+		llmRefundAndAbort(c, corrID, userID, apiKeyIDVal, totalHold, upstreamCostHold, poolKeyIDVal, resp.StatusCode, abortMsg)
 		return
 	}
 
@@ -816,7 +816,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 			if converted, detected, convErr := protocol.ConvertSSEToSyncResponse(respBytes, proto); detected {
 				if convErr != nil {
 					service.RecordChannelError(c.Request.Context(), channelID)
-					llmRefundAndAbort(c, corrID, userID, totalHold, upstreamCostHold, poolKeyIDVal, http.StatusOK, "上游响应格式错误: "+convErr.Error())
+					llmRefundAndAbort(c, corrID, userID, apiKeyIDVal, totalHold, upstreamCostHold, poolKeyIDVal, http.StatusOK, "上游响应格式错误: "+convErr.Error())
 					return
 				}
 				respBytes = converted
@@ -862,7 +862,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 						return
 					}
 				}
-				llmRefundAndAbort(c, corrID, userID, totalHold, upstreamCostHold, poolKeyIDVal, http.StatusOK, bizErr)
+				llmRefundAndAbort(c, corrID, userID, apiKeyIDVal, totalHold, upstreamCostHold, poolKeyIDVal, http.StatusOK, bizErr)
 				return
 			}
 		}
@@ -936,7 +936,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 								return
 							}
 						}
-						llmRefundAndAbort(c, corrID, userID, totalHold, upstreamCostHold, poolKeyIDVal, http.StatusOK, bizErr)
+						llmRefundAndAbort(c, corrID, userID, apiKeyIDVal, totalHold, upstreamCostHold, poolKeyIDVal, http.StatusOK, bizErr)
 						return
 					}
 				}
@@ -967,7 +967,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 								return
 							}
 						}
-						llmRefundAndAbort(c, corrID, userID, totalHold, upstreamCostHold, poolKeyIDVal, http.StatusOK, bizErr)
+						llmRefundAndAbort(c, corrID, userID, apiKeyIDVal, totalHold, upstreamCostHold, poolKeyIDVal, http.StatusOK, bizErr)
 						return
 					}
 				}

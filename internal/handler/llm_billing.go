@@ -463,14 +463,14 @@ func refundLLMHoldForRetry(c *gin.Context, userID, channelID, apiKeyIDVal, poolK
 	return true
 }
 
-func llmRefundAndAbort(c *gin.Context, corrID string, userID, credits, upstreamCost, poolKeyIDVal int64, upstreamStatus int, errMsg string) {
+func llmRefundAndAbort(c *gin.Context, corrID string, userID, apiKeyIDVal, credits, upstreamCost, poolKeyIDVal int64, upstreamStatus int, errMsg string) {
 	userMsg := service.UserFacingErrorMessage(errMsg)
 	if userMsg != errMsg {
 		log.Printf("[llm] request %s failed: %s", corrID, errMsg)
 	}
 	if credits > 0 {
 		refunded, mcRefunded := llmRefundCredits(c, userID, credits)
-		recordLLMRefundTxDetached(c, userID, 0, 0, poolKeyIDVal, corrID, refunded, scaleRefundCost(upstreamCost, refunded, credits), mcRefunded, model.JSON{"reason": "upstream_error"})
+		recordLLMRefundTxDetached(c, userID, 0, apiKeyIDVal, poolKeyIDVal, corrID, refunded, scaleRefundCost(upstreamCost, refunded, credits), mcRefunded, model.JSON{"reason": "upstream_error"})
 	}
 	if corrID != "" {
 		enqueueLLMLogPatch(corrID, []string{"status", "upstream_status", "error_msg"}, model.LLMLog{Status: "error", UpstreamStatus: upstreamStatus, ErrorMsg: errMsg})

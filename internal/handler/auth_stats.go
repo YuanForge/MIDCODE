@@ -6,6 +6,8 @@ import (
 	"strconv"
 )
 
+const consumptionTransactionTypes = "'charge','hold','settle','consume'"
+
 // GET /user/stats — 用户仪表盘统计（最近7天消耗趋势 + 累计/今日积分）
 func (h *AuthHandler) GetUserStats(c *gin.Context) {
 	userID := c.MustGet("user_id").(int64)
@@ -13,7 +15,7 @@ func (h *AuthHandler) GetUserStats(c *gin.Context) {
 	// 累计消耗积分
 	var totalConsumed, todayConsumed int64
 	if rows, err := db.Engine.QueryString(`SELECT COALESCE(SUM(CASE
-		WHEN type IN ('charge','hold','settle') THEN credits
+		WHEN type IN (`+consumptionTransactionTypes+`) THEN credits
 		WHEN type = 'refund' THEN -credits
 		ELSE 0 END), 0) AS total
 		FROM billing_transactions WHERE user_id = ?`, userID); err == nil && len(rows) > 0 {
@@ -22,7 +24,7 @@ func (h *AuthHandler) GetUserStats(c *gin.Context) {
 
 	// 今日消耗
 	if rows, err := db.Engine.QueryString(`SELECT COALESCE(SUM(CASE
-		WHEN type IN ('charge','hold','settle') THEN credits
+		WHEN type IN (`+consumptionTransactionTypes+`) THEN credits
 		WHEN type = 'refund' THEN -credits
 		ELSE 0 END), 0) AS total
 		FROM billing_transactions WHERE user_id = ? AND created_at >= CURRENT_DATE`, userID); err == nil && len(rows) > 0 {
@@ -33,7 +35,7 @@ func (h *AuthHandler) GetUserStats(c *gin.Context) {
 	dailyCredits := []gin.H{}
 	if rows, err := db.Engine.QueryString(`SELECT TO_CHAR(created_at::date, 'MM-DD') AS day,
 		COALESCE(SUM(CASE
-			WHEN type IN ('charge','hold','settle') THEN credits
+		WHEN type IN (`+consumptionTransactionTypes+`) THEN credits
 			WHEN type = 'refund' THEN -credits
 			ELSE 0 END), 0) AS credits
 		FROM billing_transactions

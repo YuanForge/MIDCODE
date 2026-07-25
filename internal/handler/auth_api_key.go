@@ -169,22 +169,38 @@ type apiKeySpendStats struct {
 
 func loadAPIKeySpendStats(userID int64) (map[int64]apiKeySpendStats, error) {
 	rows, err := db.Engine.QueryString(`
-		SELECT api_key_id,
+		WITH corr_keys AS (
+			SELECT corr_id, MAX(api_key_id) AS api_key_id
+			FROM billing_transactions
+			WHERE user_id = ? AND api_key_id > 0 AND corr_id <> ''
+				AND type IN (`+consumptionTransactionTypes+`)
+			GROUP BY corr_id
+		), attributed AS (
+			SELECT CASE
+				WHEN bt.api_key_id > 0 THEN bt.api_key_id
+				WHEN bt.type = 'refund' THEN COALESCE(ck.api_key_id, 0)
+				ELSE 0
+			END AS stats_api_key_id, bt.type, bt.credits, bt.created_at
+			FROM billing_transactions bt
+			LEFT JOIN corr_keys ck ON ck.corr_id = bt.corr_id
+			WHERE bt.user_id = ?
+		)
+		SELECT stats_api_key_id AS api_key_id,
 			COALESCE(SUM(CASE
-				WHEN type IN ('charge','hold','settle','consume') THEN credits
+				WHEN type IN (`+consumptionTransactionTypes+`) THEN credits
 				WHEN type = 'refund' THEN -credits
 				ELSE 0 END), 0) AS total_consumed,
 			COALESCE(SUM(CASE
 				WHEN created_at >= CURRENT_DATE THEN
 					CASE
-						WHEN type IN ('charge','hold','settle','consume') THEN credits
+						WHEN type IN (`+consumptionTransactionTypes+`) THEN credits
 						WHEN type = 'refund' THEN -credits
 						ELSE 0
 					END
 				ELSE 0 END), 0) AS today_consumed
-		FROM billing_transactions
-		WHERE user_id = ? AND api_key_id > 0
-		GROUP BY api_key_id`, userID)
+		FROM attributed
+		WHERE stats_api_key_id > 0
+		GROUP BY stats_api_key_id`, userID, userID)
 	if err != nil {
 		return nil, err
 	}
