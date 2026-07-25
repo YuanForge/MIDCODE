@@ -1,0 +1,117 @@
+.neutral-site-loading-screen {
+  display: grid;
+  min-height: 100vh;
+  min-width: 320px;
+  place-items: center;
+  background: #f1f3f6;
+  color: #4f5865;
+}
+
+.site-loading-geometry,
+.site-loading-error {
+  display: flex;
+  width: min(100% - 32px, 360px);
+  min-height: 260px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  text-align: center;
+}
+
+.site-loading-symbol {
+  position: relative;
+  display: grid;
+  width: 132px;
+  height: 132px;
+  place-items: center;
+}
+
+.site-loading-ring {
+  position: absolute;
+  inset: 6px;
+  border: 1px solid #cfd5dc;
+  border-radius: 50%;
+  animation: site-loading-breathe 1.8s ease-in-out infinite;
+}
+
+.site-loading-ring-inner {
+  inset: 24px;
+  border-color: #dce1e6;
+  animation-delay: 180ms;
+}
+
+.site-loading-diamond {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  place-items: center;
+  transform: rotate(45deg);
+  border-radius: 8px;
+  background: #8f98a4;
+  box-shadow: 0 0 0 10px rgb(143 152 164 / 9%);
+  color: #fff;
+}
+
+.site-loading-diamond svg {
+  width: 22px;
+  height: 22px;
+  transform: rotate(-45deg);
+}
+
+.site-loading-geometry p,
+.site-loading-error p {
+  margin: 18px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.site-loading-geometry span,
+.site-loading-error span {
+  margin-top: 7px;
+  color: #858e9a;
+  font-size: 13px;
+}
+
+.site-loading-error button {
+  margin-top: 22px;
+  border-color: #cfd5dc;
+  background: #f8f9fa;
+  color: #374151;
+}
+
+.dark .neutral-site-loading-screen {
+  background: #111318;
+  color: #d8dce2;
+}
+
+.dark .site-loading-ring {
+  border-color: #343a43;
+}
+
+.dark .site-loading-ring-inner {
+  border-color: #2a2f37;
+}
+
+.dark .site-loading-geometry span,
+.dark .site-loading-error span {
+  color: #939aa5;
+}
+
+.dark .site-loading-error button {
+  border-color: #343a43;
+  background: #191c22;
+  color: #e5e7eb;
+}
+
+@keyframes site-loading-breathe {
+  50% {
+    opacity: 0.45;
+    transform: scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site-loading-ring {
+    animation: none;
+  }
+}

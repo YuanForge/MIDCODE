@@ -1,6 +1,9 @@
-import { useEffect, useState } from 'react'
-import { getRuntimeString } from '@/lib/runtime-env'
+import { createContext, createElement, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
+
 import { publicApi } from '@/lib/api/public'
+import { applyBrandTheme, clearBrandTheme } from '@/lib/brand-theme'
+import { getRuntimeString } from '@/lib/runtime-env'
 
 export type Plan = {
   credits: number
@@ -15,6 +18,7 @@ export type SiteSettings = {
   seoTitle: string
   seoDescription: string
   logoUrl: string
+  themeColor: string
   tutorialMarkdown: string
   plans: Plan[]
   epayEnabled: boolean
@@ -36,11 +40,20 @@ export type SiteSettings = {
   userAgreementContent: string
 }
 
+type SiteSettingsContextValue = {
+  settings: SiteSettings
+  status: 'loading' | 'ready' | 'error'
+  loaded: boolean
+  retry: () => void
+  updateThemeColor: (themeColor: string) => void
+}
+
 const defaultSettings: SiteSettings = {
   siteName: getRuntimeString('site_name', 'MidCode'),
   seoTitle: '',
   seoDescription: '',
   logoUrl: getRuntimeString('logo_url'),
+  themeColor: getRuntimeString('theme_color'),
   tutorialMarkdown: '',
   plans: [],
   epayEnabled: false,
@@ -62,77 +75,98 @@ const defaultSettings: SiteSettings = {
   userAgreementContent: '',
 }
 
-let pendingSettingsRequest: ReturnType<typeof publicApi.getSettings> | null = null
+const SiteSettingsContext = createContext<SiteSettingsContextValue | null>(null)
+let sharedSettingsRequest: ReturnType<typeof publicApi.getSettings> | null = null
 
-function getSettings() {
-  if (pendingSettingsRequest) return pendingSettingsRequest
-
-  const request = publicApi.getSettings()
-  pendingSettingsRequest = request
-  request.then(
-    () => {
-      if (pendingSettingsRequest === request) pendingSettingsRequest = null
-    },
-    () => {
-      if (pendingSettingsRequest === request) pendingSettingsRequest = null
-    },
-  )
-  return request
+function requestSiteSettings() {
+  if (!sharedSettingsRequest) {
+    sharedSettingsRequest = publicApi.getSettings().catch((error: unknown) => {
+      sharedSettingsRequest = null
+      throw error
+    })
+  }
+  return sharedSettingsRequest
 }
 
-export function useSiteSettings() {
+function parseSettings(response: unknown): SiteSettings {
+  const maybeSettings = (response as { settings?: unknown }).settings
+  const record = maybeSettings && typeof maybeSettings === 'object'
+    ? maybeSettings as Record<string, unknown>
+    : response as Record<string, unknown>
+
+  return {
+    siteName: getRuntimeString('site_name', String(record.site_name || 'MidCode')),
+    seoTitle: String(record.seo_title || ''),
+    seoDescription: String(record.seo_description || ''),
+    logoUrl: getRuntimeString('logo_url', String(record.logo_url || '')),
+    themeColor: String(record.theme_color || getRuntimeString('theme_color')),
+    tutorialMarkdown: String(record.tutorial_markdown || ''),
+    plans: (() => {
+      try { return JSON.parse(String(record.recharge_plans || '[]')) as Plan[] } catch { return [] }
+    })(),
+    epayEnabled: record.epay_enabled === 'true',
+    payApplyEnabled: record.pay_apply_enabled === 'true',
+    shouqianbaEnabled: record.shouqianba_enabled === 'true',
+    wechatPayEnabled: record.wechat_pay_enabled !== 'false',
+    alipayEnabled: record.alipay_enabled !== 'false',
+    allowCustom: record.recharge_allow_custom !== 'false',
+    noticeTitle: String(record.notice_title || ''),
+    noticeContent: String(record.notice_content || ''),
+    contactInfo: String(record.contact_info || ''),
+    qqGroupUrl: String(record.qq_group_url || ''),
+    wechatCsUrl: String(record.wechat_cs_url || ''),
+    qrCodeUrl: String(record.qrcode_url || ''),
+    headerHtml: String(record.header_html || ''),
+    footerHtml: String(record.footer_html || ''),
+    showLowPriceKey: record.show_low_price_key !== 'false',
+    userAgreementUrl: String(record.user_agreement_url || ''),
+    userAgreementContent: String(record.user_agreement_content || ''),
+  }
+}
+
+export function SiteSettingsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<SiteSettings>(defaultSettings)
-  const [loaded, setLoaded] = useState(false)
+  const [status, setStatus] = useState<SiteSettingsContextValue['status']>('loading')
+  const [requestVersion, setRequestVersion] = useState(0)
+
+  const retry = useCallback(() => {
+    sharedSettingsRequest = null
+    setRequestVersion((version) => version + 1)
+  }, [])
+  const updateThemeColor = useCallback((themeColor: string) => {
+    setSettings((current) => ({ ...current, themeColor }))
+  }, [])
 
   useEffect(() => {
+    let active = true
+
     async function load() {
+      setStatus('loading')
       try {
-        const response = await getSettings()
-        const maybeSettings = (response as { settings?: unknown }).settings
-        const record =
-          maybeSettings && typeof maybeSettings === 'object'
-            ? (maybeSettings as Record<string, any>)
-            : (response as Record<string, any>)
-        setSettings({
-          siteName: getRuntimeString('site_name', record.site_name || 'MidCode'),
-          seoTitle: record.seo_title || '',
-          seoDescription: record.seo_description || '',
-          logoUrl: getRuntimeString('logo_url', record.logo_url || ''),
-          tutorialMarkdown: record.tutorial_markdown || '',
-          plans: (() => {
-            try { return JSON.parse(record.recharge_plans || '[]') } catch { return [] }
-          })(),
-          epayEnabled: record.epay_enabled === 'true',
-          payApplyEnabled: record.pay_apply_enabled === 'true',
-          shouqianbaEnabled: record.shouqianba_enabled === 'true',
-          wechatPayEnabled: record.wechat_pay_enabled !== 'false',
-          alipayEnabled: record.alipay_enabled !== 'false',
-          allowCustom: record.recharge_allow_custom !== 'false',
-          noticeTitle: record.notice_title || '',
-          noticeContent: record.notice_content || '',
-          contactInfo: record.contact_info || '',
-          qqGroupUrl: record.qq_group_url || '',
-          wechatCsUrl: record.wechat_cs_url || '',
-          qrCodeUrl: record.qrcode_url || '',
-          headerHtml: record.header_html || '',
-          footerHtml: record.footer_html || '',
-          showLowPriceKey: record.show_low_price_key !== 'false',
-          userAgreementUrl: record.user_agreement_url || '',
-          userAgreementContent: record.user_agreement_content || '',
-        })
+        const response = await requestSiteSettings()
+        if (!active) return
+        setSettings(parseSettings(response))
+        setStatus('ready')
       } catch {
-        setSettings(defaultSettings)
-      } finally {
-        setLoaded(true)
+        if (!active) return
+        setStatus('error')
       }
     }
 
     void load()
-  }, [])
+    return () => { active = false }
+  }, [requestVersion])
 
   useEffect(() => {
-    document.title = settings.seoTitle || settings.siteName
     const selector = 'meta[name="description"]'
+    if (status === 'loading') document.title = '加载中'
+    if (status === 'error') document.title = '站点配置加载失败'
+    if (status !== 'ready') {
+      document.head.querySelector(selector)?.remove()
+      return
+    }
+
+    document.title = settings.seoTitle || settings.siteName
     const description = settings.seoDescription.trim()
     const existing = document.head.querySelector<HTMLMetaElement>(selector)
     if (!description) {
@@ -142,7 +176,30 @@ export function useSiteSettings() {
     const meta = existing ?? document.head.appendChild(document.createElement('meta'))
     meta.name = 'description'
     meta.content = description
-  }, [settings.seoDescription, settings.seoTitle, settings.siteName])
+  }, [settings.seoDescription, settings.seoTitle, settings.siteName, status])
 
-  return { settings, loaded }
+  useLayoutEffect(() => {
+    if (status !== 'ready') {
+      clearBrandTheme()
+      return
+    }
+    applyBrandTheme({ themeColor: settings.themeColor })
+    return clearBrandTheme
+  }, [settings.themeColor, status])
+
+  const value = useMemo<SiteSettingsContextValue>(() => ({
+    settings,
+    status,
+    loaded: status === 'ready',
+    retry,
+    updateThemeColor,
+  }), [retry, settings, status, updateThemeColor])
+
+  return createElement(SiteSettingsContext.Provider, { value }, children)
+}
+
+export function useSiteSettings() {
+  const value = useContext(SiteSettingsContext)
+  if (!value) throw new Error('useSiteSettings must be used within SiteSettingsProvider')
+  return value
 }
