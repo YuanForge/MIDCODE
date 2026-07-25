@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/shared/PageHeader'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
+import { isThemeColorValueValid, ThemeColorField } from '@/components/shared/ThemeColorField'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -15,6 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { adminApi, type AdminAuditLog } from '@/lib/api/admin'
 import { useAsync } from '@/hooks/use-async'
+import { useSiteSettings } from '@/hooks/use-site-settings'
 import { sanitizeHtml } from '@/lib/sanitize-html'
 
 type SettingsMap = Record<string, string>
@@ -114,6 +116,7 @@ function SettingLogsTab() {
 }
 
 export function AdminSettingsPage() {
+  const { updateThemeColor } = useSiteSettings()
   const { data: rawSettings, loading, error: loadError } = useAsync(async () => {
     const res = await adminApi.getSettings()
     const s = (res as { settings?: SettingsMap }).settings ?? (res as SettingsMap)
@@ -212,10 +215,12 @@ export function AdminSettingsPage() {
   const epayEnabled = form.epay_enabled === 'true'
   const payApplyEnabled = form.pay_apply_enabled === 'true'
   const shouqianbaEnabled = form.shouqianba_enabled === 'true'
+  const themeColorValid = isThemeColorValueValid(form.theme_color ?? '')
   const payApplyNotifyUrl = `${window.location.origin.replace(':3001', '')}/pay/apply/notify`
   const shouqianbaNotifyUrl = `${window.location.origin.replace(':3001', '')}/pay/shouqianba/notify`
 
   async function save() {
+    if (!themeColorValid) return
     setSaving(true)
     setMutError('')
     try {
@@ -231,6 +236,8 @@ export function AdminSettingsPage() {
       delete payload.result_url_proxy_from
       delete payload.result_url_proxy_to
       await adminApi.updateSettings(payload)
+      updateThemeColor(form.theme_color ?? '')
+      toast.success('系统设置已保存')
     } catch (err) {
       const { getApiErrorMessage } = await import('@/lib/api/http')
       setMutError(getApiErrorMessage(err))
@@ -246,7 +253,7 @@ export function AdminSettingsPage() {
         title="系统设置"
         description="配置平台基本信息、支付、公告及充值套餐等全局参数。"
         actions={
-          <Button onClick={save} disabled={saving || loading}>
+          <Button onClick={save} disabled={saving || loading || !themeColorValid}>
             <SaveIcon data-icon="inline-start" />
             {saving ? '保存中...' : '保存设置'}
           </Button>
@@ -290,6 +297,9 @@ export function AdminSettingsPage() {
                   <FieldRow label="站点名称">
                     <Input value={form.site_name ?? ''} onChange={(e) => set('site_name', e.target.value)} placeholder="例如：MidCode" />
                     <Tip>显示在浏览器标题栏和页面 Logo 旁；如果 env.js 配置了 site_name，则前台展示会优先使用 env.js</Tip>
+                  </FieldRow>
+                  <FieldRow label="主题颜色">
+                    <ThemeColorField value={form.theme_color ?? ''} onChange={(value) => set('theme_color', value)} />
                   </FieldRow>
                   <FieldRow label="SEO 标题">
                     <Input value={form.seo_title ?? ''} onChange={(e) => set('seo_title', e.target.value)} placeholder="留空则使用站点名称" />

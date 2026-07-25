@@ -17,6 +17,7 @@ var publicSettingKeys = map[string]bool{
 	"seo_title":                    true,
 	"seo_description":              true,
 	"logo_url":                     true,
+	"theme_color":                  true,
 	"header_html":                  true,
 	"footer_html":                  true,
 	"tutorial_markdown":            true,
