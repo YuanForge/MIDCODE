@@ -79,10 +79,6 @@ func Init(cfg *config.DBConfig, migrate bool) error {
 		new(model.BillingPostBillingJob),
 		new(model.ChatConversation),
 		new(model.VIPGroup),
-		new(model.Reseller),
-		new(model.ResellerSite),
-		new(model.ResellerSiteBuildJob),
-		new(model.ResellerSiteKeyBinding),
 		// superpower models
 		new(model.CardBatch),
 		new(model.ChannelLog),

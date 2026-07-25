@@ -8,19 +8,12 @@ import (
 )
 
 type Config struct {
-	App             AppConfig             `mapstructure:"app"`
-	Server          ServerConfig          `mapstructure:"server"`
-	DB              DBConfig              `mapstructure:"db"`
-	Redis           RedisConfig           `mapstructure:"redis"`
-	NATS            NATSConfig            `mapstructure:"nats"`
-	SMTP            SMTPConfig            `mapstructure:"smtp"`
-	Worker          WorkerConfig          `mapstructure:"worker"`
-	PlatformAPI     PlatformAPIConfig     `mapstructure:"platform_api"`
-	ResellerBuilder ResellerBuilderConfig `mapstructure:"reseller_builder"`
-}
-
-type AppConfig struct {
-	Mode string `mapstructure:"mode"`
+	Server ServerConfig `mapstructure:"server"`
+	DB     DBConfig     `mapstructure:"db"`
+	Redis  RedisConfig  `mapstructure:"redis"`
+	NATS   NATSConfig   `mapstructure:"nats"`
+	SMTP   SMTPConfig   `mapstructure:"smtp"`
+	Worker WorkerConfig `mapstructure:"worker"`
 }
 
 type ServerConfig struct {
@@ -81,22 +74,6 @@ type SMTPConfig struct {
 	From     string `mapstructure:"from"`
 }
 
-type PlatformAPIConfig struct {
-	BaseURL          string `mapstructure:"base_url"`
-	Key              string `mapstructure:"key"`
-	PriceSyncEnabled bool   `mapstructure:"price_sync_enabled"`
-}
-
-type ResellerBuilderConfig struct {
-	AutoBuild          bool    `mapstructure:"auto_build"`
-	SourcePath         string  `mapstructure:"source_path"`
-	BasePath           string  `mapstructure:"base_path"`
-	DefaultRedisStart  int     `mapstructure:"default_redis_start"`
-	DefaultAppPort     int     `mapstructure:"default_app_port"`
-	DefaultProfitRatio float64 `mapstructure:"default_profit_ratio"`
-	PlatformBaseURL    string  `mapstructure:"platform_base_url"`
-}
-
 func Load() (*Config, error) {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
@@ -112,44 +89,15 @@ func Load() (*Config, error) {
 	if err := viper.Unmarshal(&cfg); err != nil {
 		return nil, err
 	}
-	cfg.applyDefaults()
 	if err := cfg.validateSecrets(); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
 }
 
-func (c *Config) applyDefaults() {
-	if c.App.Mode == "" {
-		c.App.Mode = "master"
-	}
-	if c.ResellerBuilder.SourcePath == "" {
-		c.ResellerBuilder.SourcePath = "/data/code/FanAPI"
-	}
-	if c.ResellerBuilder.BasePath == "" {
-		c.ResellerBuilder.BasePath = "/data/code"
-	}
-	if c.ResellerBuilder.DefaultRedisStart <= 0 {
-		c.ResellerBuilder.DefaultRedisStart = 1
-	}
-	if c.ResellerBuilder.DefaultAppPort <= 0 {
-		c.ResellerBuilder.DefaultAppPort = 18080
-	}
-	if c.ResellerBuilder.DefaultProfitRatio <= 0 {
-		c.ResellerBuilder.DefaultProfitRatio = 1.7
-	}
-}
-
 func (c *Config) validateSecrets() error {
-	mode := strings.ToLower(strings.TrimSpace(c.App.Mode))
 	jwtSecret := strings.TrimSpace(c.Server.JWTSecret)
 	apiKeySecret := strings.TrimSpace(c.Server.APIKeySecret)
-	if mode == "reseller_site" {
-		if jwtSecret == "" {
-			return fmt.Errorf("server.jwt_secret is required")
-		}
-		return nil
-	}
 	if !strongSecret(jwtSecret) || isPlaceholderSecret(jwtSecret) {
 		return fmt.Errorf("server.jwt_secret must be a non-placeholder secret of at least 32 characters")
 	}

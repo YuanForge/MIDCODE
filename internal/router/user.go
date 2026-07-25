@@ -2,7 +2,6 @@ package router
 
 import (
 	"fanapi/internal/handler"
-	"fanapi/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -10,12 +9,6 @@ import (
 func registerUserRoutes(authed *gin.RouterGroup, deps Dependencies) {
 	authed.POST("/upload/image", handler.UploadImage)
 	authed.POST("/upload/video", handler.UploadVideo)
-
-	resellerPlatform := authed.Group("/reseller/platform")
-	resellerPlatform.Use(middleware.APIKeyOnly())
-	{
-		resellerPlatform.GET("/channels", handler.ResellerPlatformChannels)
-	}
 
 	user := authed.Group("/user")
 	{
