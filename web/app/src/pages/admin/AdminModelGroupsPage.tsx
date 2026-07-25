@@ -69,6 +69,14 @@ export function AdminModelGroupsPage() {
 
   function edit(group?: AdminModelGroup) {
     setForm(group ? { id: group.id, code: group.code ?? '', name: group.name ?? '', description: group.description ?? '', is_active: group.is_active !== false } : emptyForm)
+    if (group?.id) {
+      setSelectedGroupID(group.id)
+      void loadBindings(group.id)
+    } else {
+      setSelectedGroupID(undefined)
+      setBindings([])
+      setSelectedModelChannels({})
+    }
     setErrorText('')
   }
 
@@ -76,8 +84,14 @@ export function AdminModelGroupsPage() {
     setErrorText('')
     try {
       if (form.id) await adminApi.updateModelGroup(form.id, form)
-      else await adminApi.createModelGroup(form)
-      edit()
+      else {
+        const savedGroup = await adminApi.createModelGroup(form)
+        if (savedGroup.id) {
+          setSelectedGroupID(savedGroup.id)
+          await loadBindings(savedGroup.id)
+        }
+      }
+      setForm(emptyForm)
       reload()
     } catch (err) {
       const { getApiErrorMessage } = await import('@/lib/api/http')
@@ -151,12 +165,15 @@ export function AdminModelGroupsPage() {
           <Button onClick={() => void save()}><SaveIcon data-icon="inline-start" />{form.id ? '保存分组' : '创建分组'}</Button>
           <div className="border-t pt-4">
             <Label>当前分组模型绑定</Label>
-            <div className="mt-2 flex flex-wrap items-center gap-2"><Input className="max-w-sm" value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="搜索模型" /><Button variant="outline" onClick={() => setSelectedModelChannels(Object.fromEntries(modelOptions.map((item) => [item.model, item.channels.length === 1 ? String(item.channels[0].id) : selectedModelChannels[item.model] ?? ''])))}>全选</Button><Button variant="outline" onClick={() => setSelectedModelChannels({})}>清空</Button><span className="text-sm text-muted-foreground">已选 {Object.keys(selectedModelChannels).length} / {modelOptions.length}</span></div>
-            <Table className="mt-3"><TableHeader><TableRow><TableHead className="w-16">选择</TableHead><TableHead>公开模型</TableHead><TableHead>渠道</TableHead></TableRow></TableHeader><TableBody>
-              {visibleModelOptions.map((item) => { const selected = Object.prototype.hasOwnProperty.call(selectedModelChannels, item.model); return <TableRow key={item.model}><TableCell><Checkbox checked={selected} onCheckedChange={(checked) => setSelectedModelChannels((current) => { const next = { ...current }; if (checked) next[item.model] = item.channels.length === 1 ? String(item.channels[0].id) : ''; else delete next[item.model]; return next })} /></TableCell><TableCell className="font-mono">{item.model}</TableCell><TableCell><NativeSelect disabled={!selected} value={selectedModelChannels[item.model] ?? ''} onChange={(event) => setSelectedModelChannels((current) => ({ ...current, [item.model]: event.target.value }))}><option value="">{item.channels.length > 1 ? '请选择一个渠道' : '选择渠道'}</option>{item.channels.map((channel) => <option key={channel.id} value={channel.id}>#{channel.id} · {channel.name ?? channel.display_name ?? item.model}</option>)}</NativeSelect></TableCell></TableRow> })}
-              {visibleModelOptions.length === 0 ? <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground">没有匹配的模型</TableCell></TableRow> : null}
-            </TableBody></Table>
-            <div className="mt-3 flex justify-end"><Button onClick={() => void saveModelBindings()} disabled={savingBindings || !selectedGroupID}>{savingBindings ? '保存中...' : '保存模型绑定'}</Button></div>
+            {!selectedGroupID ? <p className="mt-2 text-sm text-muted-foreground">请先选择或创建一个模型分组</p> : null}
+            <fieldset disabled={!selectedGroupID} className="disabled:opacity-60">
+              <div className="mt-2 flex flex-wrap items-center gap-2"><Input className="max-w-sm" value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="搜索模型" /><Button variant="outline" onClick={() => setSelectedModelChannels(Object.fromEntries(modelOptions.map((item) => [item.model, item.channels.length === 1 ? String(item.channels[0].id) : selectedModelChannels[item.model] ?? ''])))}>全选</Button><Button variant="outline" onClick={() => setSelectedModelChannels({})}>清空</Button><span className="text-sm text-muted-foreground">已选 {Object.keys(selectedModelChannels).length} / {modelOptions.length}</span></div>
+              <Table className="mt-3"><TableHeader><TableRow><TableHead className="w-16">选择</TableHead><TableHead>公开模型</TableHead><TableHead>渠道</TableHead></TableRow></TableHeader><TableBody>
+                {visibleModelOptions.map((item) => { const selected = Object.prototype.hasOwnProperty.call(selectedModelChannels, item.model); return <TableRow key={item.model}><TableCell><Checkbox checked={selected} onCheckedChange={(checked) => setSelectedModelChannels((current) => { const next = { ...current }; if (checked) next[item.model] = item.channels.length === 1 ? String(item.channels[0].id) : ''; else delete next[item.model]; return next })} /></TableCell><TableCell className="font-mono">{item.model}</TableCell><TableCell><NativeSelect disabled={!selected} value={selectedModelChannels[item.model] ?? ''} onChange={(event) => setSelectedModelChannels((current) => ({ ...current, [item.model]: event.target.value }))}><option value="">{item.channels.length > 1 ? '请选择一个渠道' : '选择渠道'}</option>{item.channels.map((channel) => <option key={channel.id} value={channel.id}>#{channel.id} · {channel.name ?? channel.display_name ?? item.model}</option>)}</NativeSelect></TableCell></TableRow> })}
+                {visibleModelOptions.length === 0 ? <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground">没有匹配的模型</TableCell></TableRow> : null}
+              </TableBody></Table>
+              <div className="mt-3 flex justify-end"><Button onClick={() => void saveModelBindings()} disabled={savingBindings || !selectedGroupID}>{savingBindings ? '保存中...' : '保存模型绑定'}</Button></div>
+            </fieldset>
           </div>
         </Card>
       </div>
