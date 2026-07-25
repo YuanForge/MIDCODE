@@ -39,7 +39,7 @@ export function AdminModelGroupsPage() {
   const [selectedModelChannels, setSelectedModelChannels] = useState<Record<string, string>>({})
   const [modelSearch, setModelSearch] = useState('')
   const [errorText, setErrorText] = useState('')
-  const [savingBindings, setSavingBindings] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   const modelOptions = useMemo(() => {
     const grouped = new Map<string, AdminChannel[]>()
@@ -80,25 +80,6 @@ export function AdminModelGroupsPage() {
     setErrorText('')
   }
 
-  async function save() {
-    setErrorText('')
-    try {
-      if (form.id) await adminApi.updateModelGroup(form.id, form)
-      else {
-        const savedGroup = await adminApi.createModelGroup(form)
-        if (savedGroup.id) {
-          setSelectedGroupID(savedGroup.id)
-          await loadBindings(savedGroup.id)
-        }
-      }
-      setForm(emptyForm)
-      reload()
-    } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      setErrorText(getApiErrorMessage(err))
-    }
-  }
-
   async function remove(group: AdminModelGroup) {
     if (!group.id || !window.confirm(`确认删除分组“${group.name || group.code}”？`)) return
     try {
@@ -111,32 +92,43 @@ export function AdminModelGroupsPage() {
     }
   }
 
-  async function saveModelBindings() {
-    if (!selectedGroupID) return
-    const desired = Object.entries(selectedModelChannels)
-    if (desired.some(([, channelID]) => !channelID)) {
+  async function replaceModelBindings(groupID: number) {
+    const desiredMap = new Map(Object.entries(selectedModelChannels).map(([model, channelID]) => [model, Number(channelID)]))
+    const currentMap = new Map(bindings.map((binding) => [binding.routing_model, binding]))
+    for (const binding of bindings) {
+      if (desiredMap.get(binding.routing_model ?? '') !== binding.channel_id && binding.id) await adminApi.unbindModelGroupModel(groupID, binding.id)
+    }
+    for (const [model, channelID] of desiredMap) {
+      if (currentMap.get(model)?.channel_id !== channelID) await adminApi.bindModelGroupModel(groupID, { channel_id: channelID, routing_model: model })
+    }
+  }
+
+  async function save() {
+    if (Object.values(selectedModelChannels).some((channelID) => !channelID)) {
       setErrorText('已选模型中还有未选择渠道的项目')
       return
     }
-    const groupID = selectedGroupID
-    setSavingBindings(true)
+    setSaving(true)
     setErrorText('')
     try {
-      const desiredMap = new Map(desired.map(([model, channelID]) => [model, Number(channelID)]))
-      const currentMap = new Map(bindings.map((binding) => [binding.routing_model, binding]))
-      for (const binding of bindings) {
-        if (desiredMap.get(binding.routing_model ?? '') !== binding.channel_id && binding.id) await adminApi.unbindModelGroupModel(groupID, binding.id)
+      let groupID = form.id
+      if (groupID) {
+        await adminApi.updateModelGroup(groupID, form)
+      } else {
+        const savedGroup = await adminApi.createModelGroup(form)
+        if (!savedGroup.id) throw new Error('创建分组后未返回分组 ID')
+        groupID = savedGroup.id
+        setForm((current) => ({ ...current, id: groupID }))
+        setSelectedGroupID(groupID)
       }
-      for (const [model, channelID] of desiredMap) {
-        if (currentMap.get(model)?.channel_id !== channelID) await adminApi.bindModelGroupModel(groupID, { channel_id: channelID, routing_model: model })
-      }
+      await replaceModelBindings(groupID)
       await loadBindings(groupID)
       reload()
     } catch (err) {
       const { getApiErrorMessage } = await import('@/lib/api/http')
       setErrorText(getApiErrorMessage(err))
     } finally {
-      setSavingBindings(false)
+      setSaving(false)
     }
   }
 
@@ -150,7 +142,7 @@ export function AdminModelGroupsPage() {
             <TableHeader><TableRow><TableHead>编码</TableHead><TableHead>名称</TableHead><TableHead>模型数</TableHead><TableHead>状态</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader>
             <TableBody>
               {loading ? <TableRow><TableCell colSpan={5}>加载中…</TableCell></TableRow> : data.groups.map((group) => (
-                <TableRow key={group.id} data-state={selectedGroupID === group.id ? 'selected' : undefined} onClick={() => { setSelectedGroupID(group.id); void loadBindings(group.id as number) }}>
+                <TableRow key={group.id} data-state={selectedGroupID === group.id ? 'selected' : undefined} onClick={() => edit(group)}>
                   <TableCell className="font-mono">{group.code}</TableCell><TableCell>{group.name}</TableCell><TableCell>{group.model_count ?? 0}</TableCell>
                   <TableCell><Badge variant={group.is_active === false ? 'secondary' : 'default'}>{group.is_active === false ? '停用' : '启用'}</Badge></TableCell>
                   <TableCell className="text-right"><Button size="sm" variant="ghost" onClick={(event) => { event.stopPropagation(); edit(group) }}>编辑</Button><Button size="sm" variant="ghost" onClick={(event) => { event.stopPropagation(); void remove(group) }}><Trash2Icon /></Button></TableCell>
@@ -162,18 +154,14 @@ export function AdminModelGroupsPage() {
         <Card className="space-y-4 p-5">
           <div className="grid gap-3 sm:grid-cols-2"><div><Label>分组编码</Label><Input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))} placeholder="standard" /></div><div><Label>分组名称</Label><Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="标准组" /></div></div>
           <div><Label>描述</Label><Input value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} /></div>
-          <Button onClick={() => void save()}><SaveIcon data-icon="inline-start" />{form.id ? '保存分组' : '创建分组'}</Button>
           <div className="border-t pt-4">
-            <Label>当前分组模型绑定</Label>
-            {!selectedGroupID ? <p className="mt-2 text-sm text-muted-foreground">请先选择或创建一个模型分组</p> : null}
-            <fieldset disabled={!selectedGroupID} className="disabled:opacity-60">
-              <div className="mt-2 flex flex-wrap items-center gap-2"><Input className="max-w-sm" value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="搜索模型" /><Button variant="outline" onClick={() => setSelectedModelChannels(Object.fromEntries(modelOptions.map((item) => [item.model, item.channels.length === 1 ? String(item.channels[0].id) : selectedModelChannels[item.model] ?? ''])))}>全选</Button><Button variant="outline" onClick={() => setSelectedModelChannels({})}>清空</Button><span className="text-sm text-muted-foreground">已选 {Object.keys(selectedModelChannels).length} / {modelOptions.length}</span></div>
-              <Table className="mt-3"><TableHeader><TableRow><TableHead className="w-16">选择</TableHead><TableHead>公开模型</TableHead><TableHead>渠道</TableHead></TableRow></TableHeader><TableBody>
-                {visibleModelOptions.map((item) => { const selected = Object.prototype.hasOwnProperty.call(selectedModelChannels, item.model); return <TableRow key={item.model}><TableCell><Checkbox checked={selected} onCheckedChange={(checked) => setSelectedModelChannels((current) => { const next = { ...current }; if (checked) next[item.model] = item.channels.length === 1 ? String(item.channels[0].id) : ''; else delete next[item.model]; return next })} /></TableCell><TableCell className="font-mono">{item.model}</TableCell><TableCell><NativeSelect disabled={!selected} value={selectedModelChannels[item.model] ?? ''} onChange={(event) => setSelectedModelChannels((current) => ({ ...current, [item.model]: event.target.value }))}><option value="">{item.channels.length > 1 ? '请选择一个渠道' : '选择渠道'}</option>{item.channels.map((channel) => <option key={channel.id} value={channel.id}>#{channel.id} · {channel.name ?? channel.display_name ?? item.model}</option>)}</NativeSelect></TableCell></TableRow> })}
-                {visibleModelOptions.length === 0 ? <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground">没有匹配的模型</TableCell></TableRow> : null}
-              </TableBody></Table>
-              <div className="mt-3 flex justify-end"><Button onClick={() => void saveModelBindings()} disabled={savingBindings || !selectedGroupID}>{savingBindings ? '保存中...' : '保存模型绑定'}</Button></div>
-            </fieldset>
+            <Label>模型绑定</Label>
+            <div className="mt-2 flex flex-wrap items-center gap-2"><Input className="max-w-sm" value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="搜索模型" /><Button variant="outline" onClick={() => setSelectedModelChannels(Object.fromEntries(modelOptions.map((item) => [item.model, item.channels.length === 1 ? String(item.channels[0].id) : selectedModelChannels[item.model] ?? ''])))}>全选</Button><Button variant="outline" onClick={() => setSelectedModelChannels({})}>清空</Button><span className="text-sm text-muted-foreground">已选 {Object.keys(selectedModelChannels).length} / {modelOptions.length}</span></div>
+            <Table className="mt-3"><TableHeader><TableRow><TableHead className="w-16">选择</TableHead><TableHead>公开模型</TableHead><TableHead>渠道</TableHead></TableRow></TableHeader><TableBody>
+              {visibleModelOptions.map((item) => { const selected = Object.prototype.hasOwnProperty.call(selectedModelChannels, item.model); return <TableRow key={item.model}><TableCell><Checkbox checked={selected} onCheckedChange={(checked) => setSelectedModelChannels((current) => { const next = { ...current }; if (checked) next[item.model] = item.channels.length === 1 ? String(item.channels[0].id) : ''; else delete next[item.model]; return next })} /></TableCell><TableCell className="font-mono">{item.model}</TableCell><TableCell><NativeSelect disabled={!selected} value={selectedModelChannels[item.model] ?? ''} onChange={(event) => setSelectedModelChannels((current) => ({ ...current, [item.model]: event.target.value }))}><option value="">{item.channels.length > 1 ? '请选择一个渠道' : '选择渠道'}</option>{item.channels.map((channel) => <option key={channel.id} value={channel.id}>#{channel.id} · {channel.name ?? channel.display_name ?? item.model}</option>)}</NativeSelect></TableCell></TableRow> })}
+              {visibleModelOptions.length === 0 ? <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground">没有匹配的模型</TableCell></TableRow> : null}
+            </TableBody></Table>
+            <div className="mt-3 flex justify-end"><Button onClick={() => void save()} disabled={saving}><SaveIcon data-icon="inline-start" />{saving ? '保存中...' : form.id ? '保存修改' : '创建并保存'}</Button></div>
           </div>
         </Card>
       </div>

@@ -53,6 +53,10 @@ func Init(cfg *config.DBConfig, migrate bool) error {
 		return nil
 	}
 
+	if err := ensureBillingTransactionTable(); err != nil {
+		return err
+	}
+
 	if err := Engine.Sync2(
 		new(model.SchemaMigration),
 		new(model.User),
@@ -65,7 +69,6 @@ func Init(cfg *config.DBConfig, migrate bool) error {
 		new(model.KeyPool),
 		new(model.PoolKey),
 		new(model.Task),
-		new(model.BillingTransaction),
 		new(model.Card),
 		new(model.LLMLog),
 		new(model.SystemSetting),
@@ -122,6 +125,17 @@ func Init(cfg *config.DBConfig, migrate bool) error {
 		return err
 	}
 	return recordSchemaMigration("20260705_billing_constraints", "billing safety constraints")
+}
+
+func ensureBillingTransactionTable() error {
+	exists, err := Engine.IsTableExist(new(model.BillingTransaction))
+	if err != nil {
+		return fmt.Errorf("check billing_transactions table: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	return Engine.Sync2(new(model.BillingTransaction))
 }
 
 func recordSchemaMigration(version, description string) error {
