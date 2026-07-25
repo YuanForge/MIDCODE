@@ -30,6 +30,7 @@ func RateLimit() gin.HandlerFunc {
 	rules := []rateLimitRule{
 		{prefix: "/auth/", limit: 30, window: time.Minute},
 		{prefix: "/vendor/auth/", limit: 30, window: time.Minute},
+		{prefix: "/reseller/auth/", limit: 30, window: time.Minute},
 		{prefix: "/pay/", limit: 60, window: time.Minute},
 		{prefix: "/cards/", limit: 60, window: time.Minute},
 		{prefix: "/user/exchange", limit: 60, window: time.Minute},

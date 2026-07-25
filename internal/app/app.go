@@ -70,9 +70,10 @@ func New() (*App, error) {
 
 	m := mailer.New(&cfg.SMTP)
 	deps := router.Dependencies{
-		Config: cfg,
-		Auth:   handler.NewAuthHandler(&cfg.Server, m),
-		Vendor: handler.NewVendorHandler(&cfg.Server),
+		Config:   cfg,
+		Auth:     handler.NewAuthHandler(&cfg.Server, m),
+		Vendor:   handler.NewVendorHandler(&cfg.Server),
+		Reseller: handler.NewResellerHandler(cfg),
 	}
 
 	r := gin.New()

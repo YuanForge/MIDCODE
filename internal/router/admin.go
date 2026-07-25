@@ -82,6 +82,12 @@ func registerAdminRoutes(authed *gin.RouterGroup, deps Dependencies) {
 
 		admin.GET("/vendors", handler.AdminListVendors)
 		admin.PATCH("/vendors/:id", handler.AdminUpdateVendor)
+		admin.GET("/resellers", handler.AdminListResellers)
+		admin.POST("/resellers", handler.AdminCreateReseller)
+		admin.PATCH("/resellers/:id", handler.AdminUpdateReseller)
+		admin.GET("/reseller-sites", handler.AdminListResellerSites)
+		admin.GET("/reseller-site-build-jobs", handler.AdminListResellerSiteBuildJobs)
+		admin.POST("/reseller-site-build-jobs/:id/retry", handler.AdminRetryResellerBuildJob)
 
 		admin.GET("/withdrawals", handler.AdminListWithdrawals)
 		admin.GET("/withdrawals/pending-count", handler.AdminPendingWithdrawCount)
