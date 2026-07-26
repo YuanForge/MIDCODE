@@ -51,8 +51,69 @@ func TestValidateModelGroupInput(t *testing.T) {
 	if err := validateModelGroupInput(&model.ModelGroup{Code: "cheap", Name: " "}); err == nil {
 		t.Fatal("expected blank name to be rejected")
 	}
-	if err := validateModelGroupInput(&model.ModelGroup{Code: "cheap", Name: "Low price"}); err != nil {
+	if err := validateModelGroupInput(&model.ModelGroup{Code: "cheap", Name: "Low price", ModelProvider: " "}); err == nil {
+		t.Fatal("expected blank model provider to be rejected")
+	}
+	if err := validateModelGroupInput(&model.ModelGroup{Code: "cheap", Name: "Low price", ModelProvider: "OpenAI"}); err != nil {
 		t.Fatalf("expected valid group input, got %v", err)
+	}
+}
+
+func TestNormalizeModelProvider(t *testing.T) {
+	cases := map[string]string{
+		" openai ":      "OpenAI",
+		"ANTHROPIC":     "Anthropic",
+		"google":        "Google",
+		"deepseek":      "DeepSeek",
+		"ALIBABA":       "Alibaba",
+		"Acme   Models": "Acme Models",
+	}
+	for input, want := range cases {
+		if got := normalizeModelProvider(input); got != want {
+			t.Fatalf("normalizeModelProvider(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestValidateModelGroupChannelProvider(t *testing.T) {
+	group := model.ModelGroup{Code: "gpt", Name: "GPT", ModelProvider: "OpenAI"}
+	if err := validateModelGroupChannelProvider(group, model.Channel{Model: "gpt-4.1", ModelProvider: "openai"}); err != nil {
+		t.Fatalf("expected matching provider, got %v", err)
+	}
+	if err := validateModelGroupChannelProvider(group, model.Channel{Model: "claude-sonnet-4", ModelProvider: "Anthropic"}); err == nil {
+		t.Fatal("expected mismatched provider to fail")
+	}
+	if err := validateModelGroupChannelProvider(group, model.Channel{Model: "custom-model"}); err == nil {
+		t.Fatal("expected an unknown channel provider to fail")
+	}
+}
+
+func TestCanonicalModelProviderReusesExistingCustomName(t *testing.T) {
+	got := canonicalModelProvider("acme models", []string{"OpenAI", "Acme Models"})
+	if got != "Acme Models" {
+		t.Fatalf("canonical provider = %q, want %q", got, "Acme Models")
+	}
+}
+
+func TestValidateRoutingModelProvider(t *testing.T) {
+	if err := validateRoutingModelProvider("gpt-4.1", "OpenAI", "openai"); err != nil {
+		t.Fatalf("same provider must be accepted: %v", err)
+	}
+	if err := validateRoutingModelProvider("shared-model", "Anthropic", "OpenAI"); err == nil {
+		t.Fatal("expected a cross-provider routing model to be rejected")
+	}
+}
+
+func TestValidateModelGroupProviderChange(t *testing.T) {
+	channels := []model.Channel{
+		{Model: "gpt-4.1", ModelProvider: "OpenAI"},
+		{Model: "gpt-5", ModelProvider: "openai"},
+	}
+	if err := validateModelGroupProviderChange("OpenAI", channels); err != nil {
+		t.Fatalf("matching channels must be accepted: %v", err)
+	}
+	if err := validateModelGroupProviderChange("Anthropic", channels); err == nil {
+		t.Fatal("expected provider change with conflicting channels to fail")
 	}
 }
 
