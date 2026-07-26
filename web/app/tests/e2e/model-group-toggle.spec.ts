@@ -63,8 +63,8 @@ test('disables and re-enables a model group without stale form state', async ({ 
       contentType: 'application/json',
       body: JSON.stringify({
         groups: [
-          { id: 1, code: 'gpt-image-2', name: 'gpt-image-2', description: '', is_active: isActive, model_count: 2 },
-          { id: 2, code: 'gpt-enterprise', name: 'gpt-企业版', description: '', is_active: true, model_count: 2 },
+          { id: 1, code: 'gpt-image-2', name: 'gpt-image-2', model_provider: 'OpenAI', description: '', is_active: isActive, model_count: 2 },
+          { id: 2, code: 'gpt-enterprise', name: 'gpt-企业版', model_provider: 'OpenAI', description: '', is_active: true, model_count: 2 },
         ],
       }),
     })

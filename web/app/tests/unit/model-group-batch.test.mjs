@@ -3,6 +3,7 @@ import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 
 const page = await readFile(new URL('../../src/pages/admin/AdminModelGroupsPage.tsx', import.meta.url), 'utf8')
+const adminApi = await readFile(new URL('../../src/lib/api/admin.ts', import.meta.url), 'utf8')
 
 test('model groups use one save action for metadata and model bindings', () => {
   assert.match(page, /const savedGroup = await adminApi\.createModelGroup\(form\)/)
@@ -25,4 +26,13 @@ test('model groups batch-select models with one channel per model', () => {
   assert.match(page, /modelOptions/)
   assert.match(page, /selectedModelChannels/)
   assert.doesNotMatch(page, /SelectValue placeholder="选择渠道"/)
+})
+
+test('model groups require and display one model provider', () => {
+  assert.match(adminApi, /export type AdminModelGroup = \{[\s\S]*model_provider\?: string/)
+  assert.match(page, /model_provider/)
+  assert.match(page, /<datalist id="model-provider-options">/)
+  assert.doesNotMatch(page, /<TableHead>企业<\/TableHead>/)
+  assert.match(page, /<TableCell><div className="flex[^>]*"><span>\{group\.name\}<\/span><Badge[^>]*>\{group\.model_provider/)
+  assert.match(page, /channel\.model_provider/)
 })

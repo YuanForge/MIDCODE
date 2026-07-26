@@ -1000,6 +1000,7 @@ export type AdminModelGroup = {
   id?: number
   code?: string
   name?: string
+  model_provider?: string
   description?: string
   is_active?: boolean
   model_count?: number
