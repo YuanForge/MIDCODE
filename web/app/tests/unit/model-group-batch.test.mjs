@@ -33,6 +33,6 @@ test('model groups require and display one model provider', () => {
   assert.match(page, /model_provider/)
   assert.match(page, /<datalist id="model-provider-options">/)
   assert.doesNotMatch(page, /<TableHead>企业<\/TableHead>/)
-  assert.match(page, /<TableCell><div className="flex[^>]*"><span>\{group\.name\}<\/span><Badge[^>]*>\{group\.model_provider/)
+  assert.match(page, /<TableCell[^>]*><div className="flex[^>]*"><span[^>]*>\{group\.name\}<\/span><Badge[^>]*>\{group\.model_provider/)
   assert.match(page, /channel\.model_provider/)
 })
