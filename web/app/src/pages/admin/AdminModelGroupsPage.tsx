@@ -1,4 +1,4 @@
-import { PlusIcon, SaveIcon, Trash2Icon } from 'lucide-react'
+import { PlusIcon, PowerIcon, SaveIcon, Trash2Icon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -40,6 +40,7 @@ export function AdminModelGroupsPage() {
   const [modelSearch, setModelSearch] = useState('')
   const [errorText, setErrorText] = useState('')
   const [saving, setSaving] = useState(false)
+  const [togglingGroupID, setTogglingGroupID] = useState<number>()
 
   const modelOptions = useMemo(() => {
     const grouped = new Map<string, AdminChannel[]>()
@@ -89,6 +90,26 @@ export function AdminModelGroupsPage() {
     } catch (err) {
       const { getApiErrorMessage } = await import('@/lib/api/http')
       setErrorText(getApiErrorMessage(err))
+    }
+  }
+
+  async function toggle(group: AdminModelGroup) {
+    if (!group.id) return
+    const nextActive = group.is_active === false
+    if (!nextActive && !window.confirm(`确认停用分组“${group.name || group.code}”？停用后新请求将立即停止使用该分组。`)) return
+    setTogglingGroupID(group.id)
+    setErrorText('')
+    try {
+      await adminApi.toggleModelGroup(group.id, nextActive)
+      if (selectedGroupID === group.id) {
+        setForm((current) => current.id === group.id ? { ...current, is_active: nextActive } : current)
+      }
+      reload()
+    } catch (err) {
+      const { getApiErrorMessage } = await import('@/lib/api/http')
+      setErrorText(getApiErrorMessage(err))
+    } finally {
+      setTogglingGroupID(undefined)
     }
   }
 
@@ -145,7 +166,7 @@ export function AdminModelGroupsPage() {
                 <TableRow key={group.id} data-state={selectedGroupID === group.id ? 'selected' : undefined} onClick={() => edit(group)}>
                   <TableCell className="font-mono">{group.code}</TableCell><TableCell>{group.name}</TableCell><TableCell>{group.model_count ?? 0}</TableCell>
                   <TableCell><Badge variant={group.is_active === false ? 'secondary' : 'default'}>{group.is_active === false ? '停用' : '启用'}</Badge></TableCell>
-                  <TableCell className="text-right"><Button size="sm" variant="ghost" onClick={(event) => { event.stopPropagation(); edit(group) }}>编辑</Button><Button size="sm" variant="ghost" onClick={(event) => { event.stopPropagation(); void remove(group) }}><Trash2Icon /></Button></TableCell>
+                  <TableCell className="text-right"><Button size="sm" variant="ghost" onClick={(event) => { event.stopPropagation(); edit(group) }}>编辑</Button><Button size="sm" variant="ghost" disabled={togglingGroupID === group.id} onClick={(event) => { event.stopPropagation(); void toggle(group) }}><PowerIcon data-icon="inline-start" />{togglingGroupID === group.id ? '处理中...' : group.is_active === false ? '启用' : '停用'}</Button><Button size="sm" variant="ghost" onClick={(event) => { event.stopPropagation(); void remove(group) }}><Trash2Icon /></Button></TableCell>
                 </TableRow>
               ))}
             </TableBody>
