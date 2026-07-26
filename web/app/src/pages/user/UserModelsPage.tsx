@@ -24,7 +24,7 @@ import { userApi, type ModelAvailability, type UserChannel } from '@/lib/api/use
 import { cn } from '@/lib/utils'
 
 type DocMode = 'channel' | 'balance' | 'task'
-type LangTab = 'curl' | 'python' | 'php' | 'go' | 'java'
+type LangTab = 'curl' | 'javascript' | 'python' | 'php' | 'go' | 'java'
 type SunoMode = 'inspire' | 'custom' | 'extend' | 'overpainting' | 'underpainting'
 type ProviderOption = { name: string; iconUrl?: string }
 
@@ -236,6 +236,18 @@ function getChannelCode(channel: UserChannel, lang: LangTab, sunoMode: SunoMode,
   if (lang === 'curl') {
     return `curl -X POST "${origin}${endpoint}" \\\n+  -H "Content-Type: application/json" \\\n+  -H "Authorization: Bearer YOUR_API_KEY" \\\n+  -d '${body}'`
   }
+  if (lang === 'javascript') {
+    return `const response = await fetch("${origin}${endpoint}", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer YOUR_API_KEY",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify(${body})
+});
+
+console.log(await response.json());`
+  }
   if (lang === 'python') {
     return `import requests\nimport json\n\nurl = "${origin}${endpoint}"\nheaders = {\n    "Authorization": "Bearer YOUR_API_KEY",\n    "Content-Type": "application/json"\n}\nbody = json.loads('''${body}''')\n\nresponse = requests.post(url, headers=headers, json=body)\nprint(response.json())`
   }
@@ -253,6 +265,11 @@ function getChannelCode(channel: UserChannel, lang: LangTab, sunoMode: SunoMode,
 function getBalanceCode(lang: LangTab) {
   const origin = window.location.origin
   if (lang === 'curl') return `curl -X GET "${origin}/user/balance" \\\n+  -H "Authorization: Bearer YOUR_API_KEY"`
+  if (lang === 'javascript') return `const response = await fetch("${origin}/user/balance", {
+  headers: { "Authorization": "Bearer YOUR_API_KEY" }
+});
+
+console.log(await response.json());`
   if (lang === 'python') return `import requests\n\nurl = "${origin}/user/balance"\nheaders = {"Authorization": "Bearer YOUR_API_KEY"}\n\nresponse = requests.get(url, headers=headers)\nprint(response.json())`
   if (lang === 'php') return `<?php\n$url = "${origin}/user/balance";\n\n$ch = curl_init($url);\ncurl_setopt_array($ch, [\n    CURLOPT_RETURNTRANSFER => true,\n    CURLOPT_HTTPHEADER     => ['Authorization: Bearer YOUR_API_KEY'],\n]);\n\necho curl_exec($ch);\ncurl_close($ch);`
   if (lang === 'go') return `package main\n\nimport (\n\t"fmt"\n\t"io"\n\t"net/http"\n)\n\nfunc main() {\n\treq, _ := http.NewRequest("GET", "${origin}/user/balance", nil)\n\treq.Header.Set("Authorization", "Bearer YOUR_API_KEY")\n\n\tresp, _ := (&http.Client{}).Do(req)\n\tdefer resp.Body.Close()\n\tdata, _ := io.ReadAll(resp.Body)\n\tfmt.Println(string(data))\n}`
@@ -262,6 +279,11 @@ function getBalanceCode(lang: LangTab) {
 function getTaskCode(lang: LangTab) {
   const origin = window.location.origin
   if (lang === 'curl') return `curl -X GET "${origin}/v1/tasks/YOUR_TASK_ID" \\\n+  -H "Authorization: Bearer YOUR_API_KEY"`
+  if (lang === 'javascript') return `const response = await fetch("${origin}/v1/tasks/YOUR_TASK_ID", {
+  headers: { "Authorization": "Bearer YOUR_API_KEY" }
+});
+
+console.log(await response.json());`
   if (lang === 'python') return `import requests\n\nurl = "${origin}/v1/tasks/YOUR_TASK_ID"\nheaders = {"Authorization": "Bearer YOUR_API_KEY"}\n\nresponse = requests.get(url, headers=headers)\nprint(response.json())`
   if (lang === 'php') return `<?php\n$url = "${origin}/v1/tasks/YOUR_TASK_ID";\n\n$ch = curl_init($url);\ncurl_setopt_array($ch, [\n    CURLOPT_RETURNTRANSFER => true,\n    CURLOPT_HTTPHEADER     => ['Authorization: Bearer YOUR_API_KEY'],\n]);\n\necho curl_exec($ch);\ncurl_close($ch);`
   if (lang === 'go') return `package main\n\nimport (\n\t"fmt"\n\t"io"\n\t"net/http"\n)\n\nfunc main() {\n\treq, _ := http.NewRequest("GET", "${origin}/v1/tasks/YOUR_TASK_ID", nil)\n\treq.Header.Set("Authorization", "Bearer YOUR_API_KEY")\n\n\tresp, _ := (&http.Client{}).Do(req)\n\tdefer resp.Body.Close()\n\tdata, _ := io.ReadAll(resp.Body)\n\tfmt.Println(string(data))\n}`
@@ -606,7 +628,7 @@ export function UserModelsPage() {
       )}
 
       <Sheet open={docVisible} onOpenChange={setDocVisible}>
-        <SheetContent side="right" className="flex w-[90vw] flex-col overflow-y-auto p-0 sm:max-w-2xl">
+        <SheetContent side="right" className="flex w-[90vw] flex-col overflow-y-auto p-0 data-[side=right]:sm:max-w-4xl">
           <SheetHeader className="shrink-0 border-b p-6 pb-2">
             <SheetTitle>
               {docMode === 'balance' ? t('models.balanceTitle') : docMode === 'task' ? t('models.taskTitle') : docChannel?.name}
@@ -644,8 +666,9 @@ export function UserModelsPage() {
                     </Button>
                   </h4>
                   <Tabs value={langTab} onValueChange={(value) => setLangTab(value as LangTab)}>
-                    <TabsList className="mb-2 grid w-full grid-cols-5">
+                    <TabsList className="mb-2 grid h-auto w-full grid-cols-3 sm:grid-cols-6">
                       <TabsTrigger value="curl">cURL</TabsTrigger>
+                      <TabsTrigger value="javascript">JavaScript</TabsTrigger>
                       <TabsTrigger value="python">Python</TabsTrigger>
                       <TabsTrigger value="php">PHP</TabsTrigger>
                       <TabsTrigger value="go">Go</TabsTrigger>
@@ -682,8 +705,9 @@ export function UserModelsPage() {
                     </Button>
                   </h4>
                   <Tabs value={langTab} onValueChange={(value) => setLangTab(value as LangTab)}>
-                    <TabsList className="mb-2 grid w-full grid-cols-5">
+                    <TabsList className="mb-2 grid h-auto w-full grid-cols-3 sm:grid-cols-6">
                       <TabsTrigger value="curl">cURL</TabsTrigger>
+                      <TabsTrigger value="javascript">JavaScript</TabsTrigger>
                       <TabsTrigger value="python">Python</TabsTrigger>
                       <TabsTrigger value="php">PHP</TabsTrigger>
                       <TabsTrigger value="go">Go</TabsTrigger>
@@ -765,8 +789,9 @@ export function UserModelsPage() {
                     </Button>
                   </h4>
                   <Tabs value={langTab} onValueChange={(value) => setLangTab(value as LangTab)}>
-                    <TabsList className="mb-2 grid w-full grid-cols-5">
+                    <TabsList className="mb-2 grid h-auto w-full grid-cols-3 sm:grid-cols-6">
                       <TabsTrigger value="curl">cURL</TabsTrigger>
+                      <TabsTrigger value="javascript">JavaScript</TabsTrigger>
                       <TabsTrigger value="python">Python</TabsTrigger>
                       <TabsTrigger value="php">PHP</TabsTrigger>
                       <TabsTrigger value="go">Go</TabsTrigger>

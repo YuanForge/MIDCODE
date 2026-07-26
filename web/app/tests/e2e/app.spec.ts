@@ -35,6 +35,46 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
+test('shows a wider model details sheet with a JavaScript call example', async ({ page }) => {
+  await page.route('**/api/user/channels', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        channels: [{
+          id: 1,
+          name: 'gpt-5.6-sol',
+          routing_model: 'gpt-5.6-sol',
+          model_provider: 'OpenAI',
+          description: 'Test model',
+          type: 'llm',
+          protocol: 'openai',
+          billing_type: 'token',
+          price_display: '¥0.6800 / 1M 输入 + ¥4.0800 / 1M 输出',
+          group_prices: [],
+        }],
+      }),
+    })
+  })
+  await page.route('**/api/user/model-availability', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ models: [] }) })
+  })
+
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/models')
+  await page.getByRole('heading', { name: 'gpt-5.6-sol' }).click()
+
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toBeVisible()
+  await expect.poll(async () => (await dialog.boundingBox())?.width ?? 0).toBeGreaterThan(700)
+
+  await page.getByRole('tab', { name: 'JavaScript' }).click()
+  await expect(dialog.getByText('const response = await fetch', { exact: false })).toBeVisible()
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect.poll(async () => (await dialog.boundingBox())?.width ?? 1000).toBeLessThanOrEqual(390)
+})
+
 test('configures Fast ratio through the channel editor', async ({ page }) => {
   let savedPayload: Record<string, unknown> | undefined
 
