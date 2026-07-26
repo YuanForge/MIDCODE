@@ -62,7 +62,10 @@ test('disables and re-enables a model group without stale form state', async ({ 
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        groups: [{ id: 1, code: 'standard', name: '标准组', description: '', is_active: isActive, model_count: 2 }],
+        groups: [
+          { id: 1, code: 'gpt-image-2', name: 'gpt-image-2', description: '', is_active: isActive, model_count: 2 },
+          { id: 2, code: 'gpt-enterprise', name: 'gpt-企业版', description: '', is_active: true, model_count: 2 },
+        ],
       }),
     })
   })
@@ -73,8 +76,15 @@ test('disables and re-enables a model group without stale form state', async ({ 
     await dialog.accept()
   })
 
+  await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/admin/model-groups')
-  const groupRow = page.getByRole('row').filter({ hasText: 'standard' })
+  const groupRow = page.getByRole('row').filter({ hasText: 'gpt-image-2' })
+  const groupTable = page.locator('main table').first()
+  const tableOverflow = await groupTable.evaluate((table) => {
+    const container = table.parentElement
+    return (container?.scrollWidth ?? 0) - (container?.clientWidth ?? 0)
+  })
+  expect(tableOverflow).toBeLessThanOrEqual(0)
   await groupRow.click()
 
   await groupRow.getByRole('button', { name: '停用', exact: true }).click()

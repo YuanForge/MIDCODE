@@ -157,7 +157,7 @@ export function AdminModelGroupsPage() {
     <>
       <PageHeader eyebrow="Routing" title="模型分组" description="每个分组内同名模型只能绑定一个渠道；API Key 可以按顺序绑定多个分组。" actions={<Button onClick={() => edit()}><PlusIcon data-icon="inline-start" />新建分组</Button>} />
       {error || errorText ? <Alert variant="destructive"><AlertDescription>{String(error ?? errorText)}</AlertDescription></Alert> : null}
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(420px,1.1fr)]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(420px,1fr)]">
         <Card className="overflow-hidden">
           <Table>
             <TableHeader><TableRow><TableHead>编码</TableHead><TableHead>名称</TableHead><TableHead>模型数</TableHead><TableHead>状态</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader>
