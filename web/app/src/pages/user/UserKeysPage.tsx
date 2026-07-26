@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { GripVerticalIcon, KeyRoundIcon, PlusIcon, Trash2Icon } from 'lucide-react'
+import { KeyRoundIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 
 import { FilterBar } from '@/components/shared/FilterBar'
+import { ModelGroupSelector } from '@/components/shared/ModelGroupSelector'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { TableEmpty } from '@/components/shared/TableEmpty'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
@@ -46,15 +47,6 @@ function spendText(value: number | undefined) {
   return `${formatCredits(value ?? 0)} 积分`
 }
 
-function reorderGroups(ids: number[], draggedId: number, targetId: number) {
-  const from = ids.indexOf(draggedId)
-  const to = ids.indexOf(targetId)
-  if (from < 0 || to < 0 || from === to) return ids
-  const next = [...ids]
-  next.splice(to, 0, next.splice(from, 1)[0])
-  return next
-}
-
 export function UserKeysPage() {
   const { data: keys, loading, error: loadError, reload } = useAsync(async () => {
     const response = await userApi.listApiKeys()
@@ -71,7 +63,6 @@ export function UserKeysPage() {
   const [createdKey, setCreatedKey] = useState('')
   const [newKeyName, setNewKeyName] = useState('')
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>([])
-  const [draggedGroupId, setDraggedGroupId] = useState<number>()
   const [bindingKey, setBindingKey] = useState<ApiKeyRecord>()
   const [bindingIds, setBindingIds] = useState<number[]>([])
   const [submitting, setSubmitting] = useState(false)
@@ -103,22 +94,6 @@ export function UserKeysPage() {
     } finally {
       setSubmitting(false)
     }
-  }
-
-  function toggleGroup(id: number) {
-    setSelectedGroupIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
-  }
-
-  function moveGroup(index: number, direction: -1 | 1) {
-    setSelectedGroupIds((current) => {
-      const next = [...current]
-      const target = index + direction
-      if (target < 0 || target >= next.length) return current
-      const value = next[index]
-      next[index] = next[target]
-      next[target] = value
-      return next
-    })
   }
 
   function openBindings(item: ApiKeyRecord) {
@@ -248,7 +223,9 @@ export function UserKeysPage() {
                   <TableCell>
                     <div className="flex max-w-72 flex-wrap gap-1">
                       {(item.model_groups ?? []).map((binding) => (
-                        <Badge key={binding.group_id} variant="outline">{binding.group?.name || binding.group?.code || binding.group_id}</Badge>
+                        <Badge key={binding.group_id} variant="outline">
+                          {binding.group?.model_provider ? `${binding.group.model_provider} · ` : ''}{binding.group?.name || binding.group?.code || binding.group_id}
+                        </Badge>
                       ))}
                       {item.needs_group_binding ? <Badge variant="destructive">需要配置分组</Badge> : null}
                     </div>
@@ -316,17 +293,18 @@ export function UserKeysPage() {
       )}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>创建 API 密钥</DialogTitle>
             <DialogDescription>
               创建后会返回一次性明文，关闭后只能看到遮罩形式。
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-4">
+          <div className="flex min-w-0 flex-col gap-4 overflow-y-auto">
             <div className="flex flex-col gap-2">
-              <Label>名称</Label>
+              <Label htmlFor="new-api-key-name">名称</Label>
               <Input
+                id="new-api-key-name"
                 value={newKeyName}
                 onChange={(event) => setNewKeyName(event.target.value)}
                 placeholder="例如：我的项目"
@@ -334,22 +312,7 @@ export function UserKeysPage() {
             </div>
             <div className="flex flex-col gap-2">
               <Label>模型分组顺序</Label>
-              <div className="space-y-2 rounded-md border p-3">
-                {availableGroups.map((group) => (
-                  <label key={group.id} className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={group.id ? selectedGroupIds.includes(group.id) : false} onChange={() => group.id && toggleGroup(group.id)} />
-                    <span>{group.name || group.code}</span>
-                    <span className="text-muted-foreground">({group.model_count ?? 0} 个模型)</span>
-                  </label>
-                ))}
-              </div>
-              <div className="space-y-2">
-                {selectedGroupIds.map((id, index) => {
-                  const group = availableGroups.find((item) => item.id === id)
-                  return <div key={id} draggable onDragStart={(event) => { setDraggedGroupId(id); event.dataTransfer.effectAllowed = 'move' }} onDragEnd={() => setDraggedGroupId(undefined)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (draggedGroupId) setSelectedGroupIds((current) => reorderGroups(current, draggedGroupId, id)) }} className="flex cursor-grab items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm active:cursor-grabbing"><GripVerticalIcon className="size-4 text-muted-foreground" /><span className="min-w-0 flex-1 font-medium">{index + 1}. {group?.name || group?.code || id}</span>{index === 0 ? <Badge>优先使用</Badge> : <Badge variant="outline">故障回退 {index}</Badge>}<span className="flex gap-1"><Button type="button" size="sm" variant="ghost" onClick={() => moveGroup(index, -1)} disabled={index === 0}>↑</Button><Button type="button" size="sm" variant="ghost" onClick={() => moveGroup(index, 1)} disabled={index === selectedGroupIds.length - 1}>↓</Button></span></div>
-                })}
-              </div>
-              <p className="text-xs text-muted-foreground">拖拽已选分组调整顺序；第一项优先使用，后续分组按顺序故障回退。</p>
+              <ModelGroupSelector groups={availableGroups} selectedIds={selectedGroupIds} onChange={setSelectedGroupIds} />
             </div>
           </div>
           <DialogFooter>
@@ -364,19 +327,13 @@ export function UserKeysPage() {
       </Dialog>
 
       <Dialog open={Boolean(bindingKey)} onOpenChange={() => setBindingKey(undefined)}>
-        <DialogContent>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>调整模型分组顺序</DialogTitle>
             <DialogDescription>第一组优先调用，后续分组只在可重试失败时作为回退。</DialogDescription>
           </DialogHeader>
-          <div className="space-y-1 rounded-md border p-3">
-            {availableGroups.map((group) => <label key={group.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={group.id ? bindingIds.includes(group.id) : false} onChange={() => group.id && setBindingIds((current) => current.includes(group.id!) ? current.filter((id) => id !== group.id) : [...current, group.id!])} /><span>{group.name || group.code}</span></label>)}
-          </div>
-          <div className="space-y-2">
-            {bindingIds.map((id, index) => {
-              const group = availableGroups.find((item) => item.id === id)
-              return <div key={id} className="flex items-center justify-between rounded border px-2 py-1 text-sm"><span>{index + 1}. {group?.name || group?.code || id}</span><span className="flex gap-1"><Button type="button" size="sm" variant="ghost" onClick={() => setBindingIds((current) => { const next = [...current]; const value = next[index]; next[index] = next[index - 1]; next[index - 1] = value; return next })} disabled={index === 0}>↑</Button><Button type="button" size="sm" variant="ghost" onClick={() => setBindingIds((current) => { const next = [...current]; const value = next[index]; next[index] = next[index + 1]; next[index + 1] = value; return next })} disabled={index === bindingIds.length - 1}>↓</Button></span></div>
-            })}
+          <div className="min-w-0 overflow-y-auto">
+            <ModelGroupSelector groups={availableGroups} selectedIds={bindingIds} onChange={setBindingIds} />
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setBindingKey(undefined)}>取消</Button><Button onClick={() => void saveBindings()} disabled={bindingIds.length === 0}>保存排序</Button></DialogFooter>
         </DialogContent>
