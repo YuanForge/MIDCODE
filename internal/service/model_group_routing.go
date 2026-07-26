@@ -14,10 +14,49 @@ import (
 var ErrAPIKeyModelGroupsNotConfigured = errors.New("api key has no model groups configured")
 
 type ModelGroupRoute struct {
-	GroupID   int64
-	Priority  int
-	BindingID int64
-	Channel   model.Channel
+	GroupID       int64
+	Priority      int
+	BindingID     int64
+	ModelProvider string
+	Channel       model.Channel
+}
+
+type modelGroupRouteRow struct {
+	RouteGroupID   int64  `xorm:"route_group_id"`
+	RoutePriority  int    `xorm:"route_priority"`
+	RouteBindingID int64  `xorm:"route_binding_id"`
+	ModelProvider  string `xorm:"route_model_provider"`
+	model.Channel  `xorm:"extends"`
+}
+
+func buildModelGroupRoutes(rows []modelGroupRouteRow, excludedIDs []int64) []ModelGroupRoute {
+	routes := make([]ModelGroupRoute, 0, len(rows))
+	for _, row := range rows {
+		routes = append(routes, ModelGroupRoute{
+			GroupID:       row.RouteGroupID,
+			Priority:      row.RoutePriority,
+			BindingID:     row.RouteBindingID,
+			ModelProvider: row.ModelProvider,
+			Channel:       row.Channel,
+		})
+	}
+	return orderModelGroupRoutes(routes, excludedIDs)
+}
+
+func validateModelGroupRouteProviders(routingModel string, routes []ModelGroupRoute) error {
+	if len(routes) == 0 {
+		return nil
+	}
+	provider := normalizeModelProvider(routes[0].ModelProvider)
+	if provider == "" {
+		return fmt.Errorf("model %q has no model provider", routingModel)
+	}
+	for _, route := range routes[1:] {
+		if !strings.EqualFold(provider, normalizeModelProvider(route.ModelProvider)) {
+			return fmt.Errorf("model %q is configured across multiple model providers", routingModel)
+		}
+	}
+	return nil
 }
 
 func orderModelGroupRoutes(routes []ModelGroupRoute, excludedIDs []int64) []ModelGroupRoute {
@@ -49,42 +88,42 @@ func SelectModelGroupRoutes(ctx context.Context, apiKeyID int64, routingModel, p
 	if routingModel == "" {
 		return nil, fmt.Errorf("routing model is required")
 	}
-	bindings, err := LoadAPIKeyModelGroupBindings(ctx, apiKeyID)
-	if err != nil {
+	query := db.Engine.Context(ctx).Table("api_key_model_groups").Alias("akmg").
+		Select(`akmg.group_id AS route_group_id,
+			akmg.priority AS route_priority,
+			akmg.id AS route_binding_id,
+			mg.model_provider AS route_model_provider,
+			c.*`).
+		Join("INNER", "model_groups mg", "mg.id = akmg.group_id").
+		Join("INNER", "model_group_models mgm", "mgm.group_id = mg.id").
+		Join("INNER", "channels c", "c.id = mgm.channel_id").
+		Where("akmg.api_key_id = ?", apiKeyID).
+		And("mgm.routing_model = ?", routingModel).
+		And("mg.is_active = true").
+		And("c.is_active = true")
+	if protocol = strings.ToLower(strings.TrimSpace(protocol)); protocol != "" {
+		query = query.And("LOWER(COALESCE(NULLIF(BTRIM(c.protocol), ''), 'openai')) = ?", protocol)
+	}
+	if len(excludedIDs) > 0 {
+		query = query.NotIn("c.id", excludedIDs)
+	}
+	var rows []modelGroupRouteRow
+	if err := query.OrderBy("akmg.priority ASC, akmg.id ASC").Find(&rows); err != nil {
 		return nil, err
 	}
-	if len(bindings) == 0 {
-		return nil, ErrAPIKeyModelGroupsNotConfigured
-	}
-	routes := make([]ModelGroupRoute, 0, len(bindings))
-	for _, binding := range bindings {
-		active, err := db.Engine.Where("id = ? AND is_active = true", binding.GroupID).Exist(new(model.ModelGroup))
-		if err != nil {
-			return nil, err
-		}
-		if !active {
-			continue
-		}
-		var groupModel model.ModelGroupModel
-		found, err := db.Engine.Where("group_id = ? AND routing_model = ?", binding.GroupID, routingModel).Get(&groupModel)
-		if err != nil {
-			return nil, err
-		}
-		if !found {
-			continue
-		}
-		channel, err := GetChannel(ctx, groupModel.ChannelID)
-		if err != nil || !channel.IsActive {
-			continue
-		}
-		if protocol != "" && effectiveChannelProtocol(channel) != protocol {
-			continue
-		}
-		routes = append(routes, ModelGroupRoute{GroupID: binding.GroupID, Priority: binding.Priority, BindingID: binding.ID, Channel: *channel})
-	}
-	routes = orderModelGroupRoutes(routes, excludedIDs)
+	routes := buildModelGroupRoutes(rows, nil)
 	if len(routes) == 0 {
+		configured, err := db.Engine.Context(ctx).Where("api_key_id = ?", apiKeyID).Exist(new(model.APIKeyModelGroup))
+		if err != nil {
+			return nil, err
+		}
+		if !configured {
+			return nil, ErrAPIKeyModelGroupsNotConfigured
+		}
 		return nil, fmt.Errorf("no model %q is available in API key groups", routingModel)
+	}
+	if err := validateModelGroupRouteProviders(routingModel, routes); err != nil {
+		return nil, err
 	}
 	return routes, nil
 }
@@ -110,28 +149,16 @@ func IsChannelAuthorizedForAPIKey(ctx context.Context, apiKeyID, channelID int64
 	if apiKeyID <= 0 || channelID <= 0 {
 		return false, nil
 	}
-	bindings, err := LoadAPIKeyModelGroupBindings(ctx, apiKeyID)
-	if err != nil {
-		return false, err
-	}
-	for _, binding := range bindings {
-		active, err := db.Engine.Where("id = ? AND is_active = true", binding.GroupID).Exist(new(model.ModelGroup))
-		if err != nil {
-			return false, err
-		}
-		if !active {
-			continue
-		}
-		var groupModel model.ModelGroupModel
-		found, err := db.Engine.Where("group_id = ? AND routing_model = ? AND channel_id = ?", binding.GroupID, strings.TrimSpace(routingModel), channelID).Get(&groupModel)
-		if err != nil {
-			return false, err
-		}
-		if found {
-			return true, nil
-		}
-	}
-	return false, nil
+	return db.Engine.Context(ctx).Table("api_key_model_groups").Alias("akmg").
+		Join("INNER", "model_groups mg", "mg.id = akmg.group_id").
+		Join("INNER", "model_group_models mgm", "mgm.group_id = mg.id").
+		Join("INNER", "channels c", "c.id = mgm.channel_id").
+		Where("akmg.api_key_id = ?", apiKeyID).
+		And("mgm.routing_model = ?", strings.TrimSpace(routingModel)).
+		And("mgm.channel_id = ?", channelID).
+		And("mg.is_active = true").
+		And("c.is_active = true").
+		Exist(new(model.APIKeyModelGroup))
 }
 
 func effectiveChannelProtocol(channel *model.Channel) string {
