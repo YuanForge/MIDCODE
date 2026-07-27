@@ -19,6 +19,7 @@ const PERMISSION_REQUIRED: Record<string, string> = {
   '/admin/payments':      'billing:read',
   '/admin/vip-groups':    'billing:read',
   '/admin/model-groups':  'channels:read',
+  '/admin/model-providers': 'channels:read',
   '/admin/coupons':       'billing:read',
   '/admin/cards':         'cards:read',
   // 提现

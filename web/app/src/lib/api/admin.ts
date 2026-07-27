@@ -117,6 +117,18 @@ export type AdminVIPGroup = {
   updated_at?: string
 }
 
+export type AdminModelProvider = {
+  id?: number
+  code?: string
+  name?: string
+  is_active?: boolean
+  sort_order?: number
+  group_count?: number
+  channel_count?: number
+  created_at?: string
+  updated_at?: string
+}
+
 export type AdminReferralUser = {
   id?: number
   username?: string
@@ -682,6 +694,16 @@ export const adminApi = {
     http.post<Record<string, unknown>>(`/admin/channels/${id}/refresh-runtime`, {}),
   deleteChannel: (id: number) =>
     http.delete<Record<string, unknown>>(`/admin/channels/${id}`),
+  listModelProviders: (includeInactive = true) =>
+    http.get<{ providers?: AdminModelProvider[] }>('/admin/model-providers', { params: { include_inactive: includeInactive } }),
+  createModelProvider: (payload: Partial<AdminModelProvider>) =>
+    http.post<AdminModelProvider>('/admin/model-providers', payload),
+  updateModelProvider: (id: number, payload: Partial<AdminModelProvider>) =>
+    http.put<AdminModelProvider>(`/admin/model-providers/${id}`, payload),
+  toggleModelProvider: (id: number, isActive: boolean) =>
+    http.patch<Record<string, unknown>>(`/admin/model-providers/${id}/toggle`, { is_active: isActive }),
+  deleteModelProvider: (id: number) =>
+    http.delete<Record<string, unknown>>(`/admin/model-providers/${id}`),
   listModelGroups: (includeInactive = true) =>
     http.get<{ groups?: AdminModelGroup[] }>('/admin/model-groups', { params: { include_inactive: includeInactive } }),
   createModelGroup: (payload: Partial<AdminModelGroup>) =>

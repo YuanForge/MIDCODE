@@ -63,6 +63,7 @@ const AdminRolesPage = lazy(() => import('@/pages/admin/AdminRolesPage').then((m
 const AdminCouponsPage = lazy(() => import('@/pages/admin/AdminCouponsPage').then((m) => ({ default: m.AdminCouponsPage })))
 const AdminVipGroupsPage = lazy(() => import('@/pages/admin/AdminVipGroupsPage').then((m) => ({ default: m.AdminVipGroupsPage })))
 const AdminModelGroupsPage = lazy(() => import('@/pages/admin/AdminModelGroupsPage').then((m) => ({ default: m.AdminModelGroupsPage })))
+const AdminModelProvidersPage = lazy(() => import('@/pages/admin/AdminModelProvidersPage').then((m) => ({ default: m.AdminModelProvidersPage })))
 
 const VendorLoginPage = lazy(() => import('@/pages/vendor/VendorLoginPage').then((m) => ({ default: m.VendorLoginPage })))
 const VendorRegisterPage = lazy(() => import('@/pages/vendor/VendorRegisterPage').then((m) => ({ default: m.VendorRegisterPage })))
@@ -226,6 +227,7 @@ export const router = createBrowserRouter([
           { path: 'coupons', element: renderLazy(<AdminCouponsPage />) },
           { path: 'vip-groups', element: renderLazy(<AdminVipGroupsPage />) },
           { path: 'model-groups', element: renderLazy(<AdminModelGroupsPage />) },
+          { path: 'model-providers', element: renderLazy(<AdminModelProvidersPage />) },
         ],
       },
     ],
