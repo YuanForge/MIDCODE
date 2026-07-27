@@ -132,22 +132,28 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 	if routingKey == "" {
 		return fmt.Errorf("请在请求体 model 字段填写模型名称")
 	}
+	previousResponseID, _ := responseData["previous_response_id"].(string)
 
-	var ch *model.Channel
-	var chErr error
-	if apiKeyIDVal > 0 {
-		routes, routeErr := service.SelectHealthyModelGroupRoutes(c.Request.Context(), apiKeyIDVal, routingKey, protocolResponses)
-		if routeErr != nil {
-			return routeErr
-		}
-		ch = &routes[0].Channel
-	} else {
-		ch, chErr = service.SelectChannel(c.Request.Context(), routingKey)
+	ch, poolKey, reusedRoute, routeErr := upstreamSession.continuationRoute(routingKey, previousResponseID)
+	if routeErr != nil {
+		return routeErr
 	}
-	if chErr != nil {
-		ch, chErr = service.GetChannelByName(c.Request.Context(), routingKey)
+	if !reusedRoute {
+		var chErr error
+		if apiKeyIDVal > 0 {
+			routes, selectErr := service.SelectHealthyModelGroupRoutes(c.Request.Context(), apiKeyIDVal, routingKey, protocolResponses)
+			if selectErr != nil {
+				return selectErr
+			}
+			ch = &routes[0].Channel
+		} else {
+			ch, chErr = service.SelectChannel(c.Request.Context(), routingKey)
+		}
 		if chErr != nil {
-			return fmt.Errorf("渠道不存在: %s", routingKey)
+			ch, chErr = service.GetChannelByName(c.Request.Context(), routingKey)
+			if chErr != nil {
+				return fmt.Errorf("渠道不存在: %s", routingKey)
+			}
 		}
 	}
 
@@ -161,9 +167,10 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 	if entityID == 0 {
 		entityID = userID
 	}
-	var poolKey *model.PoolKey
 	var poolKeyIDVal int64
-	if ch.KeyPoolID > 0 {
+	if poolKey != nil {
+		poolKeyIDVal = poolKey.ID
+	} else if !reusedRoute && ch.KeyPoolID > 0 {
 		if pk, pkErr := service.GetOrAssignPoolKey(c.Request.Context(), ch.KeyPoolID, entityID); pkErr == nil {
 			poolKey = pk
 			poolKeyIDVal = pk.ID
@@ -414,6 +421,7 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 	}
 
 	llmSettle(c, ch, origReqData, usageForSettle, totalHold, userID, ch.ID, apiKeyIDVal, poolKeyIDVal, corrID, userGroup)
+	upstreamSession.pinRoute(routingKey, ch, poolKey)
 	return nil
 }
 
@@ -558,11 +566,46 @@ func forwardResponsesWS(ctx context.Context, clientConn *websocket.Conn, c *gin.
 	return usage, nil, toWSClientResp(textBuf.String()), nil
 }
 
+type responsesWSPinnedRoute struct {
+	routingKey string
+	channel    model.Channel
+	poolKey    *model.PoolKey
+}
+
 type responsesWSUpstreamSession struct {
 	conn        *websocket.Conn
 	key         string
 	targetURL   string
 	sentHeaders map[string]string
+	pinnedRoute *responsesWSPinnedRoute
+}
+
+func (s *responsesWSUpstreamSession) pinRoute(routingKey string, ch *model.Channel, poolKey *model.PoolKey) {
+	if s == nil || ch == nil {
+		return
+	}
+	pinned := &responsesWSPinnedRoute{routingKey: routingKey, channel: *ch}
+	if poolKey != nil {
+		copied := *poolKey
+		pinned.poolKey = &copied
+	}
+	s.pinnedRoute = pinned
+}
+
+func (s *responsesWSUpstreamSession) continuationRoute(routingKey, previousResponseID string) (*model.Channel, *model.PoolKey, bool, error) {
+	if s == nil || s.pinnedRoute == nil || strings.TrimSpace(previousResponseID) == "" {
+		return nil, nil, false, nil
+	}
+	if s.pinnedRoute.routingKey != routingKey {
+		return nil, nil, false, fmt.Errorf("previous_response_id 必须继续使用首轮模型")
+	}
+	ch := s.pinnedRoute.channel
+	var poolKey *model.PoolKey
+	if s.pinnedRoute.poolKey != nil {
+		copied := *s.pinnedRoute.poolKey
+		poolKey = &copied
+	}
+	return &ch, poolKey, true, nil
 }
 
 func (s *responsesWSUpstreamSession) close() {

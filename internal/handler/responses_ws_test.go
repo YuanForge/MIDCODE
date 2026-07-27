@@ -98,3 +98,42 @@ func TestResponsesUsageFromEventNormalizesCachedTokens(t *testing.T) {
 		t.Fatalf("expected cache_read_tokens, got %#v", usage["cache_read_tokens"])
 	}
 }
+
+func TestResponsesWSSessionReusesPinnedRouteForContinuation(t *testing.T) {
+	session := &responsesWSUpstreamSession{}
+	ch := &model.Channel{ID: 7, Model: "gpt-upstream"}
+	key := &model.PoolKey{ID: 9, Value: "secret"}
+	session.pinRoute("gpt-route", ch, key)
+
+	gotCh, gotKey, ok, err := session.continuationRoute("gpt-route", "resp_1")
+	if err != nil || !ok || gotCh.ID != 7 || gotKey.ID != 9 {
+		t.Fatalf("unexpected pinned route: ch=%#v key=%#v ok=%v err=%v", gotCh, gotKey, ok, err)
+	}
+
+	gotCh.ID = 99
+	gotKey.ID = 100
+	againCh, againKey, ok, err := session.continuationRoute("gpt-route", "resp_1")
+	if err != nil || !ok || againCh.ID != 7 || againKey.ID != 9 {
+		t.Fatalf("pinned route was mutated: ch=%#v key=%#v ok=%v err=%v", againCh, againKey, ok, err)
+	}
+}
+
+func TestResponsesWSSessionDoesNotReuseRouteForNewChain(t *testing.T) {
+	session := &responsesWSUpstreamSession{}
+	session.pinRoute("gpt-route", &model.Channel{ID: 7}, nil)
+
+	ch, key, ok, err := session.continuationRoute("gpt-route", "")
+	if err != nil || ok || ch != nil || key != nil {
+		t.Fatalf("new chain unexpectedly reused route: ch=%#v key=%#v ok=%v err=%v", ch, key, ok, err)
+	}
+}
+
+func TestResponsesWSSessionRejectsModelChangeDuringContinuation(t *testing.T) {
+	session := &responsesWSUpstreamSession{}
+	session.pinRoute("gpt-route", &model.Channel{ID: 7}, nil)
+
+	_, _, _, err := session.continuationRoute("other-route", "resp_1")
+	if err == nil {
+		t.Fatal("expected model-change error")
+	}
+}
