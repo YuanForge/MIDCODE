@@ -134,7 +134,10 @@ export type ApiKeyModelGroup = {
   id?: number
   code?: string
   name?: string
+  model_provider_id?: number
   model_provider?: string
+  model_provider_active?: boolean
+  model_provider_sort_order?: number
   description?: string
   is_active?: boolean
   model_count?: number

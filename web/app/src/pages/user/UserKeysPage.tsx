@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { KeyRoundIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 
 import { FilterBar } from '@/components/shared/FilterBar'
@@ -67,6 +67,14 @@ export function UserKeysPage() {
   const [bindingIds, setBindingIds] = useState<number[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [pendingDeleteId, setPendingDeleteId] = useState<number | undefined>()
+
+  const bindingGroups = useMemo(() => {
+    const merged = new Map(availableGroups.flatMap((group) => group.id ? [[group.id, group] as const] : []))
+    for (const binding of bindingKey?.model_groups ?? []) {
+      if (binding.group_id && binding.group) merged.set(binding.group_id, binding.group)
+    }
+    return [...merged.values()]
+  }, [availableGroups, bindingKey])
 
   const error = loadError || mutError
 
@@ -333,7 +341,7 @@ export function UserKeysPage() {
             <DialogDescription>第一组优先调用，后续分组只在可重试失败时作为回退。</DialogDescription>
           </DialogHeader>
           <div className="min-w-0 overflow-y-auto">
-            <ModelGroupSelector groups={availableGroups} selectedIds={bindingIds} onChange={setBindingIds} />
+            <ModelGroupSelector groups={bindingGroups} selectedIds={bindingIds} onChange={setBindingIds} />
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setBindingKey(undefined)}>取消</Button><Button onClick={() => void saveBindings()} disabled={bindingIds.length === 0}>保存排序</Button></DialogFooter>
         </DialogContent>

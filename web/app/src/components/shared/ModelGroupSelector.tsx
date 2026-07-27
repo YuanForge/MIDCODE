@@ -21,26 +21,51 @@ function providerName(group: ApiKeyModelGroup) {
   return group.model_provider?.trim() || unconfiguredProvider
 }
 
+function providerKey(group: ApiKeyModelGroup) {
+  return group.model_provider_id ? String(group.model_provider_id) : `legacy:${providerName(group)}`
+}
+
 export function ModelGroupSelector({ groups, selectedIds, onChange }: ModelGroupSelectorProps) {
   const providers = useMemo(() => {
-    const grouped = new Map<string, ApiKeyModelGroup[]>()
+    const grouped = new Map<string, {
+      id: number
+      key: string
+      name: string
+      active: boolean
+      sortOrder: number
+      groups: ApiKeyModelGroup[]
+    }>()
     for (const group of groups) {
-      const provider = providerName(group)
-      grouped.set(provider, [...(grouped.get(provider) ?? []), group])
+      const key = providerKey(group)
+      const provider = grouped.get(key)
+      if (provider) {
+        provider.groups.push(group)
+      } else {
+        grouped.set(key, {
+          id: group.model_provider_id ?? 0,
+          key,
+          name: providerName(group),
+          active: group.model_provider_active !== false,
+          sortOrder: group.model_provider_sort_order ?? 0,
+          groups: [group],
+        })
+      }
     }
-    return [...grouped.entries()].map(([name, providerGroups]) => ({ name, groups: providerGroups }))
+    return [...grouped.values()].sort((left, right) =>
+      left.sortOrder - right.sortOrder || left.id - right.id || left.name.localeCompare(right.name),
+    )
   }, [groups])
   const [requestedProvider, setRequestedProvider] = useState('')
-  const activeProvider = providers.some((provider) => provider.name === requestedProvider)
+  const activeProvider = providers.some((provider) => provider.key === requestedProvider)
     ? requestedProvider
-    : providers[0]?.name ?? ''
+    : providers[0]?.key ?? ''
 
   function toggle(id: number) {
     onChange(selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id])
   }
 
-  function move(provider: string, id: number, direction: -1 | 1) {
-    const providerIds = new Set(groups.filter((group) => group.id && providerName(group) === provider).map((group) => group.id as number))
+  function move(providerGroups: ApiKeyModelGroup[], id: number, direction: -1 | 1) {
+    const providerIds = new Set(providerGroups.flatMap((group) => group.id ? [group.id] : []))
     const ordered = selectedIds.filter((selectedId) => providerIds.has(selectedId))
     const index = ordered.indexOf(id)
     const target = index + direction
@@ -59,7 +84,7 @@ export function ModelGroupSelector({ groups, selectedIds, onChange }: ModelGroup
       <div className="max-w-full overflow-x-auto pb-1">
         <TabsList className="h-9 min-w-max">
           {providers.map((provider) => (
-            <TabsTrigger key={provider.name} value={provider.name} className="h-8 gap-2 px-3">
+            <TabsTrigger key={provider.key} value={provider.key} className="h-8 gap-2 px-3">
               {provider.name}
               <Badge variant="secondary">{provider.groups.filter((group) => group.id && selectedIds.includes(group.id)).length}</Badge>
             </TabsTrigger>
@@ -69,7 +94,7 @@ export function ModelGroupSelector({ groups, selectedIds, onChange }: ModelGroup
       {providers.map((provider) => {
         const selectedProviderIds = selectedIds.filter((id) => provider.groups.some((group) => group.id === id))
         return (
-          <TabsContent key={provider.name} value={provider.name} className="min-w-0 space-y-2">
+          <TabsContent key={provider.key} value={provider.key} className="min-w-0 space-y-2">
             {provider.groups.map((group) => {
               if (!group.id) return null
               const name = group.name || group.code || String(group.id)
@@ -77,10 +102,11 @@ export function ModelGroupSelector({ groups, selectedIds, onChange }: ModelGroup
               const selected = localIndex >= 0
               return (
                 <div key={group.id} className="grid min-h-12 min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md border px-3 py-2">
-                  <Checkbox id={`model-group-${group.id}`} aria-label={group.code || name} checked={selected} onCheckedChange={() => toggle(group.id as number)} />
-                  <Label htmlFor={`model-group-${group.id}`} className="min-w-0 cursor-pointer">
+                  <Checkbox id={`model-group-${group.id}`} aria-label={group.code || name} checked={selected} disabled={!provider.active} onCheckedChange={() => toggle(group.id as number)} />
+                  <Label htmlFor={`model-group-${group.id}`} className="min-w-0 cursor-pointer data-[disabled=true]:cursor-default" data-disabled={!provider.active}>
                     <span className="block truncate font-medium">{name}</span>
                     <span className="block text-xs text-muted-foreground">{group.code} · {group.model_count ?? 0} 个模型</span>
+                    {!provider.active ? <span className="block text-xs text-muted-foreground">企业已停用，该绑定将原样保留</span> : null}
                   </Label>
                   {selected ? (
                     <div className="flex shrink-0 items-center gap-1">
@@ -89,13 +115,13 @@ export function ModelGroupSelector({ groups, selectedIds, onChange }: ModelGroup
                       </Badge>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Button type="button" size="icon-sm" variant="ghost" aria-label={`上移 ${name}`} disabled={localIndex === 0} onClick={() => move(provider.name, group.id as number, -1)}><ArrowUpIcon /></Button>
+                          <Button type="button" size="icon-sm" variant="ghost" aria-label={`上移 ${name}`} disabled={!provider.active || localIndex === 0} onClick={() => move(provider.groups, group.id as number, -1)}><ArrowUpIcon /></Button>
                         </TooltipTrigger>
                         <TooltipContent>上移</TooltipContent>
                       </Tooltip>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Button type="button" size="icon-sm" variant="ghost" aria-label={`下移 ${name}`} disabled={localIndex === selectedProviderIds.length - 1} onClick={() => move(provider.name, group.id as number, 1)}><ArrowDownIcon /></Button>
+                          <Button type="button" size="icon-sm" variant="ghost" aria-label={`下移 ${name}`} disabled={!provider.active || localIndex === selectedProviderIds.length - 1} onClick={() => move(provider.groups, group.id as number, 1)}><ArrowDownIcon /></Button>
                         </TooltipTrigger>
                         <TooltipContent>下移</TooltipContent>
                       </Tooltip>
