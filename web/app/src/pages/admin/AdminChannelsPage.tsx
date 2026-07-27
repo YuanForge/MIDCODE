@@ -49,6 +49,7 @@ import {
   type AdminChannelLog,
   type AdminChannelUpstreamCostPreview,
   type AdminKeyPool,
+  type AdminModelProvider,
   type AdminUpstreamPlatform,
 } from '@/lib/api/admin'
 import { useAsync } from '@/hooks/use-async'
@@ -57,7 +58,7 @@ type ChannelForm = {
   id?: number
   name: string
   model: string
-  model_provider: string
+  model_provider_id: number
   type: string
   protocol: string
   base_url: string
@@ -165,7 +166,7 @@ const upstreamMetaKeys = new Set([
 const emptyForm: ChannelForm = {
   name: '',
   model: '',
-  model_provider: '',
+  model_provider_id: 0,
   type: 'llm',
   protocol: 'openai',
   base_url: '',
@@ -483,7 +484,7 @@ function buildFormFromChannel(row: AdminChannel, isCopy = false): ChannelForm {
     id: isCopy ? undefined : row.id,
     name: isCopy ? `${row.name ?? ''} - 副本` : row.name ?? '',
     model: row.model ?? row.routing_model ?? '',
-    model_provider: row.model_provider ?? '',
+    model_provider_id: row.model_provider_id ?? 0,
     type: row.type ?? 'llm',
     protocol: row.protocol ?? 'openai',
     base_url: row.base_url ?? '',
@@ -621,10 +622,11 @@ export function AdminChannelsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
 
   const { data, loading, error: loadError, reload } = useAsync(async () => {
-    const [channelResponse, poolResponse, upstreamResponse] = await Promise.all([
+    const [channelResponse, poolResponse, upstreamResponse, providersResponse] = await Promise.all([
       adminApi.listChannels({ page, size: channelPageSize, ...queryParams }),
       adminApi.listKeyPools(),
       adminApi.listUpstreamPlatforms(),
+      adminApi.listModelProviders(true),
     ])
     const rows = Array.isArray(channelResponse)
       ? channelResponse
@@ -633,12 +635,13 @@ export function AdminChannelsPage() {
     const pools = Array.isArray(poolResponse) ? poolResponse : poolResponse.pools ?? []
     const upstreamPlatforms = upstreamResponse.platforms ?? []
     setSelectedIds(new Set())
-    return { rows, pools, upstreamPlatforms, total }
-  }, { rows: [] as AdminChannel[], pools: [] as AdminKeyPool[], upstreamPlatforms: [] as AdminUpstreamPlatform[], total: 0 }, [page, queryParams])
+    return { rows, pools, upstreamPlatforms, providers: providersResponse.providers ?? [], total }
+  }, { rows: [] as AdminChannel[], pools: [] as AdminKeyPool[], upstreamPlatforms: [] as AdminUpstreamPlatform[], providers: [] as AdminModelProvider[], total: 0 }, [page, queryParams])
 
   const rows = data.rows
   const pools = data.pools
   const upstreamPlatforms = data.upstreamPlatforms
+  const providers = data.providers
   const total = data.total
 
   const [mutError, setMutError] = useState('')
@@ -845,7 +848,7 @@ export function AdminChannelsPage() {
       const payload = {
         name: form.name.trim(),
         model: form.model.trim(),
-        model_provider: form.model_provider.trim(),
+        model_provider_id: form.model_provider_id,
         type: form.type,
         protocol: form.protocol,
         base_url: form.base_url.trim(),
@@ -1283,11 +1286,12 @@ export function AdminChannelsPage() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">模型企业</label>
-                  <Input
-                    value={form.model_provider}
-                    onChange={(event) => setForm((current) => ({ ...current, model_provider: event.target.value }))}
-                    placeholder="OpenAI / Anthropic / Google"
-                  />
+                  <NativeSelect value={String(form.model_provider_id || '')} onChange={(event) => setForm((current) => ({ ...current, model_provider_id: Number(event.target.value) }))}>
+                    <option value="">请选择企业</option>
+                    {providers.filter((provider) => provider.is_active !== false || (Boolean(form.id) && provider.id === form.model_provider_id)).map((provider) => (
+                      <option key={provider.id} value={provider.id} disabled={provider.is_active === false}>{provider.name}{provider.is_active === false ? '（已停用）' : ''}</option>
+                    ))}
+                  </NativeSelect>
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">接口类型</label>

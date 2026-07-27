@@ -37,6 +37,7 @@ export type AdminChannel = {
   model?: string
   routing_model?: string
   display_name?: string
+  model_provider_id?: number
   model_provider?: string
   type?: string
   protocol?: string
@@ -1022,7 +1023,10 @@ export type AdminModelGroup = {
   id?: number
   code?: string
   name?: string
+  model_provider_id?: number
   model_provider?: string
+  model_provider_active?: boolean
+  model_provider_sort_order?: number
   description?: string
   is_active?: boolean
   model_count?: number

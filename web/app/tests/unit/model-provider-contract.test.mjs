@@ -6,6 +6,8 @@ const api = await readFile(new URL('../../src/lib/api/admin.ts', import.meta.url
 const router = await readFile(new URL('../../src/app/router.tsx', import.meta.url), 'utf8')
 const nav = await readFile(new URL('../../src/layouts/ConsoleLayout.tsx', import.meta.url), 'utf8')
 const permissions = await readFile(new URL('../../src/layouts/AdminLayout.tsx', import.meta.url), 'utf8')
+const groupsPage = await readFile(new URL('../../src/pages/admin/AdminModelGroupsPage.tsx', import.meta.url), 'utf8')
+const channelsPage = await readFile(new URL('../../src/pages/admin/AdminChannelsPage.tsx', import.meta.url), 'utf8')
 let page = ''
 try {
   page = await readFile(new URL('../../src/pages/admin/AdminModelProvidersPage.tsx', import.meta.url), 'utf8')
@@ -38,4 +40,15 @@ test('model provider page manages lifecycle and explains disable impact', () => 
   assert.match(page, /toggleModelProvider/)
   assert.match(page, /deleteModelProvider/)
   assert.match(page, /disabled=\{hasReferences/)
+})
+
+test('model groups and channels select provider IDs from the shared catalog', () => {
+  for (const source of [groupsPage, channelsPage]) {
+    assert.match(source, /adminApi\.listModelProviders\(true\)/)
+    assert.match(source, /model_provider_id/)
+  }
+  assert.doesNotMatch(groupsPage, /<datalist id="model-provider-options">/)
+  assert.doesNotMatch(channelsPage, /value=\{form\.model_provider\}/)
+  assert.match(groupsPage, /provider\.is_active !== false/)
+  assert.match(channelsPage, /provider\.is_active !== false/)
 })

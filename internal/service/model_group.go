@@ -265,6 +265,15 @@ func BindModelGroupModel(ctx context.Context, groupID int64, channelID int64, ro
 	} else if !found || !group.IsActive {
 		return rollback(fmt.Errorf("model group is not active"))
 	}
+	var provider model.ModelProvider
+	if found, err := session.ID(group.ModelProviderID).Get(&provider); err != nil {
+		return rollback(err)
+	} else if !found {
+		return rollback(ErrModelProviderNotFound)
+	}
+	if err := providerSelectionAllowed(0, provider); err != nil {
+		return rollback(err)
+	}
 	var channel model.Channel
 	if found, err := session.ID(channelID).Get(&channel); err != nil {
 		return rollback(err)

@@ -12,11 +12,10 @@ import { Label } from '@/components/ui/label'
 import { NativeSelect } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useAsync } from '@/hooks/use-async'
-import { adminApi, type AdminChannel, type AdminModelGroup, type AdminModelGroupModel } from '@/lib/api/admin'
+import { adminApi, type AdminChannel, type AdminModelGroup, type AdminModelGroupModel, type AdminModelProvider } from '@/lib/api/admin'
 
-type GroupForm = { id?: number; code: string; name: string; model_provider: string; description: string; is_active: boolean }
-const emptyForm: GroupForm = { code: '', name: '', model_provider: '', description: '', is_active: true }
-const modelProviders = ['OpenAI', 'Anthropic', 'Google', 'DeepSeek', 'Alibaba']
+type GroupForm = { id?: number; code: string; name: string; model_provider_id: number; description: string; is_active: boolean }
+const emptyForm: GroupForm = { code: '', name: '', model_provider_id: 0, description: '', is_active: true }
 
 function channelModel(channel: AdminChannel) {
   return channel.display_name?.trim() || channel.model?.trim() || channel.name?.trim() || ''
@@ -24,15 +23,17 @@ function channelModel(channel: AdminChannel) {
 
 export function AdminModelGroupsPage() {
   const { data, loading, error, reload } = useAsync(async () => {
-    const [groupsResponse, channelsResponse] = await Promise.all([
+    const [groupsResponse, channelsResponse, providersResponse] = await Promise.all([
       adminApi.listModelGroups(true),
       adminApi.listChannels(),
+      adminApi.listModelProviders(true),
     ])
     return {
       groups: groupsResponse.groups ?? [],
       channels: Array.isArray(channelsResponse) ? channelsResponse : channelsResponse.channels ?? [],
+      providers: providersResponse.providers ?? [],
     }
-  }, { groups: [] as AdminModelGroup[], channels: [] as AdminChannel[] })
+  }, { groups: [] as AdminModelGroup[], channels: [] as AdminChannel[], providers: [] as AdminModelProvider[] })
 
   const [form, setForm] = useState<GroupForm>(emptyForm)
   const [selectedGroupID, setSelectedGroupID] = useState<number>()
@@ -45,13 +46,11 @@ export function AdminModelGroupsPage() {
 
   const modelOptions = useMemo(() => {
     const grouped = new Map<string, AdminChannel[]>()
-    const groupProvider = form.model_provider.trim().toLowerCase()
     for (const channel of data.channels) {
       const model = channelModel(channel)
       const isBound = bindings.some((binding) => binding.channel_id === channel.id)
-      const channelProvider = channel.model_provider?.trim().toLowerCase() ?? ''
       if (!channel.id || !model || (channel.is_active === false && !isBound)) continue
-      if ((!groupProvider || channelProvider !== groupProvider) && !isBound) continue
+      if ((!form.model_provider_id || channel.model_provider_id !== form.model_provider_id) && !isBound) continue
       const options = grouped.get(model) ?? []
       options.push(channel)
       grouped.set(model, options)
@@ -59,7 +58,10 @@ export function AdminModelGroupsPage() {
     return [...grouped.entries()]
       .map(([model, channels]) => ({ model, channels: channels.sort((left, right) => (left.id ?? 0) - (right.id ?? 0)) }))
       .sort((left, right) => left.model.localeCompare(right.model))
-  }, [bindings, data.channels, form.model_provider])
+  }, [bindings, data.channels, form.model_provider_id])
+
+  const selectedProvider = data.providers.find((provider) => provider.id === form.model_provider_id)
+  const selectedProviderInactive = Boolean(selectedProvider && selectedProvider.is_active === false)
 
   const visibleModelOptions = useMemo(() => {
     const keyword = modelSearch.trim().toLowerCase()
@@ -74,7 +76,7 @@ export function AdminModelGroupsPage() {
   }
 
   function edit(group?: AdminModelGroup) {
-    setForm(group ? { id: group.id, code: group.code ?? '', name: group.name ?? '', model_provider: group.model_provider ?? '', description: group.description ?? '', is_active: group.is_active !== false } : emptyForm)
+    setForm(group ? { id: group.id, code: group.code ?? '', name: group.name ?? '', model_provider_id: group.model_provider_id ?? 0, description: group.description ?? '', is_active: group.is_active !== false } : emptyForm)
     if (group?.id) {
       setSelectedGroupID(group.id)
       void loadBindings(group.id)
@@ -179,14 +181,15 @@ export function AdminModelGroupsPage() {
         </Card>
         <Card className="space-y-4 p-5">
           <div className="grid gap-3 sm:grid-cols-2"><div><Label>分组编码</Label><Input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))} placeholder="standard" /></div><div><Label>分组名称</Label><Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="标准组" /></div></div>
-          <div><Label>模型企业</Label><Input list="model-provider-options" value={form.model_provider} onChange={(event) => setForm((current) => ({ ...current, model_provider: event.target.value }))} placeholder="OpenAI / Anthropic / 自定义企业" /><datalist id="model-provider-options">{modelProviders.map((provider) => <option key={provider} value={provider} />)}</datalist></div>
+          <div><Label htmlFor="group-model-provider">模型企业</Label><NativeSelect id="group-model-provider" value={String(form.model_provider_id || '')} onChange={(event) => setForm((current) => ({ ...current, model_provider_id: Number(event.target.value) }))}><option value="">请选择企业</option>{data.providers.filter((provider) => provider.is_active !== false || (Boolean(form.id) && provider.id === form.model_provider_id)).map((provider) => <option key={provider.id} value={provider.id} disabled={provider.is_active === false}>{provider.name}{provider.is_active === false ? '（已停用）' : ''}</option>)}</NativeSelect></div>
           <div><Label>描述</Label><Input value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} /></div>
           <div className="border-t pt-4">
             <Label>模型绑定</Label>
-            {!form.model_provider.trim() ? <p className="mt-2 text-sm text-muted-foreground">请先选择模型企业，再选择该企业的模型渠道。</p> : null}
-            <div className="mt-2 flex flex-wrap items-center gap-2"><Input className="max-w-sm" value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="搜索模型" /><Button variant="outline" onClick={() => setSelectedModelChannels(Object.fromEntries(modelOptions.map((item) => [item.model, item.channels.length === 1 ? String(item.channels[0].id) : selectedModelChannels[item.model] ?? ''])))}>全选</Button><Button variant="outline" onClick={() => setSelectedModelChannels({})}>清空</Button><span className="text-sm text-muted-foreground">已选 {Object.keys(selectedModelChannels).length} / {modelOptions.length}</span></div>
+            {!form.model_provider_id ? <p className="mt-2 text-sm text-muted-foreground">请先选择模型企业，再选择该企业的模型渠道。</p> : null}
+            {selectedProviderInactive ? <p className="mt-2 text-sm text-muted-foreground">当前企业已停用，仅可修改其他字段，不能调整模型绑定。</p> : null}
+            <div className="mt-2 flex flex-wrap items-center gap-2"><Input className="max-w-sm" value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="搜索模型" /><Button variant="outline" disabled={selectedProviderInactive} onClick={() => setSelectedModelChannels(Object.fromEntries(modelOptions.map((item) => [item.model, item.channels.length === 1 ? String(item.channels[0].id) : selectedModelChannels[item.model] ?? ''])))}>全选</Button><Button variant="outline" disabled={selectedProviderInactive} onClick={() => setSelectedModelChannels({})}>清空</Button><span className="text-sm text-muted-foreground">已选 {Object.keys(selectedModelChannels).length} / {modelOptions.length}</span></div>
             <Table className="mt-3"><TableHeader><TableRow><TableHead className="w-16">选择</TableHead><TableHead>公开模型</TableHead><TableHead>渠道</TableHead></TableRow></TableHeader><TableBody>
-              {visibleModelOptions.map((item) => { const selected = Object.prototype.hasOwnProperty.call(selectedModelChannels, item.model); return <TableRow key={item.model}><TableCell><Checkbox checked={selected} onCheckedChange={(checked) => setSelectedModelChannels((current) => { const next = { ...current }; if (checked) next[item.model] = item.channels.length === 1 ? String(item.channels[0].id) : ''; else delete next[item.model]; return next })} /></TableCell><TableCell className="font-mono">{item.model}</TableCell><TableCell><NativeSelect disabled={!selected} value={selectedModelChannels[item.model] ?? ''} onChange={(event) => setSelectedModelChannels((current) => ({ ...current, [item.model]: event.target.value }))}><option value="">{item.channels.length > 1 ? '请选择一个渠道' : '选择渠道'}</option>{item.channels.map((channel) => <option key={channel.id} value={channel.id}>#{channel.id} · {channel.name ?? channel.display_name ?? item.model}</option>)}</NativeSelect></TableCell></TableRow> })}
+              {visibleModelOptions.map((item) => { const selected = Object.prototype.hasOwnProperty.call(selectedModelChannels, item.model); return <TableRow key={item.model}><TableCell><Checkbox disabled={selectedProviderInactive} checked={selected} onCheckedChange={(checked) => setSelectedModelChannels((current) => { const next = { ...current }; if (checked) next[item.model] = item.channels.length === 1 ? String(item.channels[0].id) : ''; else delete next[item.model]; return next })} /></TableCell><TableCell className="font-mono">{item.model}</TableCell><TableCell><NativeSelect disabled={!selected || selectedProviderInactive} value={selectedModelChannels[item.model] ?? ''} onChange={(event) => setSelectedModelChannels((current) => ({ ...current, [item.model]: event.target.value }))}><option value="">{item.channels.length > 1 ? '请选择一个渠道' : '选择渠道'}</option>{item.channels.map((channel) => <option key={channel.id} value={channel.id}>#{channel.id} · {channel.name ?? channel.display_name ?? item.model}</option>)}</NativeSelect></TableCell></TableRow> })}
               {visibleModelOptions.length === 0 ? <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground">没有匹配的模型</TableCell></TableRow> : null}
             </TableBody></Table>
             <div className="mt-3 flex justify-end"><Button onClick={() => void save()} disabled={saving}><SaveIcon data-icon="inline-start" />{saving ? '保存中...' : form.id ? '保存修改' : '创建并保存'}</Button></div>

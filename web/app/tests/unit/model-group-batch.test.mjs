@@ -29,10 +29,13 @@ test('model groups batch-select models with one channel per model', () => {
 })
 
 test('model groups require and display one model provider', () => {
-  assert.match(adminApi, /export type AdminModelGroup = \{[\s\S]*model_provider\?: string/)
-  assert.match(page, /model_provider/)
-  assert.match(page, /<datalist id="model-provider-options">/)
+
+  assert.match(adminApi, /export type AdminModelGroup = \{[\s\S]*model_provider_id\?: number[\s\S]*model_provider\?: string/)
+  assert.match(page, /adminApi\.listModelProviders\(true\)/)
+  assert.match(page, /model_provider_id/)
+  assert.match(page, /<NativeSelect[^>]*value=\{String\(form\.model_provider_id/)
+  assert.doesNotMatch(page, /<datalist id="model-provider-options">/)
   assert.doesNotMatch(page, /<TableHead>企业<\/TableHead>/)
   assert.match(page, /<TableCell[^>]*><div className="flex[^>]*"><span[^>]*>\{group\.name\}<\/span><Badge[^>]*>\{group\.model_provider/)
-  assert.match(page, /channel\.model_provider/)
+  assert.match(page, /channel\.model_provider_id/)
 })
