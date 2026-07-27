@@ -420,8 +420,9 @@ server {
         proxy_set_header   X-Forwarded-Proto $scheme;
         proxy_connect_timeout 10s;
         proxy_send_timeout 120s;
-        proxy_read_timeout 660s;
-        send_timeout 660s;
+        # 空闲超时：只要上游持续返回数据，不限制任务总时长
+        proxy_read_timeout 1800s;
+        send_timeout 1800s;
         proxy_buffering off;
         proxy_cache off;
         proxy_request_buffering off;
@@ -578,8 +579,9 @@ server {
         # LLM 流式响应超时适当放长
         proxy_connect_timeout  10s;
         proxy_send_timeout      120s;
-        proxy_read_timeout      660s;
-        send_timeout            660s;
+        # 空闲超时：只要上游持续返回数据，不限制任务总时长
+        proxy_read_timeout      1800s;
+        send_timeout            1800s;
 
         # SSE / 流式响应禁用缓冲
         proxy_buffering             off;
