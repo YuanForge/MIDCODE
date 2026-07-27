@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"fanapi/internal/model"
 	"fanapi/internal/service"
 	"fmt"
@@ -22,7 +23,7 @@ func CreateChannel(c *gin.Context) {
 		return
 	}
 	if err := service.CreateChannel(c.Request.Context(), &ch); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeChannelMutationError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, ch)
@@ -128,10 +129,21 @@ func UpdateChannel(c *gin.Context) {
 	}
 	ch.ID = id
 	if err := service.UpdateChannel(c.Request.Context(), &ch); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeChannelMutationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, ch)
+}
+
+func writeChannelMutationError(c *gin.Context, err error) {
+	if errors.Is(err, service.ErrModelProviderNotFound) ||
+		errors.Is(err, service.ErrModelProviderInactive) ||
+		errors.Is(err, service.ErrModelProviderMismatch) ||
+		err.Error() == "model provider id is required" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 }
 
 func validateChannelFastRatio(ch *model.Channel) error {

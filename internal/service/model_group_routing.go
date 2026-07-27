@@ -14,30 +14,30 @@ import (
 var ErrAPIKeyModelGroupsNotConfigured = errors.New("api key has no model groups configured")
 
 type ModelGroupRoute struct {
-	GroupID       int64
-	Priority      int
-	BindingID     int64
-	ModelProvider string
-	Channel       model.Channel
+	GroupID         int64
+	Priority        int
+	BindingID       int64
+	ModelProviderID int64
+	Channel         model.Channel
 }
 
 type modelGroupRouteRow struct {
-	RouteGroupID   int64  `xorm:"route_group_id"`
-	RoutePriority  int    `xorm:"route_priority"`
-	RouteBindingID int64  `xorm:"route_binding_id"`
-	ModelProvider  string `xorm:"route_model_provider"`
-	model.Channel  `xorm:"extends"`
+	RouteGroupID    int64 `xorm:"route_group_id"`
+	RoutePriority   int   `xorm:"route_priority"`
+	RouteBindingID  int64 `xorm:"route_binding_id"`
+	ModelProviderID int64 `xorm:"route_model_provider_id"`
+	model.Channel   `xorm:"extends"`
 }
 
 func buildModelGroupRoutes(rows []modelGroupRouteRow, excludedIDs []int64) []ModelGroupRoute {
 	routes := make([]ModelGroupRoute, 0, len(rows))
 	for _, row := range rows {
 		routes = append(routes, ModelGroupRoute{
-			GroupID:       row.RouteGroupID,
-			Priority:      row.RoutePriority,
-			BindingID:     row.RouteBindingID,
-			ModelProvider: row.ModelProvider,
-			Channel:       row.Channel,
+			GroupID:         row.RouteGroupID,
+			Priority:        row.RoutePriority,
+			BindingID:       row.RouteBindingID,
+			ModelProviderID: row.ModelProviderID,
+			Channel:         row.Channel,
 		})
 	}
 	return orderModelGroupRoutes(routes, excludedIDs)
@@ -47,12 +47,12 @@ func validateModelGroupRouteProviders(routingModel string, routes []ModelGroupRo
 	if len(routes) == 0 {
 		return nil
 	}
-	provider := normalizeModelProvider(routes[0].ModelProvider)
-	if provider == "" {
+	providerID := routes[0].ModelProviderID
+	if providerID <= 0 {
 		return fmt.Errorf("model %q has no model provider", routingModel)
 	}
 	for _, route := range routes[1:] {
-		if !strings.EqualFold(provider, normalizeModelProvider(route.ModelProvider)) {
+		if providerID != route.ModelProviderID {
 			return fmt.Errorf("model %q is configured across multiple model providers", routingModel)
 		}
 	}
@@ -92,7 +92,7 @@ func SelectModelGroupRoutes(ctx context.Context, apiKeyID int64, routingModel, p
 		Select(`akmg.group_id AS route_group_id,
 			akmg.priority AS route_priority,
 			akmg.id AS route_binding_id,
-			mg.model_provider AS route_model_provider,
+			mg.model_provider_id AS route_model_provider_id,
 			c.*`).
 		Join("INNER", "model_groups mg", "mg.id = akmg.group_id").
 		Join("INNER", "model_group_models mgm", "mgm.group_id = mg.id").

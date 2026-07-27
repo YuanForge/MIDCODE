@@ -15,6 +15,8 @@ var (
 	ErrModelProviderNotFound   = errors.New("model provider not found")
 	ErrModelProviderConflict   = errors.New("model provider conflict")
 	ErrModelProviderReferenced = errors.New("model provider is referenced")
+	ErrModelProviderInactive   = errors.New("model provider is inactive")
+	ErrModelProviderMismatch   = errors.New("model provider does not match existing bindings")
 )
 
 var modelProviderCodePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)

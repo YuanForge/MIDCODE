@@ -10,8 +10,10 @@ import (
 )
 
 type ModelGroupSummary struct {
-	model.ModelGroup
-	ModelCount int64 `json:"model_count"`
+	model.ModelGroup       `xorm:"extends"`
+	ModelProviderActive    bool  `xorm:"model_provider_active" json:"model_provider_active"`
+	ModelProviderSortOrder int   `xorm:"model_provider_sort_order" json:"model_provider_sort_order"`
+	ModelCount             int64 `xorm:"model_count" json:"model_count"`
 }
 
 type ModelGroupModelView struct {
@@ -29,78 +31,31 @@ func validateModelGroupInput(group *model.ModelGroup) error {
 	if strings.TrimSpace(group.Name) == "" {
 		return fmt.Errorf("model group name is required")
 	}
-	if normalizeModelProvider(group.ModelProvider) == "" {
-		return fmt.Errorf("model provider is required")
+	if group.ModelProviderID <= 0 {
+		return fmt.Errorf("model provider id is required")
 	}
 	return nil
-}
-
-func normalizeModelProvider(value string) string {
-	value = strings.Join(strings.Fields(value), " ")
-	switch strings.ToLower(value) {
-	case "openai":
-		return "OpenAI"
-	case "anthropic":
-		return "Anthropic"
-	case "google":
-		return "Google"
-	case "deepseek":
-		return "DeepSeek"
-	case "alibaba":
-		return "Alibaba"
-	default:
-		return value
-	}
-}
-
-func canonicalModelProvider(value string, existing []string) string {
-	value = normalizeModelProvider(value)
-	for _, candidate := range existing {
-		candidate = normalizeModelProvider(candidate)
-		if strings.EqualFold(value, candidate) {
-			return candidate
-		}
-	}
-	return value
-}
-
-func existingModelProviders(excludeGroupID int64) ([]string, error) {
-	var groups []model.ModelGroup
-	query := db.Engine.Cols("model_provider").Where("BTRIM(model_provider) <> ''")
-	if excludeGroupID > 0 {
-		query = query.Where("id <> ?", excludeGroupID)
-	}
-	if err := query.Find(&groups); err != nil {
-		return nil, err
-	}
-	providers := make([]string, 0, len(groups))
-	for _, group := range groups {
-		providers = append(providers, group.ModelProvider)
-	}
-	return providers, nil
 }
 
 func validateModelGroupChannelProvider(group model.ModelGroup, channel model.Channel) error {
-	groupProvider := normalizeModelProvider(group.ModelProvider)
-	channelProvider := normalizeModelProvider(EffectiveModelProvider(channel))
-	if channelProvider == "" {
-		return fmt.Errorf("channel model provider is required")
+	if channel.ModelProviderID <= 0 {
+		return fmt.Errorf("channel model provider id is required")
 	}
-	if !strings.EqualFold(groupProvider, channelProvider) {
-		return fmt.Errorf("model group provider %q does not match channel provider %q", groupProvider, channelProvider)
+	if group.ModelProviderID != channel.ModelProviderID {
+		return fmt.Errorf("%w: model group provider %d does not match channel provider %d", ErrModelProviderMismatch, group.ModelProviderID, channel.ModelProviderID)
 	}
 	return nil
 }
 
-func validateRoutingModelProvider(routingModel, existingProvider, requestedProvider string) error {
-	if strings.EqualFold(normalizeModelProvider(existingProvider), normalizeModelProvider(requestedProvider)) {
+func validateRoutingModelProvider(routingModel string, existingProviderID, requestedProviderID int64) error {
+	if existingProviderID == requestedProviderID {
 		return nil
 	}
-	return fmt.Errorf("routing model %q already belongs to model provider %q", strings.TrimSpace(routingModel), normalizeModelProvider(existingProvider))
+	return fmt.Errorf("routing model %q already belongs to model provider %d", strings.TrimSpace(routingModel), existingProviderID)
 }
 
-func validateModelGroupProviderChange(provider string, channels []model.Channel) error {
-	group := model.ModelGroup{ModelProvider: provider}
+func validateModelGroupProviderChange(providerID int64, channels []model.Channel) error {
+	group := model.ModelGroup{ModelProviderID: providerID}
 	for _, channel := range channels {
 		if err := validateModelGroupChannelProvider(group, channel); err != nil {
 			return fmt.Errorf("channel %q: %w", ChannelRoutingKey(channel), err)
@@ -109,56 +64,63 @@ func validateModelGroupProviderChange(provider string, channels []model.Channel)
 	return nil
 }
 
+func providerSelectionAllowed(currentProviderID int64, provider model.ModelProvider) error {
+	if provider.IsActive || currentProviderID == provider.ID {
+		return nil
+	}
+	return ErrModelProviderInactive
+}
+
 func ListModelGroups(ctx context.Context, includeInactive bool) ([]ModelGroupSummary, error) {
 	_ = ctx
-	query := db.Engine.NewSession()
+	query := db.Engine.Table("model_groups").Alias("mg").
+		Select(`mg.*, mp.name AS model_provider,
+            mp.is_active AS model_provider_active,
+            mp.sort_order AS model_provider_sort_order,
+            (SELECT COUNT(*) FROM model_group_models mgm WHERE mgm.group_id = mg.id) AS model_count`).
+		Join("INNER", "model_providers mp", "mp.id = mg.model_provider_id")
 	defer query.Close()
 	if !includeInactive {
-		query = query.Where("is_active = true")
+		query = query.Where("mg.is_active = true AND mp.is_active = true")
 	}
-	var groups []model.ModelGroup
-	if err := query.OrderBy("id DESC").Find(&groups); err != nil {
+	var groups []ModelGroupSummary
+	if err := query.OrderBy("mp.sort_order ASC, mp.id ASC, mg.id DESC").Find(&groups); err != nil {
 		return nil, err
 	}
-	if len(groups) == 0 {
-		return []ModelGroupSummary{}, nil
-	}
-	ids := make([]int64, 0, len(groups))
-	for _, group := range groups {
-		ids = append(ids, group.ID)
-	}
-	type countRow struct {
-		GroupID int64 `xorm:"group_id"`
-		Count   int64 `xorm:"count"`
-	}
-	var counts []countRow
-	if err := db.Engine.Table("model_group_models").Select("group_id, COUNT(*) AS count").In("group_id", ids).GroupBy("group_id").Find(&counts); err != nil {
-		return nil, err
-	}
-	countMap := make(map[int64]int64, len(counts))
-	for _, row := range counts {
-		countMap[row.GroupID] = row.Count
-	}
-	result := make([]ModelGroupSummary, 0, len(groups))
-	for _, group := range groups {
-		result = append(result, ModelGroupSummary{ModelGroup: group, ModelCount: countMap[group.ID]})
-	}
-	return result, nil
+	return groups, nil
 }
 
 func CreateModelGroup(ctx context.Context, group *model.ModelGroup) error {
 	if err := validateModelGroupInput(group); err != nil {
 		return err
 	}
-	group.Code = strings.TrimSpace(group.Code)
-	group.Name = strings.TrimSpace(group.Name)
-	providers, err := existingModelProviders(0)
-	if err != nil {
+	session := db.Engine.NewSession()
+	defer session.Close()
+	if err := session.Begin(); err != nil {
 		return err
 	}
-	group.ModelProvider = canonicalModelProvider(group.ModelProvider, providers)
-	_, err = db.Engine.Insert(group)
-	return err
+	var provider model.ModelProvider
+	found, err := session.ID(group.ModelProviderID).Get(&provider)
+	if err != nil {
+		_ = session.Rollback()
+		return err
+	}
+	if !found {
+		_ = session.Rollback()
+		return ErrModelProviderNotFound
+	}
+	if err := providerSelectionAllowed(0, provider); err != nil {
+		_ = session.Rollback()
+		return err
+	}
+	group.Code = strings.TrimSpace(group.Code)
+	group.Name = strings.TrimSpace(group.Name)
+	group.ModelProvider = provider.Name
+	if _, err := session.Insert(group); err != nil {
+		_ = session.Rollback()
+		return err
+	}
+	return session.Commit()
 }
 
 func UpdateModelGroup(ctx context.Context, group *model.ModelGroup) error {
@@ -168,13 +130,8 @@ func UpdateModelGroup(ctx context.Context, group *model.ModelGroup) error {
 	if err := validateModelGroupInput(group); err != nil {
 		return err
 	}
-	providers, err := existingModelProviders(group.ID)
-	if err != nil {
-		return err
-	}
 	group.Code = strings.TrimSpace(group.Code)
 	group.Name = strings.TrimSpace(group.Name)
-	group.ModelProvider = canonicalModelProvider(group.ModelProvider, providers)
 
 	session := db.Engine.NewSession()
 	defer session.Close()
@@ -185,6 +142,26 @@ func UpdateModelGroup(ctx context.Context, group *model.ModelGroup) error {
 		_ = session.Rollback()
 		return err
 	}
+	var current model.ModelGroup
+	found, err := session.ID(group.ID).Get(&current)
+	if err != nil {
+		return rollback(err)
+	}
+	if !found {
+		return rollback(fmt.Errorf("model group not found"))
+	}
+	var provider model.ModelProvider
+	found, err = session.ID(group.ModelProviderID).Get(&provider)
+	if err != nil {
+		return rollback(err)
+	}
+	if !found {
+		return rollback(ErrModelProviderNotFound)
+	}
+	if err := providerSelectionAllowed(current.ModelProviderID, provider); err != nil {
+		return rollback(err)
+	}
+	group.ModelProvider = provider.Name
 
 	var channels []model.Channel
 	if err := session.Table("channels").Alias("c").
@@ -192,29 +169,29 @@ func UpdateModelGroup(ctx context.Context, group *model.ModelGroup) error {
 		Where("mgm.group_id = ?", group.ID).Find(&channels); err != nil {
 		return rollback(err)
 	}
-	if err := validateModelGroupProviderChange(group.ModelProvider, channels); err != nil {
+	if err := validateModelGroupProviderChange(group.ModelProviderID, channels); err != nil {
 		return rollback(err)
 	}
 
 	type providerConflict struct {
-		RoutingModel  string `xorm:"routing_model"`
-		ModelProvider string `xorm:"model_provider"`
+		RoutingModel    string `xorm:"routing_model"`
+		ModelProviderID int64  `xorm:"model_provider_id"`
 	}
 	var conflict providerConflict
-	found, err := session.Table("model_group_models").Alias("own").
-		Select("own.routing_model AS routing_model, other_group.model_provider AS model_provider").
+	found, err = session.Table("model_group_models").Alias("own").
+		Select("own.routing_model AS routing_model, other_group.model_provider_id AS model_provider_id").
 		Join("INNER", "model_group_models other", "other.routing_model = own.routing_model AND other.group_id <> own.group_id").
 		Join("INNER", "model_groups other_group", "other_group.id = other.group_id").
-		Where("own.group_id = ? AND LOWER(other_group.model_provider) <> LOWER(?)", group.ID, group.ModelProvider).
+		Where("own.group_id = ? AND other_group.model_provider_id <> ?", group.ID, group.ModelProviderID).
 		Get(&conflict)
 	if err != nil {
 		return rollback(err)
 	}
 	if found {
-		return rollback(validateRoutingModelProvider(conflict.RoutingModel, conflict.ModelProvider, group.ModelProvider))
+		return rollback(validateRoutingModelProvider(conflict.RoutingModel, conflict.ModelProviderID, group.ModelProviderID))
 	}
 
-	if _, err := session.ID(group.ID).Cols("code", "name", "model_provider", "description", "is_active").Update(group); err != nil {
+	if _, err := session.ID(group.ID).Cols("code", "name", "model_provider_id", "model_provider", "description", "is_active").Update(group); err != nil {
 		return rollback(err)
 	}
 	return session.Commit()
@@ -302,19 +279,19 @@ func BindModelGroupModel(ctx context.Context, groupID int64, channelID int64, ro
 	}
 	routingModel = strings.TrimSpace(routingModel)
 	type providerConflict struct {
-		ModelProvider string `xorm:"model_provider"`
+		ModelProviderID int64 `xorm:"model_provider_id"`
 	}
 	var conflict providerConflict
 	found, err := session.Table("model_group_models").Alias("mgm").
-		Select("mg.model_provider AS model_provider").
+		Select("mg.model_provider_id AS model_provider_id").
 		Join("INNER", "model_groups mg", "mg.id = mgm.group_id").
-		Where("mgm.routing_model = ? AND mgm.group_id <> ? AND LOWER(mg.model_provider) <> LOWER(?)", routingModel, groupID, group.ModelProvider).
+		Where("mgm.routing_model = ? AND mgm.group_id <> ? AND mg.model_provider_id <> ?", routingModel, groupID, group.ModelProviderID).
 		Get(&conflict)
 	if err != nil {
 		return rollback(err)
 	}
 	if found {
-		return rollback(validateRoutingModelProvider(routingModel, conflict.ModelProvider, group.ModelProvider))
+		return rollback(validateRoutingModelProvider(routingModel, conflict.ModelProviderID, group.ModelProviderID))
 	}
 
 	binding := &model.ModelGroupModel{GroupID: groupID, RoutingModel: routingModel, ChannelID: channelID}

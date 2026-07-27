@@ -33,20 +33,20 @@ func TestOrderModelGroupRoutesKeepsPriorityOrder(t *testing.T) {
 
 func TestBuildModelGroupRoutesKeepsProviderOrderAndExclusions(t *testing.T) {
 	rows := []modelGroupRouteRow{
-		{RouteGroupID: 20, RoutePriority: 2, RouteBindingID: 2, ModelProvider: "OpenAI", Channel: model.Channel{ID: 200}},
-		{RouteGroupID: 10, RoutePriority: 1, RouteBindingID: 1, ModelProvider: "OpenAI", Channel: model.Channel{ID: 100}},
+		{RouteGroupID: 20, RoutePriority: 2, RouteBindingID: 2, ModelProviderID: 10, Channel: model.Channel{ID: 200}},
+		{RouteGroupID: 10, RoutePriority: 1, RouteBindingID: 1, ModelProviderID: 10, Channel: model.Channel{ID: 100}},
 	}
 
 	got := buildModelGroupRoutes(rows, []int64{100})
-	if len(got) != 1 || got[0].GroupID != 20 || got[0].ModelProvider != "OpenAI" {
+	if len(got) != 1 || got[0].GroupID != 20 || got[0].ModelProviderID != 10 {
 		t.Fatalf("unexpected routes: %+v", got)
 	}
 }
 
 func TestValidateModelGroupRouteProvidersRejectsMixedProviders(t *testing.T) {
 	routes := []ModelGroupRoute{
-		{GroupID: 10, ModelProvider: "OpenAI"},
-		{GroupID: 20, ModelProvider: "Anthropic"},
+		{GroupID: 10, ModelProviderID: 10},
+		{GroupID: 20, ModelProviderID: 20},
 	}
 	if err := validateModelGroupRouteProviders("shared-model", routes); err == nil {
 		t.Fatal("expected mixed providers to be rejected")

@@ -11,11 +11,11 @@ import (
 )
 
 type modelGroupPayload struct {
-	Code          string `json:"code"`
-	Name          string `json:"name"`
-	ModelProvider string `json:"model_provider"`
-	Description   string `json:"description"`
-	IsActive      bool   `json:"is_active"`
+	Code            string `json:"code"`
+	Name            string `json:"name"`
+	ModelProviderID int64  `json:"model_provider_id"`
+	Description     string `json:"description"`
+	IsActive        bool   `json:"is_active"`
 }
 
 func ListModelGroups(c *gin.Context) {
@@ -33,7 +33,7 @@ func CreateModelGroup(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	group := model.ModelGroup{Code: req.Code, Name: req.Name, ModelProvider: req.ModelProvider, Description: req.Description, IsActive: req.IsActive}
+	group := model.ModelGroup{Code: req.Code, Name: req.Name, ModelProviderID: req.ModelProviderID, Description: req.Description, IsActive: req.IsActive}
 	if err := service.CreateModelGroup(c.Request.Context(), &group); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -52,7 +52,7 @@ func UpdateModelGroup(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	group := model.ModelGroup{ID: id, Code: req.Code, Name: req.Name, ModelProvider: req.ModelProvider, Description: req.Description, IsActive: req.IsActive}
+	group := model.ModelGroup{ID: id, Code: req.Code, Name: req.Name, ModelProviderID: req.ModelProviderID, Description: req.Description, IsActive: req.IsActive}
 	if err := service.UpdateModelGroup(c.Request.Context(), &group); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

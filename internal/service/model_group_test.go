@@ -45,42 +45,26 @@ func TestValidateModelGroupModelRequiresMatchingRoutingKey(t *testing.T) {
 }
 
 func TestValidateModelGroupInput(t *testing.T) {
-	if err := validateModelGroupInput(&model.ModelGroup{Code: " ", Name: "x"}); err == nil {
+	if err := validateModelGroupInput(&model.ModelGroup{Code: " ", Name: "x", ModelProviderID: 1}); err == nil {
 		t.Fatal("expected blank code to be rejected")
 	}
-	if err := validateModelGroupInput(&model.ModelGroup{Code: "cheap", Name: " "}); err == nil {
+	if err := validateModelGroupInput(&model.ModelGroup{Code: "cheap", Name: " ", ModelProviderID: 1}); err == nil {
 		t.Fatal("expected blank name to be rejected")
 	}
-	if err := validateModelGroupInput(&model.ModelGroup{Code: "cheap", Name: "Low price", ModelProvider: " "}); err == nil {
-		t.Fatal("expected blank model provider to be rejected")
+	if err := validateModelGroupInput(&model.ModelGroup{Code: "cheap", Name: "Low price"}); err == nil {
+		t.Fatal("expected missing model provider id to be rejected")
 	}
-	if err := validateModelGroupInput(&model.ModelGroup{Code: "cheap", Name: "Low price", ModelProvider: "OpenAI"}); err != nil {
+	if err := validateModelGroupInput(&model.ModelGroup{Code: "cheap", Name: "Low price", ModelProviderID: 1}); err != nil {
 		t.Fatalf("expected valid group input, got %v", err)
 	}
 }
 
-func TestNormalizeModelProvider(t *testing.T) {
-	cases := map[string]string{
-		" openai ":      "OpenAI",
-		"ANTHROPIC":     "Anthropic",
-		"google":        "Google",
-		"deepseek":      "DeepSeek",
-		"ALIBABA":       "Alibaba",
-		"Acme   Models": "Acme Models",
-	}
-	for input, want := range cases {
-		if got := normalizeModelProvider(input); got != want {
-			t.Fatalf("normalizeModelProvider(%q) = %q, want %q", input, got, want)
-		}
-	}
-}
-
 func TestValidateModelGroupChannelProvider(t *testing.T) {
-	group := model.ModelGroup{Code: "gpt", Name: "GPT", ModelProvider: "OpenAI"}
-	if err := validateModelGroupChannelProvider(group, model.Channel{Model: "gpt-4.1", ModelProvider: "openai"}); err != nil {
+	group := model.ModelGroup{Code: "gpt", Name: "GPT", ModelProviderID: 10}
+	if err := validateModelGroupChannelProvider(group, model.Channel{Model: "gpt-4.1", ModelProviderID: 10}); err != nil {
 		t.Fatalf("expected matching provider, got %v", err)
 	}
-	if err := validateModelGroupChannelProvider(group, model.Channel{Model: "claude-sonnet-4", ModelProvider: "Anthropic"}); err == nil {
+	if err := validateModelGroupChannelProvider(group, model.Channel{Model: "claude-sonnet-4", ModelProviderID: 20}); err == nil {
 		t.Fatal("expected mismatched provider to fail")
 	}
 	if err := validateModelGroupChannelProvider(group, model.Channel{Model: "custom-model"}); err == nil {
@@ -88,32 +72,42 @@ func TestValidateModelGroupChannelProvider(t *testing.T) {
 	}
 }
 
-func TestCanonicalModelProviderReusesExistingCustomName(t *testing.T) {
-	got := canonicalModelProvider("acme models", []string{"OpenAI", "Acme Models"})
-	if got != "Acme Models" {
-		t.Fatalf("canonical provider = %q, want %q", got, "Acme Models")
-	}
-}
-
 func TestValidateRoutingModelProvider(t *testing.T) {
-	if err := validateRoutingModelProvider("gpt-4.1", "OpenAI", "openai"); err != nil {
+	if err := validateRoutingModelProvider("gpt-4.1", 10, 10); err != nil {
 		t.Fatalf("same provider must be accepted: %v", err)
 	}
-	if err := validateRoutingModelProvider("shared-model", "Anthropic", "OpenAI"); err == nil {
+	if err := validateRoutingModelProvider("shared-model", 20, 10); err == nil {
 		t.Fatal("expected a cross-provider routing model to be rejected")
 	}
 }
 
 func TestValidateModelGroupProviderChange(t *testing.T) {
 	channels := []model.Channel{
-		{Model: "gpt-4.1", ModelProvider: "OpenAI"},
-		{Model: "gpt-5", ModelProvider: "openai"},
+		{Model: "gpt-4.1", ModelProviderID: 10},
+		{Model: "gpt-5", ModelProviderID: 10},
 	}
-	if err := validateModelGroupProviderChange("OpenAI", channels); err != nil {
+	if err := validateModelGroupProviderChange(10, channels); err != nil {
 		t.Fatalf("matching channels must be accepted: %v", err)
 	}
-	if err := validateModelGroupProviderChange("Anthropic", channels); err == nil {
+	if err := validateModelGroupProviderChange(20, channels); err == nil {
 		t.Fatal("expected provider change with conflicting channels to fail")
+	}
+}
+
+func TestProviderSelectionAllowed(t *testing.T) {
+	active := model.ModelProvider{ID: 10, IsActive: true}
+	inactive := model.ModelProvider{ID: 20, IsActive: false}
+	if err := providerSelectionAllowed(0, active); err != nil {
+		t.Fatalf("new active provider must be accepted: %v", err)
+	}
+	if err := providerSelectionAllowed(20, inactive); err != nil {
+		t.Fatalf("unchanged inactive provider must be accepted: %v", err)
+	}
+	if err := providerSelectionAllowed(0, inactive); err == nil {
+		t.Fatal("new inactive provider must be rejected")
+	}
+	if err := providerSelectionAllowed(10, inactive); err == nil {
+		t.Fatal("switching to an inactive provider must be rejected")
 	}
 }
 

@@ -89,10 +89,10 @@ func InvalidateChannelRouteCaches(ctx context.Context, channels ...model.Channel
 // ListChannels 返回所有渠道（管理员接口）。
 func ListChannels(ctx context.Context) ([]model.Channel, error) {
 	var channels []model.Channel
-	err := db.Engine.OrderBy("priority ASC, id DESC").Find(&channels)
-	for index := range channels {
-		channels[index].ModelProvider = EffectiveModelProvider(channels[index])
-	}
+	err := db.Engine.Table("channels").Alias("c").
+		Select("c.*, mp.name AS model_provider").
+		Join("INNER", "model_providers mp", "mp.id = c.model_provider_id").
+		OrderBy("c.priority ASC, c.id DESC").Find(&channels)
 	return channels, err
 }
 
@@ -131,7 +131,10 @@ func ListChannelsPaged(ctx context.Context, query ChannelListQuery) (*ChannelLis
 	}
 
 	var channels []model.Channel
-	if err := db.Engine.OrderBy("priority ASC, id DESC").Find(&channels); err != nil {
+	if err := db.Engine.Table("channels").Alias("c").
+		Select("c.*, mp.name AS model_provider").
+		Join("INNER", "model_providers mp", "mp.id = c.model_provider_id").
+		OrderBy("c.priority ASC, c.id DESC").Find(&channels); err != nil {
 		return nil, err
 	}
 
@@ -275,11 +278,38 @@ func CreateChannel(ctx context.Context, ch *model.Channel) error {
 	if ch.BillingType == "custom" {
 		return fmt.Errorf("custom 自定义脚本计费已停用")
 	}
-	_, err := db.Engine.Insert(ch)
-	if err == nil {
-		invalidateChannelRouteCaches(ctx, *ch)
+	if ch.ModelProviderID <= 0 {
+		return fmt.Errorf("model provider id is required")
 	}
-	return err
+	session := db.Engine.NewSession()
+	defer session.Close()
+	if err := session.Begin(); err != nil {
+		return err
+	}
+	var provider model.ModelProvider
+	found, err := session.ID(ch.ModelProviderID).Get(&provider)
+	if err != nil {
+		_ = session.Rollback()
+		return err
+	}
+	if !found {
+		_ = session.Rollback()
+		return ErrModelProviderNotFound
+	}
+	if err := providerSelectionAllowed(0, provider); err != nil {
+		_ = session.Rollback()
+		return err
+	}
+	ch.ModelProvider = provider.Name
+	if _, err := session.Insert(ch); err != nil {
+		_ = session.Rollback()
+		return err
+	}
+	if err := session.Commit(); err != nil {
+		return err
+	}
+	invalidateChannelRouteCaches(ctx, *ch)
+	return nil
 }
 
 // GetChannelByName 通过 Name 字段加载渠道，Name 即路由模型名。
@@ -331,15 +361,58 @@ func UpdateChannel(ctx context.Context, ch *model.Channel) error {
 	if ch.BillingType == "custom" {
 		return fmt.Errorf("custom 自定义脚本计费已停用")
 	}
-	// 先读旧记录，用于失效旧 name/model/display_name 缓存键
-	var old model.Channel
-	_, _ = db.Engine.ID(ch.ID).Cols("id", "name", "model", "display_name").Get(&old)
-
-	_, err := db.Engine.Where("id = ?", ch.ID).AllCols().Update(ch)
-	if err == nil {
-		invalidateChannelRouteCaches(ctx, old, *ch)
+	if ch.ModelProviderID <= 0 {
+		return fmt.Errorf("model provider id is required")
 	}
-	return err
+	session := db.Engine.NewSession()
+	defer session.Close()
+	if err := session.Begin(); err != nil {
+		return err
+	}
+	rollback := func(err error) error {
+		_ = session.Rollback()
+		return err
+	}
+	// 先读旧记录，用于校验企业变更并失效旧路由缓存。
+	var old model.Channel
+	found, err := session.ID(ch.ID).Get(&old)
+	if err != nil {
+		return rollback(err)
+	}
+	if !found {
+		return rollback(fmt.Errorf("channel not found"))
+	}
+	var provider model.ModelProvider
+	found, err = session.ID(ch.ModelProviderID).Get(&provider)
+	if err != nil {
+		return rollback(err)
+	}
+	if !found {
+		return rollback(ErrModelProviderNotFound)
+	}
+	if err := providerSelectionAllowed(old.ModelProviderID, provider); err != nil {
+		return rollback(err)
+	}
+	var groups []model.ModelGroup
+	if err := session.Table("model_groups").Alias("mg").
+		Join("INNER", "model_group_models mgm", "mgm.group_id = mg.id").
+		Where("mgm.channel_id = ?", ch.ID).Find(&groups); err != nil {
+		return rollback(err)
+	}
+	for _, group := range groups {
+		if err := validateModelGroupChannelProvider(group, *ch); err != nil {
+			return rollback(err)
+		}
+	}
+	ch.ModelProvider = provider.Name
+	if _, err := session.Where("id = ?", ch.ID).AllCols().Update(ch); err != nil {
+		return rollback(err)
+	}
+	if err := session.Commit(); err != nil {
+		return err
+	}
+	invalidateChannelRouteCaches(ctx, old, *ch)
+	return nil
 }
 
 // DeleteChannel 永久删除数据库中的渠道。
