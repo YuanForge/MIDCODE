@@ -62,6 +62,7 @@ func Init(cfg *config.DBConfig, migrate bool) error {
 		new(model.User),
 		new(model.EmailVerification),
 		new(model.APIKey),
+		new(model.ModelProvider),
 		new(model.ModelGroup),
 		new(model.ModelGroupModel),
 		new(model.APIKeyModelGroup),
