@@ -95,12 +95,17 @@ func SelectModelGroupRoutes(ctx context.Context, apiKeyID int64, routingModel, p
 			mg.model_provider_id AS route_model_provider_id,
 			c.*`).
 		Join("INNER", "model_groups mg", "mg.id = akmg.group_id").
+		Join("INNER", "model_providers mp", "mp.id = mg.model_provider_id").
 		Join("INNER", "model_group_models mgm", "mgm.group_id = mg.id").
 		Join("INNER", "channels c", "c.id = mgm.channel_id").
+		Join("INNER", "model_providers cp", "cp.id = c.model_provider_id").
 		Where("akmg.api_key_id = ?", apiKeyID).
 		And("mgm.routing_model = ?", routingModel).
 		And("mg.is_active = true").
-		And("c.is_active = true")
+		And("c.is_active = true").
+		And("mp.is_active = true").
+		And("cp.is_active = true").
+		And("c.model_provider_id = mg.model_provider_id")
 	if protocol = strings.ToLower(strings.TrimSpace(protocol)); protocol != "" {
 		query = query.And("LOWER(COALESCE(NULLIF(BTRIM(c.protocol), ''), 'openai')) = ?", protocol)
 	}
@@ -151,13 +156,18 @@ func IsChannelAuthorizedForAPIKey(ctx context.Context, apiKeyID, channelID int64
 	}
 	return db.Engine.Context(ctx).Table("api_key_model_groups").Alias("akmg").
 		Join("INNER", "model_groups mg", "mg.id = akmg.group_id").
+		Join("INNER", "model_providers mp", "mp.id = mg.model_provider_id").
 		Join("INNER", "model_group_models mgm", "mgm.group_id = mg.id").
 		Join("INNER", "channels c", "c.id = mgm.channel_id").
+		Join("INNER", "model_providers cp", "cp.id = c.model_provider_id").
 		Where("akmg.api_key_id = ?", apiKeyID).
 		And("mgm.routing_model = ?", strings.TrimSpace(routingModel)).
 		And("mgm.channel_id = ?", channelID).
 		And("mg.is_active = true").
 		And("c.is_active = true").
+		And("mp.is_active = true").
+		And("cp.is_active = true").
+		And("c.model_provider_id = mg.model_provider_id").
 		Exist(new(model.APIKeyModelGroup))
 }
 

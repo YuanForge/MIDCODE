@@ -1,6 +1,8 @@
 package service
 
 import (
+	"os"
+	"strings"
 	"testing"
 
 	"fanapi/internal/model"
@@ -16,6 +18,55 @@ func TestOrderModelGroupRoutesSkipsExcludedChannels(t *testing.T) {
 	ordered := orderModelGroupRoutes(routes, []int64{100})
 	if len(ordered) != 2 || ordered[0].GroupID != 20 || ordered[1].GroupID != 30 {
 		t.Fatalf("unexpected ordered routes: %+v", ordered)
+	}
+}
+
+func sourceFunction(t *testing.T, path, start, end string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	source := string(data)
+	from := strings.Index(source, start)
+	if from < 0 {
+		t.Fatalf("missing function %s", start)
+	}
+	to := strings.Index(source[from+len(start):], end)
+	if to < 0 {
+		t.Fatalf("missing function boundary %s", end)
+	}
+	return source[from : from+len(start)+to]
+}
+
+func requireActiveProviderJoin(t *testing.T, source string) {
+	t.Helper()
+	if !strings.Contains(source, `Join("INNER", "model_providers`) || !strings.Contains(source, "mp.is_active = true") {
+		t.Fatal("runtime query must join and require an active model provider")
+	}
+}
+
+func TestModelGroupRouteQueryRequiresActiveProvider(t *testing.T) {
+	source := sourceFunction(t, "model_group_routing.go", "func SelectModelGroupRoutes", "func SelectHealthyModelGroupRoutes")
+	requireActiveProviderJoin(t, source)
+}
+
+func TestExplicitChannelRequiresActiveProvider(t *testing.T) {
+	source := sourceFunction(t, "model_group_routing.go", "func IsChannelAuthorizedForAPIKey", "func effectiveChannelProtocol")
+	requireActiveProviderJoin(t, source)
+}
+
+func TestLegacyChannelQueriesRequireActiveProvider(t *testing.T) {
+	getByID := sourceFunction(t, "channel.go", "func GetChannel(", "func InvalidateChannelCache")
+	getByName := sourceFunction(t, "channel.go", "func GetChannelByName", "func PatchChannelActive")
+	listByModel := sourceFunction(t, "channel.go", "func listChannelsByModel", "func filterChannelsByProtocol")
+	for name, source := range map[string]string{"id": getByID, "name": getByName, "model": listByModel} {
+		t.Run(name, func(t *testing.T) {
+			requireActiveProviderJoin(t, source)
+			if strings.Contains(source, "cache.Client.Get") && !strings.Contains(source, "activeModelProvider") {
+				t.Fatal("cached channel results must re-check active provider state")
+			}
+		})
 	}
 }
 

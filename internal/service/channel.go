@@ -30,12 +30,21 @@ func GetChannel(ctx context.Context, channelID int64) (*model.Channel, error) {
 	if err == nil {
 		ch := &model.Channel{}
 		if jsonErr := json.Unmarshal(data, ch); jsonErr == nil {
-			return ch, nil
+			active, activeErr := activeModelProvider(ctx, ch.ModelProviderID)
+			if activeErr != nil {
+				return nil, activeErr
+			}
+			if active {
+				return ch, nil
+			}
 		}
 	}
 
 	ch := &model.Channel{}
-	found, err := db.Engine.Where("id = ? AND is_active = true", channelID).Get(ch)
+	found, err := db.Engine.Context(ctx).Table("channels").Alias("c").
+		Select("c.*, mp.name AS model_provider").
+		Join("INNER", "model_providers mp", "mp.id = c.model_provider_id").
+		Where("c.id = ? AND c.is_active = true AND mp.is_active = true", channelID).Get(ch)
 	if err != nil {
 		return nil, err
 	}
@@ -47,6 +56,45 @@ func GetChannel(ctx context.Context, channelID int64) (*model.Channel, error) {
 		cache.Client.Set(ctx, cacheKey, b, channelCacheTTL)
 	}
 	return ch, nil
+}
+
+func activeModelProvider(ctx context.Context, providerID int64) (bool, error) {
+	if providerID <= 0 {
+		return false, nil
+	}
+	return db.Engine.Context(ctx).Where("id = ? AND is_active = true", providerID).Exist(new(model.ModelProvider))
+}
+
+func activeModelProviderChannels(ctx context.Context, channels []model.Channel) ([]model.Channel, bool, error) {
+	providerIDs := make([]int64, 0, len(channels))
+	seen := make(map[int64]struct{}, len(channels))
+	for _, channel := range channels {
+		if channel.ModelProviderID <= 0 {
+			return nil, false, nil
+		}
+		if _, exists := seen[channel.ModelProviderID]; !exists {
+			seen[channel.ModelProviderID] = struct{}{}
+			providerIDs = append(providerIDs, channel.ModelProviderID)
+		}
+	}
+	if len(providerIDs) == 0 {
+		return channels, true, nil
+	}
+	var providers []model.ModelProvider
+	if err := db.Engine.Context(ctx).In("id", providerIDs).Where("is_active = true").Find(&providers); err != nil {
+		return nil, false, err
+	}
+	active := make(map[int64]struct{}, len(providers))
+	for _, provider := range providers {
+		active[provider.ID] = struct{}{}
+	}
+	filtered := make([]model.Channel, 0, len(channels))
+	for _, channel := range channels {
+		if _, exists := active[channel.ModelProviderID]; exists {
+			filtered = append(filtered, channel)
+		}
+	}
+	return filtered, true, nil
 }
 
 // InvalidateChannelCache 删除渠道对应的 Redis 缓存。
@@ -322,12 +370,21 @@ func GetChannelByName(ctx context.Context, name string) (*model.Channel, error) 
 	if err == nil {
 		ch := &model.Channel{}
 		if jsonErr := json.Unmarshal(data, ch); jsonErr == nil {
-			return ch, nil
+			active, activeErr := activeModelProvider(ctx, ch.ModelProviderID)
+			if activeErr != nil {
+				return nil, activeErr
+			}
+			if active {
+				return ch, nil
+			}
 		}
 	}
 
 	ch := &model.Channel{}
-	found, err := db.Engine.Where("name = ? AND is_active = true", name).Get(ch)
+	found, err := db.Engine.Context(ctx).Table("channels").Alias("c").
+		Select("c.*, mp.name AS model_provider").
+		Join("INNER", "model_providers mp", "mp.id = c.model_provider_id").
+		Where("c.name = ? AND c.is_active = true AND mp.is_active = true", name).Get(ch)
 	if err != nil {
 		return nil, err
 	}
@@ -802,14 +859,23 @@ func listChannelsByModel(ctx context.Context, modelName string) ([]model.Channel
 	if err == nil {
 		var channels []model.Channel
 		if jsonErr := json.Unmarshal(data, &channels); jsonErr == nil {
-			return channels, nil
+			filtered, valid, activeErr := activeModelProviderChannels(ctx, channels)
+			if activeErr != nil {
+				return nil, activeErr
+			}
+			if valid {
+				return filtered, nil
+			}
 		}
 	}
 
 	// 有 display_name 时只按 display_name 路由；未设置 display_name 时才按标准模型名路由。
 	var channels []model.Channel
-	err = db.Engine.Where("((TRIM(display_name) != '' AND TRIM(display_name) = ?) OR (TRIM(display_name) = '' AND model = ?)) AND is_active = true", modelName, modelName).
-		OrderBy("priority DESC, id ASC").Find(&channels)
+	err = db.Engine.Context(ctx).Table("channels").Alias("c").
+		Select("c.*, mp.name AS model_provider").
+		Join("INNER", "model_providers mp", "mp.id = c.model_provider_id").
+		Where("((TRIM(c.display_name) != '' AND TRIM(c.display_name) = ?) OR (TRIM(c.display_name) = '' AND c.model = ?)) AND c.is_active = true AND mp.is_active = true", modelName, modelName).
+		OrderBy("c.priority DESC, c.id ASC").Find(&channels)
 	if err != nil {
 		return nil, err
 	}
