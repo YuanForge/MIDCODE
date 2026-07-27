@@ -55,3 +55,40 @@ func TestProviderCodeCanChange(t *testing.T) {
 		t.Fatal("referenced provider code change must be rejected")
 	}
 }
+
+func TestValidateDisabledProviderBindings(t *testing.T) {
+	current := []apiKeyGroupProviderState{
+		{GroupID: 11, ProviderID: 1, ProviderActive: true},
+		{GroupID: 21, ProviderID: 2, ProviderActive: false},
+		{GroupID: 12, ProviderID: 1, ProviderActive: true},
+		{GroupID: 22, ProviderID: 2, ProviderActive: false},
+	}
+	accepted := []apiKeyGroupProviderState{
+		{GroupID: 12, ProviderID: 1, ProviderActive: true},
+		{GroupID: 21, ProviderID: 2, ProviderActive: false},
+		{GroupID: 13, ProviderID: 1, ProviderActive: true},
+		{GroupID: 22, ProviderID: 2, ProviderActive: false},
+	}
+	if err := validateDisabledProviderBindings(current, accepted); err != nil {
+		t.Fatalf("active-provider edits with preserved disabled subsequence must pass: %v", err)
+	}
+
+	tests := []struct {
+		name      string
+		requested []apiKeyGroupProviderState
+	}{
+		{name: "delete", requested: accepted[:3]},
+		{name: "reorder", requested: []apiKeyGroupProviderState{
+			{GroupID: 22, ProviderID: 2, ProviderActive: false},
+			{GroupID: 21, ProviderID: 2, ProviderActive: false},
+		}},
+		{name: "add", requested: append(append([]apiKeyGroupProviderState{}, accepted...), apiKeyGroupProviderState{GroupID: 23, ProviderID: 2, ProviderActive: false})},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := validateDisabledProviderBindings(current, tt.requested); err == nil {
+				t.Fatal("expected disabled-provider binding mutation to fail")
+			}
+		})
+	}
+}

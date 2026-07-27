@@ -10,6 +10,8 @@ import (
 
 	"fanapi/internal/db"
 	"fanapi/internal/model"
+
+	"xorm.io/xorm"
 )
 
 type APIKeyModelGroupView struct {
@@ -18,6 +20,50 @@ type APIKeyModelGroupView struct {
 	GroupID  int64             `json:"group_id"`
 	Priority int               `json:"priority"`
 	Group    ModelGroupSummary `json:"group"`
+}
+
+type apiKeyGroupProviderState struct {
+	GroupID        int64 `xorm:"group_id"`
+	ProviderID     int64 `xorm:"provider_id"`
+	ProviderActive bool  `xorm:"provider_active"`
+	GroupActive    bool  `xorm:"group_active"`
+}
+
+func validateDisabledProviderBindings(current, requested []apiKeyGroupProviderState) error {
+	disabledProviders := make(map[int64]struct{})
+	for _, state := range current {
+		if !state.ProviderActive {
+			disabledProviders[state.ProviderID] = struct{}{}
+		}
+	}
+	for _, state := range requested {
+		if !state.ProviderActive {
+			disabledProviders[state.ProviderID] = struct{}{}
+		}
+	}
+	for providerID := range disabledProviders {
+		currentIDs := providerGroupSequence(current, providerID)
+		requestedIDs := providerGroupSequence(requested, providerID)
+		if len(currentIDs) != len(requestedIDs) {
+			return fmt.Errorf("bindings for disabled model provider %d must remain unchanged", providerID)
+		}
+		for index := range currentIDs {
+			if currentIDs[index] != requestedIDs[index] {
+				return fmt.Errorf("bindings for disabled model provider %d must remain unchanged", providerID)
+			}
+		}
+	}
+	return nil
+}
+
+func providerGroupSequence(states []apiKeyGroupProviderState, providerID int64) []int64 {
+	ids := make([]int64, 0)
+	for _, state := range states {
+		if state.ProviderID == providerID {
+			ids = append(ids, state.GroupID)
+		}
+	}
+	return ids
 }
 
 func validateAPIKeyGroupSelection(groupIDs []int64) error {
@@ -65,9 +111,6 @@ func ReplaceAPIKeyModelGroups(ctx context.Context, userID, keyID int64, groupIDs
 	if err := validateAPIKeyGroupSelection(groupIDs); err != nil {
 		return err
 	}
-	if !apiKeyBelongsToUser(keyID, userID) {
-		return fmt.Errorf("api key not found")
-	}
 	bindings := make([]model.APIKeyModelGroup, len(groupIDs))
 	for i, groupID := range groupIDs {
 		bindings[i] = model.APIKeyModelGroup{APIKeyID: keyID, GroupID: groupID}
@@ -76,32 +119,87 @@ func ReplaceAPIKeyModelGroups(ctx context.Context, userID, keyID int64, groupIDs
 	if err != nil {
 		return err
 	}
-	var groups []model.ModelGroup
-	if err := db.Engine.In("id", groupIDs).Where("is_active = true").Find(&groups); err != nil {
-		return err
-	}
-	if len(groups) != len(groupIDs) {
-		return fmt.Errorf("one or more model groups are missing or inactive")
-	}
 	session := db.Engine.NewSession()
 	defer session.Close()
 	if err := session.Begin(); err != nil {
 		return err
 	}
-	if _, err := session.Where("api_key_id = ?", keyID).Delete(new(model.APIKeyModelGroup)); err != nil {
-		session.Rollback()
+	rollback := func(err error) error {
+		_ = session.Rollback()
 		return err
+	}
+	found, err := session.Where("id = ? AND user_id = ?", keyID, userID).Get(new(model.APIKey))
+	if err != nil {
+		return rollback(err)
+	}
+	if !found {
+		return rollback(fmt.Errorf("api key not found"))
+	}
+	current, err := loadAPIKeyGroupProviderStates(session, keyID)
+	if err != nil {
+		return rollback(err)
+	}
+	requested, err := loadRequestedGroupProviderStates(session, groupIDs)
+	if err != nil {
+		return rollback(err)
+	}
+	if err := validateDisabledProviderBindings(current, requested); err != nil {
+		return rollback(err)
+	}
+	for _, state := range requested {
+		if state.ProviderActive && !state.GroupActive {
+			return rollback(fmt.Errorf("one or more model groups are missing or inactive"))
+		}
+	}
+	if _, err := session.Where("api_key_id = ?", keyID).Delete(new(model.APIKeyModelGroup)); err != nil {
+		return rollback(err)
 	}
 	for _, binding := range normalized {
 		if _, err := session.Insert(&binding); err != nil {
-			session.Rollback()
-			return err
+			return rollback(err)
 		}
 	}
 	if err := session.Commit(); err != nil {
 		return err
 	}
 	return nil
+}
+
+func loadAPIKeyGroupProviderStates(session *xorm.Session, keyID int64) ([]apiKeyGroupProviderState, error) {
+	states := make([]apiKeyGroupProviderState, 0)
+	err := session.Table("api_key_model_groups").Alias("akmg").
+		Select("akmg.group_id AS group_id, mg.model_provider_id AS provider_id, mp.is_active AS provider_active, mg.is_active AS group_active").
+		Join("INNER", "model_groups mg", "mg.id = akmg.group_id").
+		Join("INNER", "model_providers mp", "mp.id = mg.model_provider_id").
+		Where("akmg.api_key_id = ?", keyID).
+		OrderBy("akmg.priority ASC, akmg.id ASC").Find(&states)
+	return states, err
+}
+
+func loadRequestedGroupProviderStates(session *xorm.Session, groupIDs []int64) ([]apiKeyGroupProviderState, error) {
+	var rows []apiKeyGroupProviderState
+	if err := session.Table("model_groups").Alias("mg").
+		Select("mg.id AS group_id, mg.model_provider_id AS provider_id, mp.is_active AS provider_active, mg.is_active AS group_active").
+		Join("INNER", "model_providers mp", "mp.id = mg.model_provider_id").
+		In("mg.id", groupIDs).Find(&rows); err != nil {
+		return nil, err
+	}
+	if len(rows) != len(groupIDs) {
+		return nil, fmt.Errorf("one or more model groups are missing")
+	}
+	byID := make(map[int64]apiKeyGroupProviderState, len(rows))
+	for _, row := range rows {
+		byID[row.GroupID] = row
+	}
+	ordered := make([]apiKeyGroupProviderState, 0, len(groupIDs))
+	for _, groupID := range groupIDs {
+		state, exists := byID[groupID]
+		if !exists {
+			return nil, fmt.Errorf("model group %d is missing", groupID)
+		}
+		ordered = append(ordered, state)
+	}
+	return ordered, nil
 }
 
 func LoadAPIKeyModelGroupBindings(ctx context.Context, keyID int64) ([]model.APIKeyModelGroup, error) {
@@ -118,12 +216,13 @@ func CreateAPIKeyWithGroups(ctx context.Context, userID int64, name string, grou
 	if strings.TrimSpace(name) == "" {
 		return "", fmt.Errorf("api key name is required")
 	}
-	var groups []model.ModelGroup
-	if err := db.Engine.In("id", groupIDs).Where("is_active = true").Find(&groups); err != nil {
-		return "", err
+	bindings := make([]model.APIKeyModelGroup, len(groupIDs))
+	for i, groupID := range groupIDs {
+		bindings[i] = model.APIKeyModelGroup{GroupID: groupID}
 	}
-	if len(groups) != len(groupIDs) {
-		return "", fmt.Errorf("one or more model groups are missing or inactive")
+	normalized, err := normalizeModelGroupPriorities(bindings)
+	if err != nil {
+		return "", err
 	}
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
@@ -141,16 +240,26 @@ func CreateAPIKeyWithGroups(ctx context.Context, userID int64, name string, grou
 	if err := session.Begin(); err != nil {
 		return "", err
 	}
-	if _, err := session.Insert(apiKey); err != nil {
-		session.Rollback()
+	rollback := func(err error) (string, error) {
+		_ = session.Rollback()
 		return "", err
 	}
-	bindings := make([]model.APIKeyModelGroup, len(groupIDs))
-	for i, groupID := range groupIDs {
-		bindings[i] = model.APIKeyModelGroup{APIKeyID: apiKey.ID, GroupID: groupID, Priority: i + 1}
-		if _, err := session.Insert(&bindings[i]); err != nil {
-			session.Rollback()
-			return "", err
+	states, err := loadRequestedGroupProviderStates(session, groupIDs)
+	if err != nil {
+		return rollback(err)
+	}
+	for _, state := range states {
+		if !state.ProviderActive || !state.GroupActive {
+			return rollback(fmt.Errorf("one or more model groups or providers are inactive"))
+		}
+	}
+	if _, err := session.Insert(apiKey); err != nil {
+		return rollback(err)
+	}
+	for i := range normalized {
+		normalized[i].APIKeyID = apiKey.ID
+		if _, err := session.Insert(&normalized[i]); err != nil {
+			return rollback(err)
 		}
 	}
 	if err := session.Commit(); err != nil {
