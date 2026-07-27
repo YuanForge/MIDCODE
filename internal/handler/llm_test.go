@@ -437,6 +437,33 @@ func TestPrepareLLMUpstreamAttemptRebuildsBodyForEachPoolKey(t *testing.T) {
 	}
 }
 
+func TestIsPoolKeyRetryStatusIncludesLLMServerErrors(t *testing.T) {
+	retryable := []int{
+		http.StatusInternalServerError,
+		http.StatusBadGateway,
+		http.StatusServiceUnavailable,
+		http.StatusGatewayTimeout,
+		521,
+	}
+	for _, status := range retryable {
+		if !isPoolKeyRetryStatus(status) {
+			t.Fatalf("expected status %d to retry within the same key pool", status)
+		}
+	}
+
+	nonRetryable := []int{
+		http.StatusUnauthorized,
+		http.StatusForbidden,
+		http.StatusTooManyRequests,
+		http.StatusBadRequest,
+	}
+	for _, status := range nonRetryable {
+		if isPoolKeyRetryStatus(status) {
+			t.Fatalf("expected status %d to use non-pool-retry handling", status)
+		}
+	}
+}
+
 func TestPrepareLLMUpstreamAttemptRunsRequestScriptForCurrentPoolKey(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())

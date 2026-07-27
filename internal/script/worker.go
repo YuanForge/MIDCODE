@@ -278,6 +278,8 @@ func execJob(ctx context.Context, job *model.TaskJob) *model.WorkerResult {
 			return fail("response mapping error: " + err.Error())
 		}
 		respData = mapped
+	} else if job.TaskType == "image" {
+		respData = normalizeOpenAIImageResponse(respData)
 	}
 
 	// 检查是否有异步上游任务 ID
@@ -305,6 +307,53 @@ func execJob(ctx context.Context, job *model.TaskJob) *model.WorkerResult {
 	base.Outcome = model.OutcomeDone
 	base.Result = result
 	return base
+}
+
+func normalizeOpenAIImageResponse(input map[string]interface{}) map[string]interface{} {
+	data, ok := input["data"].([]interface{})
+	if !ok {
+		return input
+	}
+
+	urls := make([]interface{}, 0, len(data))
+	for _, raw := range data {
+		item, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if imageURL, _ := item["url"].(string); strings.TrimSpace(imageURL) != "" {
+			urls = append(urls, imageURL)
+			continue
+		}
+		if encoded, _ := item["b64_json"].(string); strings.TrimSpace(encoded) != "" {
+			urls = append(urls, "data:"+imageMIMEFromBase64(encoded)+";base64,"+encoded)
+		}
+	}
+	if len(urls) == 0 {
+		return input
+	}
+
+	var imageResult interface{} = urls
+	if len(urls) == 1 {
+		imageResult = urls[0]
+	}
+	return map[string]interface{}{
+		"code":   200,
+		"status": 2,
+		"msg":    "",
+		"url":    imageResult,
+	}
+}
+
+func imageMIMEFromBase64(encoded string) string {
+	switch {
+	case strings.HasPrefix(encoded, "/9j/"):
+		return "image/jpeg"
+	case strings.HasPrefix(encoded, "UklGR"):
+		return "image/webp"
+	default:
+		return "image/png"
+	}
 }
 
 func isPoolKeyRetryStatus(statusCode int) bool {

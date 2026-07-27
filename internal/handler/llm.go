@@ -445,7 +445,7 @@ func shouldConvertRequestBody(clientProto, channelProto string, reqData map[stri
 }
 
 func isPoolKeyRetryStatus(statusCode int) bool {
-	return statusCode == http.StatusGatewayTimeout || statusCode == 521
+	return statusCode >= http.StatusInternalServerError || statusCode == 521
 }
 
 func isPoolKeyExhaustStatus(statusCode int) bool {
