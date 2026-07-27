@@ -38,7 +38,7 @@ func sendLLMRequest(c *gin.Context, ch *model.Channel, reqData map[string]interf
 		body, _ = json.Marshal(reqData)
 	}
 	timeout := time.Duration(ch.TimeoutMs) * time.Millisecond
-	httpClient := &http.Client{Timeout: timeout}
+	httpClient := newLLMHTTPClient(timeout, isStream)
 
 	op := ""
 	if len(responsesOperation) > 0 {
@@ -130,6 +130,13 @@ func sendLLMRequest(c *gin.Context, ch *model.Channel, reqData map[string]interf
 
 	resp, err := httpClient.Do(upReq)
 	return sanitizedHeaders, resp, err
+}
+
+func newLLMHTTPClient(timeout time.Duration, isStream bool) *http.Client {
+	if isStream {
+		timeout = 0
+	}
+	return &http.Client{Timeout: timeout}
 }
 
 func appendHeaderListValue(header http.Header, key, value string) {
