@@ -116,9 +116,14 @@ func parseModelProviderID(c *gin.Context) (int64, bool) {
 }
 
 func writeModelProviderError(c *gin.Context, err error) {
+	var referenced *service.ModelProviderReferencedError
 	switch {
 	case errors.Is(err, service.ErrModelProviderNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	case errors.As(err, &referenced):
+		c.JSON(http.StatusConflict, gin.H{
+			"error": err.Error(), "group_count": referenced.GroupCount, "channel_count": referenced.ChannelCount,
+		})
 	case errors.Is(err, service.ErrModelProviderConflict), errors.Is(err, service.ErrModelProviderReferenced):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 	case isModelProviderValidationError(err):

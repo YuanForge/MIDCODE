@@ -62,6 +62,8 @@ export function AdminModelGroupsPage() {
 
   const selectedProvider = data.providers.find((provider) => provider.id === form.model_provider_id)
   const selectedProviderInactive = Boolean(selectedProvider && selectedProvider.is_active === false)
+  const selectedGroup = data.groups.find((group) => group.id === form.id)
+  const providerLocked = Boolean(form.id && Math.max(selectedGroup?.model_count ?? 0, bindings.length) > 0)
 
   const visibleModelOptions = useMemo(() => {
     const keyword = modelSearch.trim().toLowerCase()
@@ -181,7 +183,7 @@ export function AdminModelGroupsPage() {
         </Card>
         <Card className="space-y-4 p-5">
           <div className="grid gap-3 sm:grid-cols-2"><div><Label>分组编码</Label><Input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))} placeholder="standard" /></div><div><Label>分组名称</Label><Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="标准组" /></div></div>
-          <div><Label htmlFor="group-model-provider">模型企业</Label><NativeSelect id="group-model-provider" value={String(form.model_provider_id || '')} onChange={(event) => setForm((current) => ({ ...current, model_provider_id: Number(event.target.value) }))}><option value="">请选择企业</option>{data.providers.filter((provider) => provider.is_active !== false || (Boolean(form.id) && provider.id === form.model_provider_id)).map((provider) => <option key={provider.id} value={provider.id} disabled={provider.is_active === false}>{provider.name}{provider.is_active === false ? '（已停用）' : ''}</option>)}</NativeSelect></div>
+          <div><Label htmlFor="group-model-provider">模型企业</Label><NativeSelect id="group-model-provider" disabled={providerLocked} value={String(form.model_provider_id || '')} onChange={(event) => setForm((current) => ({ ...current, model_provider_id: Number(event.target.value) }))}><option value="">请选择企业</option>{data.providers.filter((provider) => provider.is_active !== false || (Boolean(form.id) && provider.id === form.model_provider_id)).map((provider) => <option key={provider.id} value={provider.id} disabled={provider.is_active === false}>{provider.name}{provider.is_active === false ? '（已停用）' : ''}</option>)}</NativeSelect>{providerLocked ? <p className="mt-1 text-xs text-muted-foreground">已有模型绑定，需先清空绑定才能更换企业。</p> : null}</div>
           <div><Label>描述</Label><Input value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} /></div>
           <div className="border-t pt-4">
             <Label>模型绑定</Label>

@@ -1,11 +1,22 @@
 package service
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
 	"fanapi/internal/model"
 )
+
+func TestModelProviderReferencedErrorCarriesCounts(t *testing.T) {
+	err := &ModelProviderReferencedError{GroupCount: 2, ChannelCount: 3}
+	if !errors.Is(err, ErrModelProviderReferenced) {
+		t.Fatal("referenced error must unwrap to ErrModelProviderReferenced")
+	}
+	if err.GroupCount != 2 || err.ChannelCount != 3 {
+		t.Fatalf("reference counts = %d/%d, want 2/3", err.GroupCount, err.ChannelCount)
+	}
+}
 
 func TestNormalizeModelProviderCode(t *testing.T) {
 	if got := normalizeModelProviderCode(" OpenAI_Enterprise "); got != "openai_enterprise" {

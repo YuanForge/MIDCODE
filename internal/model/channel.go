@@ -110,7 +110,7 @@ type Channel struct {
 	Groups JSONStrings `xorm:"jsonb default('[]') 'groups'" json:"groups"`
 	// 展示字段
 	DisplayName     string    `xorm:"notnull default('') 'display_name'" json:"display_name"` // 用户端展示名称（自定义模型名），留空时以 Model 字段作为展示名和分组依据
-	ModelProviderID int64     `xorm:"notnull 'model_provider_id'" json:"model_provider_id"`
+	ModelProviderID int64     `xorm:"'model_provider_id'" json:"model_provider_id"`
 	ModelProvider   string    `xorm:"notnull default('') 'model_provider'" json:"model_provider"` // 模型对应的企业，如 OpenAI / Anthropic / Google
 	IconURL         string    `xorm:"notnull default('') 'icon_url'" json:"icon_url"`             // 模型图标 URL
 	Description     string    `xorm:"text default('') 'description'" json:"description"`          // 模型描述

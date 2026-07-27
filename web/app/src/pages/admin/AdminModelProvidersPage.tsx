@@ -135,16 +135,16 @@ export function AdminModelProvidersPage() {
 
       <Card className="overflow-hidden">
         <div className="max-w-full overflow-x-auto">
-          <Table className="min-w-[760px]">
+          <Table className="table-fixed sm:min-w-[760px] sm:table-auto">
             <TableHeader>
               <TableRow>
-                <TableHead>显示名称</TableHead>
-                <TableHead>企业编码</TableHead>
-                <TableHead>分组</TableHead>
-                <TableHead>渠道</TableHead>
-                <TableHead>排序</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead className="text-right">操作</TableHead>
+                <TableHead className="w-[45%] sm:w-auto">显示名称</TableHead>
+                <TableHead className="hidden sm:table-cell">企业编码</TableHead>
+                <TableHead className="hidden sm:table-cell">分组</TableHead>
+                <TableHead className="hidden sm:table-cell">渠道</TableHead>
+                <TableHead className="hidden sm:table-cell">排序</TableHead>
+                <TableHead className="w-16 sm:w-auto">状态</TableHead>
+                <TableHead className="w-28 text-right sm:w-auto">操作</TableHead>
               </TableRow>
             </TableHeader>
             {loading ? <TableSkeleton cols={7} /> : (
@@ -153,11 +153,11 @@ export function AdminModelProvidersPage() {
                   const referenced = hasReferences(provider)
                   return (
                     <TableRow key={provider.id}>
-                      <TableCell className="font-medium">{provider.name}</TableCell>
-                      <TableCell className="font-mono text-xs">{provider.code}</TableCell>
-                      <TableCell>{provider.group_count ?? 0}</TableCell>
-                      <TableCell>{provider.channel_count ?? 0}</TableCell>
-                      <TableCell>{provider.sort_order ?? 0}</TableCell>
+                      <TableCell className="min-w-0 font-medium"><span className="block truncate">{provider.name}</span><span className="block truncate font-mono text-xs text-muted-foreground sm:hidden">{provider.code}</span></TableCell>
+                      <TableCell className="hidden font-mono text-xs sm:table-cell">{provider.code}</TableCell>
+                      <TableCell className="hidden sm:table-cell">{provider.group_count ?? 0}</TableCell>
+                      <TableCell className="hidden sm:table-cell">{provider.channel_count ?? 0}</TableCell>
+                      <TableCell className="hidden sm:table-cell">{provider.sort_order ?? 0}</TableCell>
                       <TableCell><Badge variant={provider.is_active === false ? 'secondary' : 'default'}>{provider.is_active === false ? '停用' : '启用'}</Badge></TableCell>
                       <TableCell>
                         <div className="flex justify-end gap-1">

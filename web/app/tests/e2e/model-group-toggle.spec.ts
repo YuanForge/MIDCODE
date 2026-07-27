@@ -35,6 +35,14 @@ test('disables and re-enables a model group without stale form state', async ({ 
     })
   })
 
+  await page.route('**/api/admin/model-providers**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ providers: [{ id: 1, code: 'openai', name: 'OpenAI', is_active: true, sort_order: 0 }] }),
+    })
+  })
+
   await page.route('**/api/admin/model-groups**', async (route) => {
     const request = route.request()
     const pathname = new URL(request.url()).pathname
@@ -63,8 +71,8 @@ test('disables and re-enables a model group without stale form state', async ({ 
       contentType: 'application/json',
       body: JSON.stringify({
         groups: [
-          { id: 1, code: 'gpt-image-2', name: 'gpt-image-2', model_provider: 'OpenAI', description: '', is_active: isActive, model_count: 2 },
-          { id: 2, code: 'gpt-enterprise', name: 'GPT Enterprise Production Fallback Route With An Extremely Long Name', model_provider: 'OpenAI', description: '', is_active: true, model_count: 2 },
+          { id: 1, code: 'gpt-image-2', name: 'gpt-image-2', model_provider_id: 1, model_provider: 'OpenAI', model_provider_active: true, model_provider_sort_order: 0, description: '', is_active: isActive, model_count: 2 },
+          { id: 2, code: 'gpt-enterprise', name: 'GPT Enterprise Production Fallback Route With An Extremely Long Name', model_provider_id: 1, model_provider: 'OpenAI', model_provider_active: true, model_provider_sort_order: 0, description: '', is_active: true, model_count: 2 },
         ],
       }),
     })

@@ -8,11 +8,19 @@ const nav = await readFile(new URL('../../src/layouts/ConsoleLayout.tsx', import
 const permissions = await readFile(new URL('../../src/layouts/AdminLayout.tsx', import.meta.url), 'utf8')
 const groupsPage = await readFile(new URL('../../src/pages/admin/AdminModelGroupsPage.tsx', import.meta.url), 'utf8')
 const channelsPage = await readFile(new URL('../../src/pages/admin/AdminChannelsPage.tsx', import.meta.url), 'utf8')
+const modelGroup = await readFile(new URL('../../../../internal/model/model_group.go', import.meta.url), 'utf8')
+const channel = await readFile(new URL('../../../../internal/model/channel.go', import.meta.url), 'utf8')
 let page = ''
+let migration = ''
 try {
   page = await readFile(new URL('../../src/pages/admin/AdminModelProvidersPage.tsx', import.meta.url), 'utf8')
 } catch {
   page = ''
+}
+try {
+  migration = await readFile(new URL('../../../../scripts/migrate_20260727_model_providers.sql', import.meta.url), 'utf8')
+} catch {
+  migration = ''
 }
 
 test('admin API exposes the model provider catalog and management endpoints', () => {
@@ -51,4 +59,25 @@ test('model groups and channels select provider IDs from the shared catalog', ()
   assert.doesNotMatch(channelsPage, /value=\{form\.model_provider\}/)
   assert.match(groupsPage, /provider\.is_active !== false/)
   assert.match(channelsPage, /provider\.is_active !== false/)
+  assert.match(groupsPage, /providerLocked/)
+  assert.match(groupsPage, /NativeSelect[^>]*id="group-model-provider"[^>]*disabled=\{providerLocked\}/)
+  assert.match(groupsPage, /已有模型绑定，需先清空绑定才能更换企业/)
+})
+
+test('model provider migration audits legacy data before enforcing references', () => {
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS model_providers/i)
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS model_provider_id BIGINT(?!\s+NOT NULL)/i)
+  assert.match(migration, /VALUES\s*\([\s\S]*'openai'[\s\S]*'OpenAI'[\s\S]*'anthropic'[\s\S]*'Anthropic'/i)
+  assert.match(migration, /LOWER\(code\)/i)
+  assert.match(migration, /LOWER\(BTRIM\(name\)\)/i)
+  assert.match(migration, /blank_[a-z_]+[\s\S]*provider_collisions[\s\S]*unresolved_[a-z_]+[\s\S]*mismatched_[a-z_]+[\s\S]*cross_provider_models/i)
+  assert.match(migration, /RAISE EXCEPTION[\s\S]*model provider audit failed/i)
+  assert.match(migration, /ALTER COLUMN model_provider_id SET NOT NULL/i)
+  assert.match(migration, /FOREIGN KEY \(model_provider_id\)[\s\S]*REFERENCES model_providers\s*\(id\)[\s\S]*ON DELETE RESTRICT/i)
+  assert.doesNotMatch(migration, /DROP COLUMN\s+model_provider/i)
+})
+
+test('Sync2 leaves provider IDs nullable until the explicit audited migration runs', () => {
+  assert.match(modelGroup, /ModelProviderID int64\s+`xorm:"'model_provider_id'"/)
+  assert.match(channel, /ModelProviderID int64\s+`xorm:"'model_provider_id'"/)
 })

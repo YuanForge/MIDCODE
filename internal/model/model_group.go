@@ -7,7 +7,7 @@ type ModelGroup struct {
 	ID              int64     `xorm:"pk autoincr 'id'" json:"id"`
 	Code            string    `xorm:"notnull unique 'code'" json:"code"`
 	Name            string    `xorm:"notnull default('') 'name'" json:"name"`
-	ModelProviderID int64     `xorm:"notnull 'model_provider_id'" json:"model_provider_id"`
+	ModelProviderID int64     `xorm:"'model_provider_id'" json:"model_provider_id"`
 	ModelProvider   string    `xorm:"notnull default('') 'model_provider'" json:"model_provider"`
 	Description     string    `xorm:"text default('') 'description'" json:"description"`
 	IsActive        bool      `xorm:"notnull default(true) 'is_active'" json:"is_active"`

@@ -31,6 +31,17 @@ type ModelProviderSummary struct {
 	ChannelCount int64  `xorm:"channel_count" json:"channel_count"`
 }
 
+type ModelProviderReferencedError struct {
+	GroupCount   int64
+	ChannelCount int64
+}
+
+func (err *ModelProviderReferencedError) Error() string {
+	return fmt.Sprintf("%s: group_count=%d channel_count=%d", ErrModelProviderReferenced, err.GroupCount, err.ChannelCount)
+}
+
+func (*ModelProviderReferencedError) Unwrap() error { return ErrModelProviderReferenced }
+
 func normalizeModelProviderCode(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
@@ -189,12 +200,16 @@ func DeleteModelProvider(ctx context.Context, id int64) error {
 		return err
 	}
 	if counts.GroupCount+counts.ChannelCount > 0 {
-		return fmt.Errorf("%w: group_count=%d channel_count=%d", ErrModelProviderReferenced, counts.GroupCount, counts.ChannelCount)
+		return &ModelProviderReferencedError{GroupCount: counts.GroupCount, ChannelCount: counts.ChannelCount}
 	}
 	affected, err := db.Engine.ID(id).Delete(new(model.ModelProvider))
 	if err != nil {
 		if isModelProviderConstraintConflict(err) {
-			return fmt.Errorf("%w: model provider still has references", ErrModelProviderReferenced)
+			counts, countErr := modelProviderReferenceCounts(id)
+			if countErr != nil {
+				return countErr
+			}
+			return &ModelProviderReferencedError{GroupCount: counts.GroupCount, ChannelCount: counts.ChannelCount}
 		}
 		return err
 	}
