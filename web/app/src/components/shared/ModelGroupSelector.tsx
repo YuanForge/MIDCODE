@@ -71,6 +71,16 @@ export function ModelGroupSelector({ groups, selectedIds, onChange }: ModelGroup
     onChange(selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id])
   }
 
+  function orderedProviderGroups(providerGroups: ApiKeyModelGroup[]) {
+    const groupById = new Map(providerGroups.flatMap((group) => group.id ? [[group.id, group] as const] : []))
+    const selected = selectedIds.flatMap((id) => {
+      const group = groupById.get(id)
+      return group ? [group] : []
+    })
+    const selectedSet = new Set(selected.flatMap((group) => group.id ? [group.id] : []))
+    return [...selected, ...providerGroups.filter((group) => !group.id || !selectedSet.has(group.id))]
+  }
+
   function move(providerGroups: ApiKeyModelGroup[], id: number, direction: -1 | 1) {
     const providerIds = new Set(providerGroups.flatMap((group) => group.id ? [group.id] : []))
     const ordered = selectedIds.filter((selectedId) => providerIds.has(selectedId))
@@ -102,14 +112,19 @@ export function ModelGroupSelector({ groups, selectedIds, onChange }: ModelGroup
         const selectedProviderIds = selectedIds.filter((id) => provider.groups.some((group) => group.id === id))
         return (
           <TabsContent key={provider.key} value={provider.key} className="min-w-0 space-y-2">
-            {provider.groups.map((group) => {
+            {orderedProviderGroups(provider.groups).map((group) => {
               if (!group.id) return null
               const name = group.name || group.code || String(group.id)
               const discountLabel = officialDiscountLabel(group)
               const localIndex = selectedProviderIds.indexOf(group.id)
               const selected = localIndex >= 0
               return (
-                <div key={group.id} className="grid min-h-12 min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md border px-3 py-2">
+                <div
+                  key={group.id}
+                  data-model-group-card={group.id}
+                  data-model-group-selected={selected ? 'true' : 'false'}
+                  className="grid min-h-12 min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md border px-3 py-2 transition-colors"
+                >
                   <Checkbox id={`model-group-${group.id}`} aria-label={group.code || name} checked={selected} disabled={!provider.active} onCheckedChange={() => toggle(group.id as number)} />
                   <Label htmlFor={`model-group-${group.id}`} className="min-w-0 cursor-pointer data-[disabled=true]:cursor-default" data-disabled={!provider.active}>
                     <span className="flex min-w-0 items-center gap-2">
