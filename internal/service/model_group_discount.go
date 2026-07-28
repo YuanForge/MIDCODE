@@ -6,12 +6,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"fanapi/internal/db"
+	"fanapi/internal/model"
 )
 
 const (
@@ -20,7 +24,19 @@ const (
 	liteLLMPriceCatalogURL             = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
 	liteLLMPriceMaxBytes         int64 = 8 << 20
 	liteLLMPriceCacheTTL               = 6 * time.Hour
+	officialDiscountAvailable          = "available"
+	officialDiscountUnavailable        = "unavailable"
+	officialDiscountInconsistent       = "inconsistent"
 )
+
+type modelGroupDiscountRow struct {
+	GroupID       int64      `xorm:"group_id"`
+	Model         string     `xorm:"model"`
+	BillingType   string     `xorm:"billing_type"`
+	BillingConfig model.JSON `xorm:"billing_config"`
+}
+
+var modelGroupOfficialPriceCache = newLiteLLMPriceCache(nil, "", nil)
 
 type liteLLMTokenPrice struct {
 	InputUSDPerToken  float64
@@ -165,6 +181,105 @@ func (c *liteLLMPriceCache) fetch(ctx context.Context) (*liteLLMPriceCatalog, er
 		return nil, fmt.Errorf("fetch LiteLLM price catalog: HTTP %d", resp.StatusCode)
 	}
 	return parseLiteLLMTokenPrices(resp.Body, liteLLMPriceMaxBytes)
+}
+
+func calculateModelGroupOfficialDiscount(rows []modelGroupDiscountRow, catalog *liteLLMPriceCatalog, exchangeRate float64) (*int64, string) {
+	if catalog == nil || exchangeRate <= 0 || math.IsNaN(exchangeRate) || math.IsInf(exchangeRate, 0) {
+		return nil, officialDiscountUnavailable
+	}
+	var discountBPS *int64
+	for _, row := range rows {
+		if row.BillingType != "token" {
+			continue
+		}
+		price, ok := catalog.match(row.Model)
+		if !ok {
+			continue
+		}
+		dimensions := [...]struct {
+			sellingCredits float64
+			officialUSD    float64
+		}{
+			{mapFloat64(row.BillingConfig, "input_price_per_1m_tokens"), price.InputUSDPerToken},
+			{mapFloat64(row.BillingConfig, "output_price_per_1m_tokens"), price.OutputUSDPerToken},
+		}
+		for _, dimension := range dimensions {
+			if dimension.sellingCredits <= 0 || math.IsNaN(dimension.sellingCredits) || math.IsInf(dimension.sellingCredits, 0) || dimension.officialUSD <= 0 {
+				continue
+			}
+			officialCNYPerMillion := dimension.officialUSD * 1_000_000 * exchangeRate
+			sellingCNYPerMillion := dimension.sellingCredits / 1_000_000
+			rounded := int64(math.Round((sellingCNYPerMillion/officialCNYPerMillion*10_000)/10) * 10)
+			if discountBPS == nil {
+				discountBPS = &rounded
+				continue
+			}
+			if *discountBPS != rounded {
+				return nil, officialDiscountInconsistent
+			}
+		}
+	}
+	if discountBPS == nil {
+		return nil, officialDiscountUnavailable
+	}
+	return discountBPS, officialDiscountAvailable
+}
+
+func applyModelGroupOfficialDiscounts(groups []ModelGroupSummary, rows []modelGroupDiscountRow, catalog *liteLLMPriceCatalog, exchangeRate float64) {
+	rowsByGroup := make(map[int64][]modelGroupDiscountRow)
+	for _, row := range rows {
+		rowsByGroup[row.GroupID] = append(rowsByGroup[row.GroupID], row)
+	}
+	for index := range groups {
+		groups[index].OfficialDiscountBPS, groups[index].OfficialDiscountStatus = calculateModelGroupOfficialDiscount(rowsByGroup[groups[index].ID], catalog, exchangeRate)
+	}
+}
+
+func enrichModelGroupOfficialDiscounts(ctx context.Context, groups []ModelGroupSummary) error {
+	if len(groups) == 0 {
+		return nil
+	}
+	exchangeRate, err := loadUSDCNYExchangeRate(ctx)
+	if err != nil {
+		return err
+	}
+	catalog, err := modelGroupOfficialPriceCache.Load(ctx)
+	if err != nil {
+		log.Printf("[model-group-discount] LiteLLM price catalog unavailable: %v", err)
+		applyModelGroupOfficialDiscounts(groups, nil, nil, exchangeRate)
+		return nil
+	}
+
+	groupIDs := make([]int64, len(groups))
+	for index := range groups {
+		groupIDs[index] = groups[index].ID
+	}
+	var rows []modelGroupDiscountRow
+	if err := db.Engine.Context(ctx).Table("model_group_models").Alias("mgm").
+		Select("mgm.group_id AS group_id, c.model AS model, c.billing_type AS billing_type, c.billing_config AS billing_config").
+		Join("INNER", "channels c", "c.id = mgm.channel_id").
+		In("mgm.group_id", groupIDs).Find(&rows); err != nil {
+		return err
+	}
+	applyModelGroupOfficialDiscounts(groups, rows, catalog, exchangeRate)
+	return nil
+}
+
+func loadUSDCNYExchangeRate(ctx context.Context) (float64, error) {
+	var setting model.SystemSetting
+	found, err := db.Engine.Context(ctx).Where("key = ?", USDCNYExchangeRateSettingKey).Get(&setting)
+	if err != nil {
+		return 0, err
+	}
+	if !found || strings.TrimSpace(setting.Value) == "" {
+		return DefaultUSDCNYExchangeRate, nil
+	}
+	rate, err := ParseUSDCNYExchangeRate(setting.Value)
+	if err != nil {
+		log.Printf("[model-group-discount] invalid stored USD/CNY exchange rate %q; using %.2f", setting.Value, DefaultUSDCNYExchangeRate)
+		return DefaultUSDCNYExchangeRate, nil
+	}
+	return rate, nil
 }
 
 func ParseUSDCNYExchangeRate(value string) (float64, error) {

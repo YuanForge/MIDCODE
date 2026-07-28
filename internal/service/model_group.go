@@ -11,9 +11,11 @@ import (
 
 type ModelGroupSummary struct {
 	model.ModelGroup       `xorm:"extends"`
-	ModelProviderActive    bool  `xorm:"model_provider_active" json:"model_provider_active"`
-	ModelProviderSortOrder int   `xorm:"model_provider_sort_order" json:"model_provider_sort_order"`
-	ModelCount             int64 `xorm:"model_count" json:"model_count"`
+	ModelProviderActive    bool   `xorm:"model_provider_active" json:"model_provider_active"`
+	ModelProviderSortOrder int    `xorm:"model_provider_sort_order" json:"model_provider_sort_order"`
+	ModelCount             int64  `xorm:"model_count" json:"model_count"`
+	OfficialDiscountBPS    *int64 `xorm:"-" json:"official_discount_bps,omitempty"`
+	OfficialDiscountStatus string `xorm:"-" json:"official_discount_status,omitempty"`
 }
 
 type ModelGroupModelView struct {

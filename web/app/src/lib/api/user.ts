@@ -141,6 +141,8 @@ export type ApiKeyModelGroup = {
   description?: string
   is_active?: boolean
   model_count?: number
+  official_discount_bps?: number
+  official_discount_status?: 'available' | 'unavailable' | 'inconsistent'
 }
 
 export type ApiKeyModelGroupBinding = {

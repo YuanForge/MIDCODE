@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"fanapi/internal/model"
 )
 
 func TestParseUSDCNYExchangeRate(t *testing.T) {
@@ -155,5 +158,102 @@ func TestLiteLLMPriceCacheConcurrentColdLoadAndFirstFailure(t *testing.T) {
 	failedCache := newLiteLLMPriceCache(failing.Client(), failing.URL, time.Now)
 	if catalog, err := failedCache.Load(context.Background()); err == nil || catalog != nil {
 		t.Fatalf("first failed fetch = catalog %v, err %v", catalog, err)
+	}
+}
+
+func TestCalculateModelGroupOfficialDiscount(t *testing.T) {
+	catalog := &liteLLMPriceCatalog{
+		exact: map[string]liteLLMTokenPrice{
+			"provider/model-a": {InputUSDPerToken: 0.00001, OutputUSDPerToken: 0.00002},
+			"provider/model-b": {InputUSDPerToken: 0.00002, OutputUSDPerToken: 0.00004},
+		},
+		byModel: map[string][]string{
+			"model-a": {"provider/model-a"},
+			"model-b": {"provider/model-b"},
+		},
+	}
+	consistent := []modelGroupDiscountRow{
+		{Model: "provider/model-a", BillingType: "token", BillingConfig: model.JSON{
+			"input_price_per_1m_tokens":  float64(21_600_000),
+			"output_price_per_1m_tokens": float64(43_200_000),
+		}},
+		{Model: "model-b", BillingType: "token", BillingConfig: model.JSON{
+			"input_price_per_1m_tokens":  float64(43_200_000),
+			"output_price_per_1m_tokens": float64(86_400_000),
+		}},
+		{Model: "missing", BillingType: "token", BillingConfig: model.JSON{
+			"input_price_per_1m_tokens": float64(1),
+		}},
+	}
+	bps, status := calculateModelGroupOfficialDiscount(consistent, catalog, 7.2)
+	if status != officialDiscountAvailable || bps == nil || *bps != 3000 {
+		t.Fatalf("consistent discount = %v, %q, want 3000, available", bps, status)
+	}
+
+	inconsistent := []modelGroupDiscountRow{{
+		Model: "provider/model-a", BillingType: "token", BillingConfig: model.JSON{
+			"input_price_per_1m_tokens":  float64(21_600_000),
+			"output_price_per_1m_tokens": float64(72_000_000),
+		},
+	}}
+	bps, status = calculateModelGroupOfficialDiscount(inconsistent, catalog, 7.2)
+	if status != officialDiscountInconsistent || bps != nil {
+		t.Fatalf("mixed discount = %v, %q, want nil, inconsistent", bps, status)
+	}
+
+	unavailable := []modelGroupDiscountRow{
+		{Model: "missing", BillingType: "token", BillingConfig: model.JSON{"input_price_per_1m_tokens": float64(21_600_000)}},
+		{Model: "provider/model-a", BillingType: "image", BillingConfig: model.JSON{"input_price_per_1m_tokens": float64(21_600_000)}},
+	}
+	bps, status = calculateModelGroupOfficialDiscount(unavailable, catalog, 7.2)
+	if status != officialDiscountUnavailable || bps != nil {
+		t.Fatalf("unavailable discount = %v, %q, want nil, unavailable", bps, status)
+	}
+}
+
+func TestCalculateModelGroupOfficialDiscountRoundsToTenBPS(t *testing.T) {
+	catalog := &liteLLMPriceCatalog{
+		exact:   map[string]liteLLMTokenPrice{"model": {InputUSDPerToken: 0.00001}},
+		byModel: map[string][]string{"model": {"model"}},
+	}
+	rows := []modelGroupDiscountRow{{
+		Model: "model", BillingType: "token",
+		BillingConfig: model.JSON{"input_price_per_1m_tokens": float64(23_400_000)},
+	}}
+	bps, status := calculateModelGroupOfficialDiscount(rows, catalog, 7.2)
+	if status != officialDiscountAvailable || bps == nil || *bps != 3250 {
+		t.Fatalf("rounded discount = %v, %q, want 3250, available", bps, status)
+	}
+}
+
+func TestModelGroupOfficialDiscountSerialization(t *testing.T) {
+	bps := int64(3000)
+	available, err := json.Marshal(ModelGroupSummary{OfficialDiscountBPS: &bps, OfficialDiscountStatus: officialDiscountAvailable})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(available), `"official_discount_bps":3000`) || !strings.Contains(string(available), `"official_discount_status":"available"`) {
+		t.Fatalf("available JSON = %s", available)
+	}
+	unavailable, err := json.Marshal(ModelGroupSummary{OfficialDiscountStatus: officialDiscountUnavailable})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(unavailable), "official_discount_bps") || !strings.Contains(string(unavailable), `"official_discount_status":"unavailable"`) {
+		t.Fatalf("unavailable JSON = %s", unavailable)
+	}
+}
+
+func TestModelGroupOfficialDiscountEnrichmentSurvivesCatalogFailure(t *testing.T) {
+	bps := int64(3000)
+	groups := []ModelGroupSummary{
+		{ModelGroup: model.ModelGroup{ID: 1}, OfficialDiscountBPS: &bps, OfficialDiscountStatus: officialDiscountAvailable},
+		{ModelGroup: model.ModelGroup{ID: 2}},
+	}
+	applyModelGroupOfficialDiscounts(groups, nil, nil, 7.2)
+	for _, group := range groups {
+		if group.OfficialDiscountStatus != officialDiscountUnavailable || group.OfficialDiscountBPS != nil {
+			t.Fatalf("group %d after catalog failure = %v, %q", group.ID, group.OfficialDiscountBPS, group.OfficialDiscountStatus)
+		}
 	}
 }

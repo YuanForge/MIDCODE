@@ -74,7 +74,14 @@ func validateAPIKeyGroupSelection(groupIDs []int64) error {
 }
 
 func ListAvailableAPIKeyModelGroups(ctx context.Context) ([]ModelGroupSummary, error) {
-	return ListModelGroups(ctx, false)
+	groups, err := ListModelGroups(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	if err := enrichModelGroupOfficialDiscounts(ctx, groups); err != nil {
+		return nil, err
+	}
+	return groups, nil
 }
 
 func ListAPIKeyModelGroups(ctx context.Context, userID, keyID int64) ([]APIKeyModelGroupView, error) {
@@ -93,12 +100,22 @@ func ListAPIKeyModelGroups(ctx context.Context, userID, keyID int64) ([]APIKeyMo
 	for _, group := range groups {
 		groupMap[group.ID] = group
 	}
-	result := make([]APIKeyModelGroupView, 0, len(bindings))
+	selectedGroups := make([]ModelGroupSummary, 0, len(bindings))
+	selectedBindings := make([]model.APIKeyModelGroup, 0, len(bindings))
 	for _, binding := range bindings {
 		group, exists := groupMap[binding.GroupID]
 		if !exists {
 			continue
 		}
+		selectedGroups = append(selectedGroups, group)
+		selectedBindings = append(selectedBindings, binding)
+	}
+	if err := enrichModelGroupOfficialDiscounts(ctx, selectedGroups); err != nil {
+		return nil, err
+	}
+	result := make([]APIKeyModelGroupView, 0, len(selectedGroups))
+	for index, group := range selectedGroups {
+		binding := selectedBindings[index]
 		result = append(result, APIKeyModelGroupView{
 			ID: binding.ID, APIKeyID: binding.APIKeyID, GroupID: binding.GroupID,
 			Priority: binding.Priority, Group: group,
