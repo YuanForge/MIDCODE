@@ -113,4 +113,3 @@ Backend tests cover:
 - model-group API serialization.
 
 Frontend tests cover badge labels for available, unavailable, and inconsistent states and confirm the shared selector renders the badge in API-key creation and edit workflows. Existing group selection, ordering, provider tabs, disabled-provider preservation, billing, and routing behavior must remain unchanged.
-
