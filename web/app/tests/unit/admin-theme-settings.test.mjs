@@ -13,7 +13,7 @@ test('admin settings validates, saves, and immediately applies the brand theme',
   assert.match(page, /ThemeColorField/)
   assert.match(page, /const \{ updateThemeColor \} = useSiteSettings\(\)/)
   assert.match(page, /isThemeColorValueValid\(form\.theme_color \?\? ''\)/)
-  assert.match(page, /disabled=\{saving \|\| loading \|\| !themeColorValid\}/)
+  assert.match(page, /disabled=\{saving \|\| loading \|\| !themeColorValid \|\| !exchangeRateValid\}/)
   assert.match(page, /await adminApi\.updateSettings\(payload\)[\s\S]*updateThemeColor\(form\.theme_color \?\? ''\)/)
   assert.match(page, /value=\{form\.theme_color \?\? ''\}/)
 
