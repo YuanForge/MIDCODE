@@ -1,4 +1,4 @@
-import { ArrowDownIcon, ArrowUpIcon } from 'lucide-react'
+import { ArrowDownIcon, ArrowUpIcon, GripVerticalIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
@@ -63,6 +63,7 @@ export function ModelGroupSelector({ groups, selectedIds, onChange }: ModelGroup
     )
   }, [groups])
   const [requestedProvider, setRequestedProvider] = useState('')
+  const [draggedGroupId, setDraggedGroupId] = useState<number>()
   const activeProvider = providers.some((provider) => provider.key === requestedProvider)
     ? requestedProvider
     : providers[0]?.key ?? ''
@@ -81,15 +82,23 @@ export function ModelGroupSelector({ groups, selectedIds, onChange }: ModelGroup
     return [...selected, ...providerGroups.filter((group) => !group.id || !selectedSet.has(group.id))]
   }
 
-  function move(providerGroups: ApiKeyModelGroup[], id: number, direction: -1 | 1) {
+  function reorder(providerGroups: ApiKeyModelGroup[], sourceId: number, targetId: number) {
     const providerIds = new Set(providerGroups.flatMap((group) => group.id ? [group.id] : []))
     const ordered = selectedIds.filter((selectedId) => providerIds.has(selectedId))
-    const index = ordered.indexOf(id)
-    const target = index + direction
-    if (index < 0 || target < 0 || target >= ordered.length) return
-    ;[ordered[index], ordered[target]] = [ordered[target], ordered[index]]
+    const sourceIndex = ordered.indexOf(sourceId)
+    const targetIndex = ordered.indexOf(targetId)
+    if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return
+    const [source] = ordered.splice(sourceIndex, 1)
+    ordered.splice(targetIndex, 0, source)
     let cursor = 0
     onChange(selectedIds.map((selectedId) => providerIds.has(selectedId) ? ordered[cursor++] : selectedId))
+  }
+
+  function move(providerGroups: ApiKeyModelGroup[], id: number, direction: -1 | 1) {
+    const ordered = selectedIds.filter((selectedId) => providerGroups.some((group) => group.id === selectedId))
+    const index = ordered.indexOf(id)
+    const targetId = ordered[index + direction]
+    if (targetId !== undefined) reorder(providerGroups, id, targetId)
   }
 
   if (providers.length === 0) {
@@ -123,7 +132,14 @@ export function ModelGroupSelector({ groups, selectedIds, onChange }: ModelGroup
                   key={group.id}
                   data-model-group-card={group.id}
                   data-model-group-selected={selected ? 'true' : 'false'}
-                  className="grid min-h-12 min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md border px-3 py-2 transition-colors"
+                  onDragOver={(event) => {
+                    if (draggedGroupId !== undefined && selected) event.preventDefault()
+                  }}
+                  onDragEnter={() => {
+                    if (draggedGroupId !== undefined && selected) reorder(provider.groups, draggedGroupId, group.id as number)
+                  }}
+                  onDrop={() => setDraggedGroupId(undefined)}
+                  className={`grid min-h-12 min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md border px-3 py-2 transition-[border-color,box-shadow,opacity,background-color] ${draggedGroupId === group.id ? 'border-primary/60 bg-primary/5 opacity-60 shadow-sm' : ''}`}
                 >
                   <Checkbox id={`model-group-${group.id}`} aria-label={group.code || name} checked={selected} disabled={!provider.active} onCheckedChange={() => toggle(group.id as number)} />
                   <Label htmlFor={`model-group-${group.id}`} className="min-w-0 cursor-pointer data-[disabled=true]:cursor-default" data-disabled={!provider.active}>
@@ -136,6 +152,29 @@ export function ModelGroupSelector({ groups, selectedIds, onChange }: ModelGroup
                   </Label>
                   {selected ? (
                     <div className="flex shrink-0 items-center gap-1">
+                      {provider.active ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              size="icon-sm"
+                              variant="ghost"
+                              draggable
+                              aria-label={`拖动 ${name}`}
+                              className="cursor-grab active:cursor-grabbing"
+                              onDragStart={(event) => {
+                                event.dataTransfer.effectAllowed = 'move'
+                                event.dataTransfer.setData('text/plain', String(group.id))
+                                setDraggedGroupId(group.id as number)
+                              }}
+                              onDragEnd={() => setDraggedGroupId(undefined)}
+                            >
+                              <GripVerticalIcon />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>拖动排序</TooltipContent>
+                        </Tooltip>
+                      ) : null}
                       <Badge variant={localIndex === 0 ? 'default' : 'outline'} className="hidden sm:inline-flex">
                         {localIndex === 0 ? '优先使用' : `故障回退 ${localIndex}`}
                       </Badge>
