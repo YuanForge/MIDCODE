@@ -134,7 +134,10 @@ export function AdminSettingsPage() {
 
   // Sync from loaded data once
   if (!loading && !formReady && Object.keys(rawSettings).length > 0) {
-    setForm({ ...rawSettings })
+    setForm({
+      ...rawSettings,
+      usd_cny_exchange_rate: rawSettings.usd_cny_exchange_rate || '7.20',
+    })
     setAllowCustom(rawSettings.recharge_allow_custom !== 'false')
     setRebatePercent(String(parseFloat((parseFloat(rawSettings.default_rebate_ratio || '0') * 100).toFixed(2)) || ''))
     setVendorCommPercent(String(parseFloat((parseFloat(rawSettings.default_vendor_commission || '0') * 100).toFixed(2)) || ''))
@@ -216,16 +219,19 @@ export function AdminSettingsPage() {
   const payApplyEnabled = form.pay_apply_enabled === 'true'
   const shouqianbaEnabled = form.shouqianba_enabled === 'true'
   const themeColorValid = isThemeColorValueValid(form.theme_color ?? '')
+  const exchangeRate = Number(form.usd_cny_exchange_rate ?? '7.20')
+  const exchangeRateValid = Number.isFinite(exchangeRate) && exchangeRate > 0
   const payApplyNotifyUrl = `${window.location.origin.replace(':3001', '')}/pay/apply/notify`
   const shouqianbaNotifyUrl = `${window.location.origin.replace(':3001', '')}/pay/shouqianba/notify`
 
   async function save() {
-    if (!themeColorValid) return
+    if (!themeColorValid || !exchangeRateValid) return
     setSaving(true)
     setMutError('')
     try {
       const payload: SettingsMap = {
         ...form,
+        usd_cny_exchange_rate: form.usd_cny_exchange_rate ?? '7.20',
         recharge_allow_custom: allowCustom ? 'true' : 'false',
         recharge_plans: JSON.stringify(planRows),
         default_rebate_ratio: (parseFloat(rebatePercent || '0') / 100).toFixed(4),
@@ -253,7 +259,7 @@ export function AdminSettingsPage() {
         title="系统设置"
         description="配置平台基本信息、支付、公告及充值套餐等全局参数。"
         actions={
-          <Button onClick={save} disabled={saving || loading || !themeColorValid}>
+          <Button onClick={save} disabled={saving || loading || !themeColorValid || !exchangeRateValid}>
             <SaveIcon data-icon="inline-start" />
             {saving ? '保存中...' : '保存设置'}
           </Button>
@@ -300,6 +306,17 @@ export function AdminSettingsPage() {
                   </FieldRow>
                   <FieldRow label="主题颜色">
                     <ThemeColorField value={form.theme_color ?? ''} onChange={(value) => set('theme_color', value)} />
+                  </FieldRow>
+                  <FieldRow label="USD/CNY 汇率">
+                    <Input
+                      type="number"
+                      value={form.usd_cny_exchange_rate ?? '7.20'}
+                      min={0.0001}
+                      step={0.0001}
+                      onChange={(e) => set('usd_cny_exchange_rate', e.target.value)}
+                      className="w-40"
+                    />
+                    <Tip>用于 LiteLLM 将 USD 官方价格换算为 CNY。</Tip>
                   </FieldRow>
                   <FieldRow label="SEO 标题">
                     <Input value={form.seo_title ?? ''} onChange={(e) => set('seo_title', e.target.value)} placeholder="留空则使用站点名称" />

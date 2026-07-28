@@ -6,6 +6,7 @@ import (
 
 	"fanapi/internal/db"
 	"fanapi/internal/model"
+	"fanapi/internal/service"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -76,6 +77,12 @@ func UpdateSettings(c *gin.Context) {
 	if err := c.ShouldBindJSON(&updates); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+	if value, ok := updates[service.USDCNYExchangeRateSettingKey]; ok {
+		if _, err := service.ParseUSDCNYExchangeRate(value); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 	}
 	for key, value := range updates {
 		existing := &model.SystemSetting{}
