@@ -92,7 +92,19 @@ test('selects and orders API key groups independently by model provider', async 
   await page.getByRole('tab', { name: /^OpenAI/ }).click()
   await expect(page.getByText('3折', { exact: true })).toBeVisible()
   await expect(page.getByText('3.25折', { exact: true })).toBeVisible()
+  const openAIPanel = page.getByRole('tabpanel', { name: /^OpenAI/ })
+  const openAICards = openAIPanel.locator('[data-model-group-card]')
+  await expect(openAICards).toHaveText([/GPT K12/, /GPT Plus/])
   await page.getByRole('button', { name: '下移 GPT K12' }).click()
+  await expect(openAICards).toHaveText([/GPT Plus/, /GPT K12/])
+  await page.getByRole('button', { name: '拖动 GPT K12' }).dragTo(
+    openAICards.filter({ hasText: 'GPT Plus' }),
+  )
+  await expect(openAICards).toHaveText([/GPT K12/, /GPT Plus/])
+  await page.getByRole('button', { name: '拖动 GPT Plus' }).dragTo(
+    openAICards.filter({ hasText: 'GPT K12' }),
+  )
+  await expect(openAICards).toHaveText([/GPT Plus/, /GPT K12/])
   await page.getByRole('button', { name: '保存排序' }).click()
   await expect.poll(() => updatePayload?.group_ids).toEqual([2, 5, 3, 1, 4])
 
