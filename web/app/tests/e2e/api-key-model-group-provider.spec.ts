@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test'
 
 const groups = [
-  { id: 1, code: 'gpt-k12', name: 'GPT K12', model_provider_id: 10, model_provider: 'OpenAI', model_provider_active: true, model_provider_sort_order: 20, model_count: 2, is_active: true },
-  { id: 2, code: 'gpt-plus', name: 'GPT Plus', model_provider_id: 10, model_provider: 'OpenAI', model_provider_active: true, model_provider_sort_order: 20, model_count: 4, is_active: true },
-  { id: 3, code: 'claude', name: 'Claude', model_provider_id: 20, model_provider: 'Anthropic', model_provider_active: true, model_provider_sort_order: 10, model_count: 3, is_active: true },
-  { id: 4, code: 'claude-backup', name: 'Claude Backup', model_provider_id: 20, model_provider: 'Anthropic', model_provider_active: true, model_provider_sort_order: 10, model_count: 2, is_active: true },
+  { id: 1, code: 'gpt-k12', name: 'GPT K12', model_provider_id: 10, model_provider: 'OpenAI', model_provider_active: true, model_provider_sort_order: 20, model_count: 2, is_active: true, official_discount_bps: 3000, official_discount_status: 'available' },
+  { id: 2, code: 'gpt-plus', name: 'GPT Plus', model_provider_id: 10, model_provider: 'OpenAI', model_provider_active: true, model_provider_sort_order: 20, model_count: 4, is_active: true, official_discount_bps: 3250, official_discount_status: 'available' },
+  { id: 3, code: 'claude', name: 'Claude', model_provider_id: 20, model_provider: 'Anthropic', model_provider_active: true, model_provider_sort_order: 10, model_count: 3, is_active: true, official_discount_status: 'unavailable' },
+  { id: 4, code: 'claude-backup', name: 'Claude Backup', model_provider_id: 20, model_provider: 'Anthropic', model_provider_active: true, model_provider_sort_order: 10, model_count: 2, is_active: true, official_discount_status: 'inconsistent' },
 ]
 
 const disabledGroup = {
@@ -69,7 +69,11 @@ test('selects and orders API key groups independently by model provider', async 
   await expect(page.getByRole('tab')).toHaveText([/Anthropic/, /OpenAI/])
   await expect(page.getByRole('tab', { name: /OpenAI/ })).toBeVisible()
   await expect(page.getByRole('tab', { name: /Anthropic/ })).toBeVisible()
+  await expect(page.getByText('暂无官方价', { exact: true })).toBeVisible()
+  await expect(page.getByText('折扣不一致', { exact: true })).toBeVisible()
   await page.getByRole('tab', { name: /^OpenAI/ }).click()
+  await expect(page.getByText('3折', { exact: true })).toBeVisible()
+  await expect(page.getByText('3.25折', { exact: true })).toBeVisible()
   await page.getByLabel('gpt-k12').check()
   await page.getByLabel('gpt-plus').check()
   await page.getByRole('tab', { name: /Anthropic/ }).click()
@@ -86,6 +90,8 @@ test('selects and orders API key groups independently by model provider', async 
   await expect(page.getByLabel('legacy-gpt')).toBeDisabled()
   await expect(page.getByText('企业已停用，该绑定将原样保留')).toBeVisible()
   await page.getByRole('tab', { name: /^OpenAI/ }).click()
+  await expect(page.getByText('3折', { exact: true })).toBeVisible()
+  await expect(page.getByText('3.25折', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '下移 GPT K12' }).click()
   await page.getByRole('button', { name: '保存排序' }).click()
   await expect.poll(() => updatePayload?.group_ids).toEqual([2, 5, 3, 1, 4])

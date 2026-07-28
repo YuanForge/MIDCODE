@@ -25,6 +25,13 @@ function providerKey(group: ApiKeyModelGroup) {
   return group.model_provider_id ? String(group.model_provider_id) : `legacy:${providerName(group)}`
 }
 
+export function officialDiscountLabel(group: ApiKeyModelGroup) {
+  if (group.official_discount_status === 'inconsistent') return '折扣不一致'
+  if (group.official_discount_status !== 'available' || !Number.isFinite(group.official_discount_bps)) return '暂无官方价'
+  const folds = ((group.official_discount_bps as number) / 1000).toFixed(2).replace(/\.?0+$/, '')
+  return `${folds}折`
+}
+
 export function ModelGroupSelector({ groups, selectedIds, onChange }: ModelGroupSelectorProps) {
   const providers = useMemo(() => {
     const grouped = new Map<string, {
@@ -98,13 +105,17 @@ export function ModelGroupSelector({ groups, selectedIds, onChange }: ModelGroup
             {provider.groups.map((group) => {
               if (!group.id) return null
               const name = group.name || group.code || String(group.id)
+              const discountLabel = officialDiscountLabel(group)
               const localIndex = selectedProviderIds.indexOf(group.id)
               const selected = localIndex >= 0
               return (
                 <div key={group.id} className="grid min-h-12 min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md border px-3 py-2">
                   <Checkbox id={`model-group-${group.id}`} aria-label={group.code || name} checked={selected} disabled={!provider.active} onCheckedChange={() => toggle(group.id as number)} />
                   <Label htmlFor={`model-group-${group.id}`} className="min-w-0 cursor-pointer data-[disabled=true]:cursor-default" data-disabled={!provider.active}>
-                    <span className="block truncate font-medium">{name}</span>
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="truncate font-medium">{name}</span>
+                      <Badge variant="secondary" className="h-5 shrink-0 px-1.5 text-[11px] font-normal">{discountLabel}</Badge>
+                    </span>
                     <span className="block text-xs text-muted-foreground">{group.code} · {group.model_count ?? 0} 个模型</span>
                     {!provider.active ? <span className="block text-xs text-muted-foreground">企业已停用，该绑定将原样保留</span> : null}
                   </Label>
