@@ -248,4 +248,3 @@ git log -8 --oneline --decorate
 ```
 
 Expected: only the pre-existing `.superpowers/` remains untracked and no OctoAPI file changes.
-
