@@ -69,6 +69,9 @@ test('keeps channel Token statistics isolated by channel id', async ({ page }) =
   await page.route('**/api/admin/upstream-platforms', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ platforms: [] }) })
   })
+  await page.route('**/api/admin/model-providers**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ providers: [] }) })
+  })
   await page.route('**/api/admin/channels/97/token-stats**', async (route) => {
     requestedChannelId = '97'
     await route.fulfill({

@@ -33,6 +33,7 @@ export type SiteSettings = {
   qqGroupUrl: string
   wechatCsUrl: string
   qrCodeUrl: string
+  cardPurchaseUrl: string
   headerHtml: string
   footerHtml: string
   showLowPriceKey: boolean
@@ -68,6 +69,7 @@ const defaultSettings: SiteSettings = {
   qqGroupUrl: '',
   wechatCsUrl: '',
   qrCodeUrl: '',
+  cardPurchaseUrl: '',
   headerHtml: '',
   footerHtml: '',
   showLowPriceKey: true,
@@ -116,6 +118,7 @@ function parseSettings(response: unknown): SiteSettings {
     qqGroupUrl: String(record.qq_group_url || ''),
     wechatCsUrl: String(record.wechat_cs_url || ''),
     qrCodeUrl: String(record.qrcode_url || ''),
+    cardPurchaseUrl: String(record.card_purchase_url || ''),
     headerHtml: String(record.header_html || ''),
     footerHtml: String(record.footer_html || ''),
     showLowPriceKey: record.show_low_price_key !== 'false',

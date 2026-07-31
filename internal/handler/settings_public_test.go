@@ -9,3 +9,9 @@ func TestPublicSettingKeysExposeBranding(t *testing.T) {
 		}
 	}
 }
+
+func TestPublicSettingKeysExposeCardPurchaseURL(t *testing.T) {
+	if !publicSettingKeys["card_purchase_url"] {
+		t.Fatal("card_purchase_url must be exposed so users can buy card codes when payment channels fail")
+	}
+}

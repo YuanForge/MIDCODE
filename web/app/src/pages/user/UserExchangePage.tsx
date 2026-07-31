@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { TicketIcon } from 'lucide-react'
+import { ExternalLinkIcon, TicketIcon } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -20,8 +20,10 @@ import {
 import { userApi, type RedeemRecord } from '@/lib/api/user'
 import { formatCredits } from '@/lib/formatters/credits'
 import { useAsync } from '@/hooks/use-async'
+import { useSiteSettings } from '@/hooks/use-site-settings'
 
 export function UserExchangePage() {
+  const { settings } = useSiteSettings()
   const { data: history, loading, error: loadError, reload } = useAsync(async () => {
     const response = await userApi.getRedeemHistory()
     return Array.isArray(response) ? response : response.records ?? response.list ?? []
@@ -66,6 +68,19 @@ export function UserExchangePage() {
         </Alert>
       ) : null}
       <PageSection title="兑换卡密" description="兑换成功后积分会立即计入账户余额。">
+        {settings.cardPurchaseUrl ? (
+          <div className="mb-4 rounded-lg border bg-muted/30 p-3 text-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <span className="text-muted-foreground">没有卡密？可前往发卡网购买后再回来兑换。</span>
+              <Button asChild variant="outline" size="sm">
+                <a href={settings.cardPurchaseUrl} target="_blank" rel="noopener noreferrer">
+                  购买卡密
+                  <ExternalLinkIcon className="size-3.5" />
+                </a>
+              </Button>
+            </div>
+          </div>
+        ) : null}
         <div className="flex flex-col gap-3 sm:flex-row">
           <Input
             value={code}

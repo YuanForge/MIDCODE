@@ -29,6 +29,7 @@ var publicSettingKeys = map[string]bool{
 	"notice_content":               true,
 	"contact_info":                 true,
 	"qrcode_url":                   true,
+	"card_purchase_url":            true,
 	"recharge_plans":               true,
 	"recharge_allow_custom":        true,
 	"qq_group_url":                 true,
