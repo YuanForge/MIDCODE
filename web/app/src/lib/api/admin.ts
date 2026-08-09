@@ -130,6 +130,48 @@ export type AdminModelProvider = {
   updated_at?: string
 }
 
+export type ModelOfficialPriceBillingType = 'token' | 'image' | 'video' | 'audio' | 'count'
+export type ModelOfficialPriceCurrency = 'USD' | 'CNY'
+export type ModelOfficialPriceConfig = Record<string, string | number | Record<string, string | number>>
+
+export type AdminModelOfficialPrice = {
+  id?: number
+  model_provider_id: number
+  model_provider_code?: string
+  model_provider_name?: string
+  model_name: string
+  billing_type: ModelOfficialPriceBillingType
+  currency: ModelOfficialPriceCurrency
+  source_price_config: ModelOfficialPriceConfig
+  normalized_price_config?: ModelOfficialPriceConfig
+  exchange_rate_used?: string
+  exchange_rate_date?: string
+  is_active?: boolean
+  created_at?: string
+  updated_at?: string
+}
+
+export type ModelOfficialPriceInput = Pick<
+  AdminModelOfficialPrice,
+  'model_provider_id' | 'model_name' | 'billing_type' | 'currency' | 'source_price_config'
+>
+
+export type USDCNYExchangeRateStatus = {
+  value?: string
+  source?: string
+  date?: string
+  synced_at?: string
+  last_attempt_at?: string
+  last_error?: string
+  available?: boolean
+}
+
+export type AdminModelOfficialPriceListResponse = {
+  prices?: AdminModelOfficialPrice[]
+  total?: number
+  exchange_rate?: USDCNYExchangeRateStatus
+}
+
 export type AdminReferralUser = {
   id?: number
   username?: string
@@ -705,6 +747,16 @@ export const adminApi = {
     http.patch<Record<string, unknown>>(`/admin/model-providers/${id}/toggle`, { is_active: isActive }),
   deleteModelProvider: (id: number) =>
     http.delete<Record<string, unknown>>(`/admin/model-providers/${id}`),
+  listModelOfficialPrices: (params: Record<string, unknown> = {}) =>
+    http.get<AdminModelOfficialPriceListResponse>('/admin/model-official-prices', { params }),
+  createModelOfficialPrice: (payload: ModelOfficialPriceInput) =>
+    http.post<AdminModelOfficialPrice>('/admin/model-official-prices', payload),
+  updateModelOfficialPrice: (id: number, payload: ModelOfficialPriceInput) =>
+    http.put<AdminModelOfficialPrice>(`/admin/model-official-prices/${id}`, payload),
+  setModelOfficialPriceStatus: (id: number, isActive: boolean) =>
+    http.patch<AdminModelOfficialPrice>(`/admin/model-official-prices/${id}/status`, { is_active: isActive }),
+  deleteModelOfficialPrice: (id: number) =>
+    http.delete<Record<string, unknown>>(`/admin/model-official-prices/${id}`),
   listModelGroups: (includeInactive = true) =>
     http.get<{ groups?: AdminModelGroup[] }>('/admin/model-groups', { params: { include_inactive: includeInactive } }),
   createModelGroup: (payload: Partial<AdminModelGroup>) =>

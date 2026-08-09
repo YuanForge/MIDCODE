@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { lazy, Suspense, useRef, useState } from 'react'
 import { PlusIcon, SaveIcon, Trash2Icon, UploadIcon } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -18,6 +18,8 @@ import { adminApi, type AdminAuditLog } from '@/lib/api/admin'
 import { useAsync } from '@/hooks/use-async'
 import { useSiteSettings } from '@/hooks/use-site-settings'
 import { sanitizeHtml } from '@/lib/sanitize-html'
+
+const AdminOfficialPricesTab = lazy(() => import('./AdminOfficialPricesTab').then((module) => ({ default: module.AdminOfficialPricesTab })))
 
 type SettingsMap = Record<string, string>
 type PlanRow = { credits: number; bonus: number; amount: number; origin_amount: number; desc: string }
@@ -134,10 +136,7 @@ export function AdminSettingsPage() {
 
   // Sync from loaded data once
   if (!loading && !formReady && Object.keys(rawSettings).length > 0) {
-    setForm({
-      ...rawSettings,
-      usd_cny_exchange_rate: rawSettings.usd_cny_exchange_rate || '7.20',
-    })
+    setForm({ ...rawSettings })
     setAllowCustom(rawSettings.recharge_allow_custom !== 'false')
     setRebatePercent(String(parseFloat((parseFloat(rawSettings.default_rebate_ratio || '0') * 100).toFixed(2)) || ''))
     setVendorCommPercent(String(parseFloat((parseFloat(rawSettings.default_vendor_commission || '0') * 100).toFixed(2)) || ''))
@@ -219,19 +218,16 @@ export function AdminSettingsPage() {
   const payApplyEnabled = form.pay_apply_enabled === 'true'
   const shouqianbaEnabled = form.shouqianba_enabled === 'true'
   const themeColorValid = isThemeColorValueValid(form.theme_color ?? '')
-  const exchangeRate = Number(form.usd_cny_exchange_rate ?? '7.20')
-  const exchangeRateValid = Number.isFinite(exchangeRate) && exchangeRate > 0
   const payApplyNotifyUrl = `${window.location.origin.replace(':3001', '')}/pay/apply/notify`
   const shouqianbaNotifyUrl = `${window.location.origin.replace(':3001', '')}/pay/shouqianba/notify`
 
   async function save() {
-    if (!themeColorValid || !exchangeRateValid) return
+    if (!themeColorValid) return
     setSaving(true)
     setMutError('')
     try {
       const payload: SettingsMap = {
         ...form,
-        usd_cny_exchange_rate: form.usd_cny_exchange_rate ?? '7.20',
         recharge_allow_custom: allowCustom ? 'true' : 'false',
         recharge_plans: JSON.stringify(planRows),
         default_rebate_ratio: (parseFloat(rebatePercent || '0') / 100).toFixed(4),
@@ -241,6 +237,9 @@ export function AdminSettingsPage() {
       delete payload.pay_apply_notify_url
       delete payload.result_url_proxy_from
       delete payload.result_url_proxy_to
+      for (const key of Object.keys(payload)) {
+        if (key.startsWith('usd_cny_exchange_rate')) delete payload[key]
+      }
       await adminApi.updateSettings(payload)
       updateThemeColor(form.theme_color ?? '')
       toast.success('系统设置已保存')
@@ -259,7 +258,7 @@ export function AdminSettingsPage() {
         title="系统设置"
         description="配置平台基本信息、支付、公告及充值套餐等全局参数。"
         actions={
-          <Button onClick={save} disabled={saving || loading || !themeColorValid || !exchangeRateValid}>
+          <Button onClick={save} disabled={saving || loading || !themeColorValid}>
             <SaveIcon data-icon="inline-start" />
             {saving ? '保存中...' : '保存设置'}
           </Button>
@@ -285,17 +284,19 @@ export function AdminSettingsPage() {
             </div>
           ) : (
             <Tabs defaultValue="basic">
-              <TabsList className="w-full rounded-none border-b bg-transparent justify-start gap-0 p-0">
-                  {(['basic', 'appearance', 'payment', 'notice', 'plans', 'rebate', 'vendor', 'withdraw', 'alert', 'logs'] as const).map((tab) => (
+              <div className="w-full overflow-x-auto border-b">
+                <TabsList className="min-w-max rounded-none bg-transparent justify-start gap-0 p-0">
+                  {(['basic', 'appearance', 'payment', 'notice', 'plans', 'rebate', 'vendor', 'withdraw', 'alert', 'official-prices', 'logs'] as const).map((tab) => (
                   <TabsTrigger
                     key={tab}
                     value={tab}
-                    className="rounded-none border-b-2 border-transparent px-4 py-3 text-sm data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+                    className="shrink-0 rounded-none border-b-2 border-transparent px-4 py-3 text-sm data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
                   >
-                    {{ basic: '基本设置', appearance: '页眉&页脚', payment: '支付设置', notice: '公告&联系', plans: '充值套餐', rebate: '邀请返佣', vendor: '号商设置', withdraw: '提现限额', alert: '告警设置', logs: '操作日志' }[tab]}
+                    {{ basic: '基本设置', appearance: '页眉&页脚', payment: '支付设置', notice: '公告&联系', plans: '充值套餐', rebate: '邀请返佣', vendor: '号商设置', withdraw: '提现限额', alert: '告警设置', 'official-prices': '官方价', logs: '操作日志' }[tab]}
                   </TabsTrigger>
                 ))}
-              </TabsList>
+                </TabsList>
+              </div>
 
               {/* 基本设置 */}
               <TabsContent value="basic" className="px-6 pb-6">
@@ -306,17 +307,6 @@ export function AdminSettingsPage() {
                   </FieldRow>
                   <FieldRow label="主题颜色">
                     <ThemeColorField value={form.theme_color ?? ''} onChange={(value) => set('theme_color', value)} />
-                  </FieldRow>
-                  <FieldRow label="USD/CNY 汇率">
-                    <Input
-                      type="number"
-                      value={form.usd_cny_exchange_rate ?? '7.20'}
-                      min={0.0001}
-                      step={0.0001}
-                      onChange={(e) => set('usd_cny_exchange_rate', e.target.value)}
-                      className="w-40"
-                    />
-                    <Tip>用于 LiteLLM 将 USD 官方价格换算为 CNY。</Tip>
                   </FieldRow>
                   <FieldRow label="SEO 标题">
                     <Input value={form.seo_title ?? ''} onChange={(e) => set('seo_title', e.target.value)} placeholder="留空则使用站点名称" />
@@ -937,6 +927,12 @@ export function AdminSettingsPage() {
                     <Tip>平台从号商收益中抽取的比例（例：2 表示号商实得 98%）。可为单个号商单独设置以覆盖此全局值。</Tip>
                   </FieldRow>
                 </div>
+              </TabsContent>
+
+              <TabsContent value="official-prices" className="px-0 pb-0">
+                <Suspense fallback={<div className="space-y-3 p-4"><Skeleton className="h-16 w-full" /><Skeleton className="h-40 w-full" /></div>}>
+                  <AdminOfficialPricesTab />
+                </Suspense>
               </TabsContent>
             </Tabs>
           )}
