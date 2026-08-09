@@ -94,6 +94,49 @@ type USDCNYExchangeRateStatus struct {
 	Available     bool   `json:"available"`
 }
 
+type modelOfficialPriceKey struct {
+	ModelProviderID int64
+	ModelName       string
+	BillingType     string
+}
+
+type supplementalOfficialPrice struct {
+	Currency              string
+	NormalizedPriceConfig model.JSON
+}
+
+type supplementalOfficialPrices map[modelOfficialPriceKey]supplementalOfficialPrice
+
+func loadActiveSupplementalOfficialPrices(ctx context.Context, providerIDs []int64) (supplementalOfficialPrices, error) {
+	if len(providerIDs) == 0 {
+		return supplementalOfficialPrices{}, nil
+	}
+	var rows []model.ModelOfficialPrice
+	if err := db.Engine.Context(ctx).Where("is_active = ?", true).In("model_provider_id", providerIDs).Find(&rows); err != nil {
+		return nil, err
+	}
+	return buildSupplementalOfficialPrices(rows), nil
+}
+
+func buildSupplementalOfficialPrices(rows []model.ModelOfficialPrice) supplementalOfficialPrices {
+	prices := make(supplementalOfficialPrices, len(rows))
+	for _, row := range rows {
+		modelName := strings.TrimSpace(row.ModelName)
+		if !row.IsActive || row.ModelProviderID <= 0 || modelName == "" {
+			continue
+		}
+		prices[modelOfficialPriceKey{
+			ModelProviderID: row.ModelProviderID,
+			ModelName:       modelName,
+			BillingType:     row.BillingType,
+		}] = supplementalOfficialPrice{
+			Currency:              row.Currency,
+			NormalizedPriceConfig: row.NormalizedPriceConfig,
+		}
+	}
+	return prices
+}
+
 func validateModelOfficialPriceInput(input CreateModelOfficialPriceInput) error {
 	_, err := normalizeModelOfficialPriceInput(input)
 	return err

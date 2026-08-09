@@ -28,17 +28,20 @@ const (
 )
 
 type modelGroupDiscountRow struct {
-	GroupID       int64      `xorm:"group_id"`
-	Model         string     `xorm:"model"`
-	BillingType   string     `xorm:"billing_type"`
-	BillingConfig model.JSON `xorm:"billing_config"`
+	GroupID         int64      `xorm:"group_id"`
+	ModelProviderID int64      `xorm:"model_provider_id"`
+	Model           string     `xorm:"model"`
+	BillingType     string     `xorm:"billing_type"`
+	BillingConfig   model.JSON `xorm:"billing_config"`
 }
 
 var modelGroupOfficialPriceCache = newLiteLLMPriceCache(nil, "", nil)
 
 type liteLLMTokenPrice struct {
-	InputUSDPerToken  float64
-	OutputUSDPerToken float64
+	InputUSDPerToken         float64
+	OutputUSDPerToken        float64
+	CacheCreationUSDPerToken float64
+	CacheReadUSDPerToken     float64
 }
 
 type liteLLMPriceCatalog struct {
@@ -84,23 +87,32 @@ func parseLiteLLMTokenPrices(r io.Reader, maxBytes int64) (*liteLLMPriceCatalog,
 	}
 	for key, raw := range entries {
 		var entry struct {
-			Mode   string          `json:"mode"`
-			Input  json.RawMessage `json:"input_cost_per_token"`
-			Output json.RawMessage `json:"output_cost_per_token"`
+			Mode          string          `json:"mode"`
+			Input         json.RawMessage `json:"input_cost_per_token"`
+			Output        json.RawMessage `json:"output_cost_per_token"`
+			CacheCreation json.RawMessage `json:"cache_creation_input_token_cost"`
+			CacheRead     json.RawMessage `json:"cache_read_input_token_cost"`
 		}
 		if json.Unmarshal(raw, &entry) != nil || entry.Mode != "chat" {
 			continue
 		}
 		input, inputOK := parsePositiveJSONNumber(entry.Input)
 		output, outputOK := parsePositiveJSONNumber(entry.Output)
-		if !inputOK && !outputOK {
+		cacheCreation, cacheCreationOK := parsePositiveJSONNumber(entry.CacheCreation)
+		cacheRead, cacheReadOK := parsePositiveJSONNumber(entry.CacheRead)
+		if !inputOK && !outputOK && !cacheCreationOK && !cacheReadOK {
 			continue
 		}
 		key = strings.TrimSpace(key)
 		if key == "" {
 			continue
 		}
-		catalog.exact[key] = liteLLMTokenPrice{InputUSDPerToken: input, OutputUSDPerToken: output}
+		catalog.exact[key] = liteLLMTokenPrice{
+			InputUSDPerToken:         input,
+			OutputUSDPerToken:        output,
+			CacheCreationUSDPerToken: cacheCreation,
+			CacheReadUSDPerToken:     cacheRead,
+		}
 	}
 	if len(catalog.exact) == 0 {
 		return nil, fmt.Errorf("LiteLLM price catalog contains no usable chat token prices")
@@ -181,33 +193,43 @@ func (c *liteLLMPriceCache) fetch(ctx context.Context) (*liteLLMPriceCatalog, er
 	return parseLiteLLMTokenPrices(resp.Body, liteLLMPriceMaxBytes)
 }
 
-func calculateModelGroupOfficialDiscount(rows []modelGroupDiscountRow, catalog *liteLLMPriceCatalog, exchangeRate float64) (*int64, string) {
-	if catalog == nil || exchangeRate <= 0 || math.IsNaN(exchangeRate) || math.IsInf(exchangeRate, 0) {
-		return nil, officialDiscountUnavailable
-	}
+func calculateModelGroupOfficialDiscount(rows []modelGroupDiscountRow, catalog *liteLLMPriceCatalog, supplements supplementalOfficialPrices, exchangeRate float64) (*int64, string) {
 	var discountBPS *int64
 	for _, row := range rows {
-		if row.BillingType != "token" {
-			continue
+		key := modelOfficialPriceKey{
+			ModelProviderID: row.ModelProviderID,
+			ModelName:       strings.TrimSpace(row.Model),
+			BillingType:     row.BillingType,
 		}
-		price, ok := catalog.match(row.Model)
-		if !ok {
-			continue
+		supplement, supplementOK := supplements[key]
+		if supplementOK && supplement.Currency == "USD" && !validUSDCNYExchangeRate(exchangeRate) {
+			supplementOK = false
 		}
-		dimensions := [...]struct {
-			sellingCredits float64
-			officialUSD    float64
-		}{
-			{mapFloat64(row.BillingConfig, "input_price_per_1m_tokens"), price.InputUSDPerToken},
-			{mapFloat64(row.BillingConfig, "output_price_per_1m_tokens"), price.OutputUSDPerToken},
+		var litePrice liteLLMTokenPrice
+		litePriceOK := false
+		if row.BillingType == "token" && catalog != nil && validUSDCNYExchangeRate(exchangeRate) {
+			litePrice, litePriceOK = catalog.match(row.Model)
 		}
-		for _, dimension := range dimensions {
-			if dimension.sellingCredits <= 0 || math.IsNaN(dimension.sellingCredits) || math.IsInf(dimension.sellingCredits, 0) || dimension.officialUSD <= 0 {
+		for _, dimension := range officialDiscountDimensions(row.BillingType) {
+			sellingCredits, sellingOK := officialPriceConfigValue(row.BillingConfig, dimension)
+			if !sellingOK {
 				continue
 			}
-			officialCNYPerMillion := dimension.officialUSD * 1_000_000 * exchangeRate
-			sellingCNYPerMillion := dimension.sellingCredits / 1_000_000
-			rounded := int64(math.Round((sellingCNYPerMillion/officialCNYPerMillion*10_000)/10) * 10)
+			officialCredits, officialOK := float64(0), false
+			if litePriceOK {
+				officialCredits, officialOK = liteLLMTokenOfficialCredits(litePrice, dimension, exchangeRate)
+			}
+			if !officialOK && supplementOK {
+				officialCredits, officialOK = officialPriceConfigValue(supplement.NormalizedPriceConfig, dimension)
+			}
+			if !officialOK {
+				continue
+			}
+			roundedValue := math.Round((sellingCredits/officialCredits*10_000)/10) * 10
+			if math.IsNaN(roundedValue) || math.IsInf(roundedValue, 0) || roundedValue > math.MaxInt64 {
+				continue
+			}
+			rounded := int64(roundedValue)
 			if discountBPS == nil {
 				discountBPS = &rounded
 				continue
@@ -223,13 +245,78 @@ func calculateModelGroupOfficialDiscount(rows []modelGroupDiscountRow, catalog *
 	return discountBPS, officialDiscountAvailable
 }
 
-func applyModelGroupOfficialDiscounts(groups []ModelGroupSummary, rows []modelGroupDiscountRow, catalog *liteLLMPriceCatalog, exchangeRate float64) {
+func officialDiscountDimensions(billingType string) []string {
+	switch billingType {
+	case "token":
+		return []string{
+			"input_price_per_1m_tokens",
+			"output_price_per_1m_tokens",
+			"cache_creation_price_per_1m_tokens",
+			"cache_read_price_per_1m_tokens",
+		}
+	case "image":
+		return []string{"base_price", "default_size_price", "size_prices.1k", "size_prices.2k", "size_prices.3k", "size_prices.4k"}
+	case "video", "audio":
+		return []string{"price_per_second"}
+	case "count":
+		return []string{"price_per_call"}
+	default:
+		return nil
+	}
+}
+
+func officialPriceConfigValue(config model.JSON, dimension string) (float64, bool) {
+	value := interface{}(nil)
+	if strings.HasPrefix(dimension, "size_prices.") {
+		sizes, ok := config["size_prices"].(map[string]interface{})
+		if !ok {
+			if typed, typedOK := config["size_prices"].(model.JSON); typedOK {
+				sizes = map[string]interface{}(typed)
+			} else {
+				return 0, false
+			}
+		}
+		value = sizes[strings.TrimPrefix(dimension, "size_prices.")]
+	} else {
+		value = config[dimension]
+	}
+	parsed, ok := toFloat64(value)
+	if !ok || parsed <= 0 || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+		return 0, false
+	}
+	return parsed, true
+}
+
+func liteLLMTokenOfficialCredits(price liteLLMTokenPrice, dimension string, exchangeRate float64) (float64, bool) {
+	usdPerToken := float64(0)
+	switch dimension {
+	case "input_price_per_1m_tokens":
+		usdPerToken = price.InputUSDPerToken
+	case "output_price_per_1m_tokens":
+		usdPerToken = price.OutputUSDPerToken
+	case "cache_creation_price_per_1m_tokens":
+		usdPerToken = price.CacheCreationUSDPerToken
+	case "cache_read_price_per_1m_tokens":
+		usdPerToken = price.CacheReadUSDPerToken
+	}
+	credits := math.Round(usdPerToken * exchangeRate * 1_000_000_000_000)
+	if usdPerToken <= 0 || credits <= 0 || math.IsNaN(credits) || math.IsInf(credits, 0) || credits > math.MaxInt64 {
+		return 0, false
+	}
+	return credits, true
+}
+
+func validUSDCNYExchangeRate(exchangeRate float64) bool {
+	return exchangeRate > 0 && !math.IsNaN(exchangeRate) && !math.IsInf(exchangeRate, 0)
+}
+
+func applyModelGroupOfficialDiscounts(groups []ModelGroupSummary, rows []modelGroupDiscountRow, catalog *liteLLMPriceCatalog, supplements supplementalOfficialPrices, exchangeRate float64) {
 	rowsByGroup := make(map[int64][]modelGroupDiscountRow)
 	for _, row := range rows {
 		rowsByGroup[row.GroupID] = append(rowsByGroup[row.GroupID], row)
 	}
 	for index := range groups {
-		groups[index].OfficialDiscountBPS, groups[index].OfficialDiscountStatus = calculateModelGroupOfficialDiscount(rowsByGroup[groups[index].ID], catalog, exchangeRate)
+		groups[index].OfficialDiscountBPS, groups[index].OfficialDiscountStatus = calculateModelGroupOfficialDiscount(rowsByGroup[groups[index].ID], catalog, supplements, exchangeRate)
 	}
 }
 
@@ -244,8 +331,7 @@ func enrichModelGroupOfficialDiscounts(ctx context.Context, groups []ModelGroupS
 	catalog, err := modelGroupOfficialPriceCache.Load(ctx)
 	if err != nil {
 		log.Printf("[model-group-discount] LiteLLM price catalog unavailable: %v", err)
-		applyModelGroupOfficialDiscounts(groups, nil, nil, exchangeRate)
-		return nil
+		catalog = nil
 	}
 
 	groupIDs := make([]int64, len(groups))
@@ -254,12 +340,26 @@ func enrichModelGroupOfficialDiscounts(ctx context.Context, groups []ModelGroupS
 	}
 	var rows []modelGroupDiscountRow
 	if err := db.Engine.Context(ctx).Table("model_group_models").Alias("mgm").
-		Select("mgm.group_id AS group_id, c.model AS model, c.billing_type AS billing_type, c.billing_config AS billing_config").
+		Select("mgm.group_id AS group_id, c.model_provider_id AS model_provider_id, c.model AS model, c.billing_type AS billing_type, c.billing_config AS billing_config").
 		Join("INNER", "channels c", "c.id = mgm.channel_id").
 		In("mgm.group_id", groupIDs).Find(&rows); err != nil {
 		return err
 	}
-	applyModelGroupOfficialDiscounts(groups, rows, catalog, exchangeRate)
+	providerSet := make(map[int64]struct{})
+	for _, row := range rows {
+		if row.ModelProviderID > 0 {
+			providerSet[row.ModelProviderID] = struct{}{}
+		}
+	}
+	providerIDs := make([]int64, 0, len(providerSet))
+	for providerID := range providerSet {
+		providerIDs = append(providerIDs, providerID)
+	}
+	supplements, err := loadActiveSupplementalOfficialPrices(ctx, providerIDs)
+	if err != nil {
+		return err
+	}
+	applyModelGroupOfficialDiscounts(groups, rows, catalog, supplements, exchangeRate)
 	return nil
 }
 

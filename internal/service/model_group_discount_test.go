@@ -39,7 +39,7 @@ func TestParseUSDCNYExchangeRate(t *testing.T) {
 
 func TestLiteLLMTokenPricesAndModelMatch(t *testing.T) {
 	fixture := `{
-		"provider/model-a":{"mode":"chat","input_cost_per_token":0.00001,"output_cost_per_token":0.00002},
+		"provider/model-a":{"mode":"chat","input_cost_per_token":0.00001,"output_cost_per_token":0.00002,"cache_creation_input_token_cost":0.0000125,"cache_read_input_token_cost":0.000001},
 		"other/model-a":{"mode":"chat","input_cost_per_token":0.00003,"output_cost_per_token":0.00004},
 		"unique/model-b":{"mode":"chat","input_cost_per_token":0.00005,"output_cost_per_token":0.00006},
 		"image/model-c":{"mode":"image_generation","input_cost_per_token":0.1,"output_cost_per_token":0.2},
@@ -51,7 +51,7 @@ func TestLiteLLMTokenPricesAndModelMatch(t *testing.T) {
 	}
 
 	exact, ok := catalog.match(" provider/model-a ")
-	if !ok || exact.InputUSDPerToken != 0.00001 || exact.OutputUSDPerToken != 0.00002 {
+	if !ok || exact.InputUSDPerToken != 0.00001 || exact.OutputUSDPerToken != 0.00002 || exact.CacheCreationUSDPerToken != 0.0000125 || exact.CacheReadUSDPerToken != 0.000001 {
 		t.Fatalf("exact match = %#v, %v", exact, ok)
 	}
 	if _, ok := catalog.match("model-a"); ok {
@@ -155,6 +155,146 @@ func TestLiteLLMPriceCacheConcurrentColdLoadAndFirstFailure(t *testing.T) {
 	}
 }
 
+func TestCalculateModelGroupOfficialDiscountUsesLiteLLMThenSupplement(t *testing.T) {
+	row := modelGroupDiscountRow{
+		ModelProviderID: 1,
+		Model:           "model-a",
+		BillingType:     "token",
+		BillingConfig: model.JSON{
+			"input_price_per_1m_tokens":      int64(13_500_000),
+			"output_price_per_1m_tokens":     int64(27_000_000),
+			"cache_read_price_per_1m_tokens": int64(1_350_000),
+		},
+	}
+	catalog := &liteLLMPriceCatalog{
+		exact:   map[string]liteLLMTokenPrice{"model-a": {InputUSDPerToken: 0.000002, OutputUSDPerToken: 0.000004}},
+		byModel: map[string][]string{"model-a": {"model-a"}},
+	}
+	extra := buildSupplementalOfficialPrices([]model.ModelOfficialPrice{{
+		ModelProviderID: 1, ModelName: "model-a", BillingType: "token", Currency: "CNY", IsActive: true,
+		NormalizedPriceConfig: model.JSON{"cache_read_price_per_1m_tokens": int64(1_350_000)},
+	}})
+	bps, status := calculateModelGroupOfficialDiscount([]modelGroupDiscountRow{row}, catalog, extra, 6.75)
+	if status != officialDiscountAvailable || bps == nil || *bps != 10_000 {
+		t.Fatalf("bps=%v status=%s", bps, status)
+	}
+}
+
+func TestCalculateModelGroupOfficialDiscountLiteLLMCacheWinsSupplement(t *testing.T) {
+	row := modelGroupDiscountRow{
+		ModelProviderID: 1, Model: "model-a", BillingType: "token",
+		BillingConfig: model.JSON{"cache_read_price_per_1m_tokens": int64(13_500_000)},
+	}
+	catalog := &liteLLMPriceCatalog{
+		exact:   map[string]liteLLMTokenPrice{"model-a": {CacheReadUSDPerToken: 0.000001}},
+		byModel: map[string][]string{"model-a": {"model-a"}},
+	}
+	extra := supplementalPricesForTest(1, "model-a", "token", "CNY", model.JSON{
+		"cache_read_price_per_1m_tokens": int64(13_500_000),
+	})
+	bps, status := calculateModelGroupOfficialDiscount([]modelGroupDiscountRow{row}, catalog, extra, 6.75)
+	if status != officialDiscountAvailable || bps == nil || *bps != 20_000 {
+		t.Fatalf("bps=%v status=%s, want LiteLLM-derived 20000", bps, status)
+	}
+}
+
+func TestCalculateModelGroupOfficialDiscountUsesCNYSupplementWithoutRate(t *testing.T) {
+	row := modelGroupDiscountRow{
+		ModelProviderID: 1, Model: "domestic-model", BillingType: "count",
+		BillingConfig: model.JSON{"price_per_call": int64(2_000_000)},
+	}
+	extra := supplementalPricesForTest(1, "domestic-model", "count", "CNY", model.JSON{"price_per_call": int64(2_000_000)})
+	bps, status := calculateModelGroupOfficialDiscount([]modelGroupDiscountRow{row}, nil, extra, 0)
+	if status != officialDiscountAvailable || bps == nil || *bps != 10_000 {
+		t.Fatalf("bps=%v status=%s", bps, status)
+	}
+
+	usd := supplementalPricesForTest(1, "domestic-model", "count", "USD", model.JSON{"price_per_call": int64(2_000_000)})
+	if bps, status := calculateModelGroupOfficialDiscount([]modelGroupDiscountRow{row}, nil, usd, 0); status != officialDiscountUnavailable || bps != nil {
+		t.Fatalf("USD without rate = %v, %s", bps, status)
+	}
+}
+
+func TestSupplementalOfficialPriceMatchingIsExact(t *testing.T) {
+	row := modelGroupDiscountRow{
+		ModelProviderID: 1, Model: "provider/model-a", BillingType: "count",
+		BillingConfig: model.JSON{"price_per_call": int64(1_000_000)},
+	}
+	invalidRows := []model.ModelOfficialPrice{
+		{ModelProviderID: 1, ModelName: "provider/model-a", BillingType: "count", Currency: "CNY", IsActive: false, NormalizedPriceConfig: model.JSON{"price_per_call": int64(1_000_000)}},
+		{ModelProviderID: 2, ModelName: "provider/model-a", BillingType: "count", Currency: "CNY", IsActive: true, NormalizedPriceConfig: model.JSON{"price_per_call": int64(1_000_000)}},
+		{ModelProviderID: 1, ModelName: "model-a", BillingType: "count", Currency: "CNY", IsActive: true, NormalizedPriceConfig: model.JSON{"price_per_call": int64(1_000_000)}},
+		{ModelProviderID: 1, ModelName: "provider/model-a", BillingType: "video", Currency: "CNY", IsActive: true, NormalizedPriceConfig: model.JSON{"price_per_second": int64(1_000_000)}},
+	}
+	invalid := buildSupplementalOfficialPrices(invalidRows)
+	if bps, status := calculateModelGroupOfficialDiscount([]modelGroupDiscountRow{row}, nil, invalid, 0); status != officialDiscountUnavailable || bps != nil {
+		t.Fatalf("inexact supplement matched: %v, %s", bps, status)
+	}
+	exact := supplementalPricesForTest(1, "provider/model-a", "count", "CNY", model.JSON{"price_per_call": int64(1_000_000)})
+	row.Model = " provider/model-a "
+	if bps, status := calculateModelGroupOfficialDiscount([]modelGroupDiscountRow{row}, nil, exact, 0); status != officialDiscountAvailable || bps == nil || *bps != 10_000 {
+		t.Fatalf("trimmed exact supplement = %v, %s", bps, status)
+	}
+}
+
+func TestCalculateModelGroupOfficialDiscountNonTokenDimensions(t *testing.T) {
+	tests := []struct {
+		name     string
+		billing  string
+		selling  model.JSON
+		official model.JSON
+	}{
+		{name: "image tier", billing: "image", selling: model.JSON{"size_prices": map[string]interface{}{"2k": int64(2_000_000)}}, official: model.JSON{"size_prices": map[string]interface{}{"2k": int64(2_000_000)}}},
+		{name: "video second", billing: "video", selling: model.JSON{"price_per_second": int64(3_000_000)}, official: model.JSON{"price_per_second": int64(3_000_000)}},
+		{name: "audio second", billing: "audio", selling: model.JSON{"price_per_second": int64(4_000_000)}, official: model.JSON{"price_per_second": int64(4_000_000)}},
+		{name: "count call", billing: "count", selling: model.JSON{"price_per_call": int64(5_000_000)}, official: model.JSON{"price_per_call": int64(5_000_000)}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			row := modelGroupDiscountRow{ModelProviderID: 1, Model: "model", BillingType: tt.billing, BillingConfig: tt.selling}
+			extra := supplementalPricesForTest(1, "model", tt.billing, "CNY", tt.official)
+			bps, status := calculateModelGroupOfficialDiscount([]modelGroupDiscountRow{row}, nil, extra, 0)
+			if status != officialDiscountAvailable || bps == nil || *bps != 10_000 {
+				t.Fatalf("bps=%v status=%s", bps, status)
+			}
+		})
+	}
+}
+
+func TestCalculateModelGroupOfficialDiscountSupplementalInconsistentAndColdStart(t *testing.T) {
+	rows := []modelGroupDiscountRow{
+		{ModelProviderID: 1, Model: "a", BillingType: "count", BillingConfig: model.JSON{"price_per_call": int64(1_000_000)}},
+		{ModelProviderID: 1, Model: "b", BillingType: "count", BillingConfig: model.JSON{"price_per_call": int64(2_000_000)}},
+	}
+	extra := buildSupplementalOfficialPrices([]model.ModelOfficialPrice{
+		{ModelProviderID: 1, ModelName: "a", BillingType: "count", Currency: "CNY", IsActive: true, NormalizedPriceConfig: model.JSON{"price_per_call": int64(1_000_000)}},
+		{ModelProviderID: 1, ModelName: "b", BillingType: "count", Currency: "CNY", IsActive: true, NormalizedPriceConfig: model.JSON{"price_per_call": int64(1_000_000)}},
+	})
+	if bps, status := calculateModelGroupOfficialDiscount(rows, nil, extra, 0); status != officialDiscountInconsistent || bps != nil {
+		t.Fatalf("inconsistent supplements = %v, %s", bps, status)
+	}
+
+	tokenRow := modelGroupDiscountRow{
+		ModelProviderID: 1, Model: "cold", BillingType: "token",
+		BillingConfig: model.JSON{"input_price_per_1m_tokens": int64(9_000_000)},
+	}
+	tokenExtra := supplementalPricesForTest(1, "cold", "token", "CNY", model.JSON{"input_price_per_1m_tokens": int64(9_000_000)})
+	if bps, status := calculateModelGroupOfficialDiscount([]modelGroupDiscountRow{tokenRow}, nil, tokenExtra, 0); status != officialDiscountAvailable || bps == nil || *bps != 10_000 {
+		t.Fatalf("cold-start supplement = %v, %s", bps, status)
+	}
+}
+
+func supplementalPricesForTest(providerID int64, modelName, billingType, currency string, config model.JSON) supplementalOfficialPrices {
+	return buildSupplementalOfficialPrices([]model.ModelOfficialPrice{{
+		ModelProviderID:       providerID,
+		ModelName:             modelName,
+		BillingType:           billingType,
+		Currency:              currency,
+		IsActive:              true,
+		NormalizedPriceConfig: config,
+	}})
+}
+
 func TestCalculateModelGroupOfficialDiscount(t *testing.T) {
 	catalog := &liteLLMPriceCatalog{
 		exact: map[string]liteLLMTokenPrice{
@@ -179,7 +319,7 @@ func TestCalculateModelGroupOfficialDiscount(t *testing.T) {
 			"input_price_per_1m_tokens": float64(1),
 		}},
 	}
-	bps, status := calculateModelGroupOfficialDiscount(consistent, catalog, 7.2)
+	bps, status := calculateModelGroupOfficialDiscount(consistent, catalog, nil, 7.2)
 	if status != officialDiscountAvailable || bps == nil || *bps != 3000 {
 		t.Fatalf("consistent discount = %v, %q, want 3000, available", bps, status)
 	}
@@ -190,7 +330,7 @@ func TestCalculateModelGroupOfficialDiscount(t *testing.T) {
 			"output_price_per_1m_tokens": float64(72_000_000),
 		},
 	}}
-	bps, status = calculateModelGroupOfficialDiscount(inconsistent, catalog, 7.2)
+	bps, status = calculateModelGroupOfficialDiscount(inconsistent, catalog, nil, 7.2)
 	if status != officialDiscountInconsistent || bps != nil {
 		t.Fatalf("mixed discount = %v, %q, want nil, inconsistent", bps, status)
 	}
@@ -199,7 +339,7 @@ func TestCalculateModelGroupOfficialDiscount(t *testing.T) {
 		{Model: "missing", BillingType: "token", BillingConfig: model.JSON{"input_price_per_1m_tokens": float64(21_600_000)}},
 		{Model: "provider/model-a", BillingType: "image", BillingConfig: model.JSON{"input_price_per_1m_tokens": float64(21_600_000)}},
 	}
-	bps, status = calculateModelGroupOfficialDiscount(unavailable, catalog, 7.2)
+	bps, status = calculateModelGroupOfficialDiscount(unavailable, catalog, nil, 7.2)
 	if status != officialDiscountUnavailable || bps != nil {
 		t.Fatalf("unavailable discount = %v, %q, want nil, unavailable", bps, status)
 	}
@@ -214,7 +354,7 @@ func TestCalculateModelGroupOfficialDiscountRoundsToTenBPS(t *testing.T) {
 		Model: "model", BillingType: "token",
 		BillingConfig: model.JSON{"input_price_per_1m_tokens": float64(23_400_000)},
 	}}
-	bps, status := calculateModelGroupOfficialDiscount(rows, catalog, 7.2)
+	bps, status := calculateModelGroupOfficialDiscount(rows, catalog, nil, 7.2)
 	if status != officialDiscountAvailable || bps == nil || *bps != 3250 {
 		t.Fatalf("rounded discount = %v, %q, want 3250, available", bps, status)
 	}
@@ -244,7 +384,7 @@ func TestModelGroupOfficialDiscountEnrichmentSurvivesCatalogFailure(t *testing.T
 		{ModelGroup: model.ModelGroup{ID: 1}, OfficialDiscountBPS: &bps, OfficialDiscountStatus: officialDiscountAvailable},
 		{ModelGroup: model.ModelGroup{ID: 2}},
 	}
-	applyModelGroupOfficialDiscounts(groups, nil, nil, 7.2)
+	applyModelGroupOfficialDiscounts(groups, nil, nil, nil, 7.2)
 	for _, group := range groups {
 		if group.OfficialDiscountStatus != officialDiscountUnavailable || group.OfficialDiscountBPS != nil {
 			t.Fatalf("group %d after catalog failure = %v, %q", group.ID, group.OfficialDiscountBPS, group.OfficialDiscountStatus)
