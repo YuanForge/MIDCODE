@@ -151,6 +151,9 @@ func persistUSDCNYExchangeRateSuccess(ctx context.Context, rate frankfurterUSDCN
 		}
 	}()
 
+	if _, err = lockUSDCNYExchangeRateSetting(session, true); err != nil {
+		return err
+	}
 	settings, err := loadUSDCNYExchangeRateSettings(session)
 	if err != nil {
 		return err
@@ -243,6 +246,17 @@ func loadUSDCNYExchangeRateSettings(session *xorm.Session) (map[string]string, e
 		settings[row.Key] = row.Value
 	}
 	return settings, nil
+}
+
+func lockUSDCNYExchangeRateSetting(session *xorm.Session, exclusive bool) (bool, error) {
+	lock := "FOR SHARE"
+	if exclusive {
+		lock = "FOR UPDATE"
+	}
+	var row struct {
+		Value string `xorm:"value"`
+	}
+	return session.SQL("SELECT value FROM system_settings WHERE key = ? "+lock, USDCNYExchangeRateSettingKey).Get(&row)
 }
 
 func parseAutomaticUSDCNYExchangeRate(settings map[string]string) (float64, bool) {

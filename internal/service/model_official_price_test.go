@@ -1,11 +1,22 @@
 package service
 
 import (
+	"errors"
 	"math"
 	"testing"
 
 	"fanapi/internal/model"
 )
+
+func TestValidateOfficialPriceInputRequiresProvider(t *testing.T) {
+	err := validateModelOfficialPriceInput(CreateModelOfficialPriceInput{
+		ModelName: "qwen-max", BillingType: "token", Currency: "CNY",
+		SourcePriceConfig: model.JSON{"input_price_per_1m_tokens": "2"},
+	})
+	if !errors.Is(err, ErrModelOfficialPriceProviderNotFound) {
+		t.Fatalf("err=%v", err)
+	}
+}
 
 func TestNormalizeOfficialPriceConfig(t *testing.T) {
 	got, err := NormalizeOfficialPriceConfig("USD", "token", model.JSON{

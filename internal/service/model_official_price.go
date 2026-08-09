@@ -1,11 +1,17 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
+	"time"
 
+	"fanapi/internal/db"
 	"fanapi/internal/model"
+
+	"xorm.io/xorm"
 )
 
 const officialPriceCreditsPerCNY = int64(1_000_000)
@@ -32,6 +38,340 @@ var officialImageSizes = map[string]struct{}{
 	"2k": {},
 	"3k": {},
 	"4k": {},
+}
+
+var (
+	ErrModelOfficialPriceInvalid                 = errors.New("model official price is invalid")
+	ErrModelOfficialPriceNotFound                = errors.New("model official price not found")
+	ErrModelOfficialPriceProviderNotFound        = errors.New("model official price provider not found")
+	ErrModelOfficialPriceConflict                = errors.New("model official price conflict")
+	ErrModelOfficialPriceExchangeRateUnavailable = errors.New("automatic USD/CNY exchange rate is unavailable")
+)
+
+type CreateModelOfficialPriceInput struct {
+	ModelProviderID   int64      `json:"model_provider_id"`
+	ModelName         string     `json:"model_name"`
+	BillingType       string     `json:"billing_type"`
+	Currency          string     `json:"currency"`
+	SourcePriceConfig model.JSON `json:"source_price_config"`
+}
+
+type UpdateModelOfficialPriceInput = CreateModelOfficialPriceInput
+
+type ModelOfficialPriceListFilter struct {
+	Page            int
+	Size            int
+	ModelProviderID int64
+	ModelName       string
+	BillingType     string
+	IsActive        *bool
+}
+
+type ModelOfficialPriceSummary struct {
+	ID                    int64      `xorm:"id" json:"id"`
+	ModelProviderID       int64      `xorm:"model_provider_id" json:"model_provider_id"`
+	ModelProviderCode     string     `xorm:"model_provider_code" json:"model_provider_code"`
+	ModelProviderName     string     `xorm:"model_provider_name" json:"model_provider_name"`
+	ModelName             string     `xorm:"model_name" json:"model_name"`
+	BillingType           string     `xorm:"billing_type" json:"billing_type"`
+	Currency              string     `xorm:"currency" json:"currency"`
+	SourcePriceConfig     model.JSON `xorm:"source_price_config" json:"source_price_config"`
+	NormalizedPriceConfig model.JSON `xorm:"normalized_price_config" json:"normalized_price_config"`
+	ExchangeRateUsed      string     `xorm:"exchange_rate_used" json:"exchange_rate_used"`
+	ExchangeRateDate      string     `xorm:"exchange_rate_date" json:"exchange_rate_date"`
+	IsActive              bool       `xorm:"is_active" json:"is_active"`
+	CreatedAt             time.Time  `xorm:"created_at" json:"created_at"`
+	UpdatedAt             time.Time  `xorm:"updated_at" json:"updated_at"`
+}
+
+type USDCNYExchangeRateStatus struct {
+	Value         string `json:"value"`
+	Source        string `json:"source"`
+	Date          string `json:"date"`
+	SyncedAt      string `json:"synced_at"`
+	LastAttemptAt string `json:"last_attempt_at"`
+	LastError     string `json:"last_error"`
+	Available     bool   `json:"available"`
+}
+
+func validateModelOfficialPriceInput(input CreateModelOfficialPriceInput) error {
+	_, err := normalizeModelOfficialPriceInput(input)
+	return err
+}
+
+func normalizeModelOfficialPriceInput(input CreateModelOfficialPriceInput) (CreateModelOfficialPriceInput, error) {
+	if input.ModelProviderID <= 0 {
+		return input, ErrModelOfficialPriceProviderNotFound
+	}
+	input.ModelName = strings.TrimSpace(input.ModelName)
+	if input.ModelName == "" {
+		return input, fmt.Errorf("%w: model name is required", ErrModelOfficialPriceInvalid)
+	}
+	validationRate := ""
+	if input.Currency == "USD" {
+		validationRate = "1"
+	}
+	if _, err := NormalizeOfficialPriceConfig(input.Currency, input.BillingType, input.SourcePriceConfig, validationRate); err != nil {
+		return input, fmt.Errorf("%w: %v", ErrModelOfficialPriceInvalid, err)
+	}
+	return input, nil
+}
+
+func CreateModelOfficialPrice(ctx context.Context, input CreateModelOfficialPriceInput) (_ *model.ModelOfficialPrice, err error) {
+	input, err = normalizeModelOfficialPriceInput(input)
+	if err != nil {
+		return nil, err
+	}
+	session := db.Engine.NewSession().Context(ctx)
+	defer session.Close()
+	if err = session.Begin(); err != nil {
+		return nil, err
+	}
+	defer rollbackSessionOnError(session, &err)
+	if err = requireModelOfficialPriceProvider(session, input.ModelProviderID); err != nil {
+		return nil, err
+	}
+	normalized, rate, rateDate, err := normalizeModelOfficialPriceInSession(session, input)
+	if err != nil {
+		return nil, err
+	}
+	price := &model.ModelOfficialPrice{
+		ModelProviderID:       input.ModelProviderID,
+		ModelName:             input.ModelName,
+		BillingType:           input.BillingType,
+		Currency:              input.Currency,
+		SourcePriceConfig:     input.SourcePriceConfig,
+		NormalizedPriceConfig: normalized,
+		ExchangeRateUsed:      rate,
+		ExchangeRateDate:      rateDate,
+		IsActive:              true,
+	}
+	if _, err = session.Insert(price); err != nil {
+		if isModelOfficialPriceConflict(err) {
+			return nil, fmt.Errorf("%w: provider, model and billing type already exist", ErrModelOfficialPriceConflict)
+		}
+		return nil, err
+	}
+	if err = session.Commit(); err != nil {
+		return nil, err
+	}
+	return price, nil
+}
+
+func UpdateModelOfficialPrice(ctx context.Context, id int64, input UpdateModelOfficialPriceInput) (_ *model.ModelOfficialPrice, err error) {
+	if id <= 0 {
+		return nil, ErrModelOfficialPriceNotFound
+	}
+	input, err = normalizeModelOfficialPriceInput(input)
+	if err != nil {
+		return nil, err
+	}
+	session := db.Engine.NewSession().Context(ctx)
+	defer session.Close()
+	if err = session.Begin(); err != nil {
+		return nil, err
+	}
+	defer rollbackSessionOnError(session, &err)
+	current := &model.ModelOfficialPrice{}
+	found, err := session.ID(id).Get(current)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, ErrModelOfficialPriceNotFound
+	}
+	if err = requireModelOfficialPriceProvider(session, input.ModelProviderID); err != nil {
+		return nil, err
+	}
+	normalized, rate, rateDate, err := normalizeModelOfficialPriceInSession(session, input)
+	if err != nil {
+		return nil, err
+	}
+	current.ModelProviderID = input.ModelProviderID
+	current.ModelName = input.ModelName
+	current.BillingType = input.BillingType
+	current.Currency = input.Currency
+	current.SourcePriceConfig = input.SourcePriceConfig
+	current.NormalizedPriceConfig = normalized
+	current.ExchangeRateUsed = rate
+	current.ExchangeRateDate = rateDate
+	if _, err = session.ID(id).Cols(
+		"model_provider_id", "model_name", "billing_type", "currency",
+		"source_price_config", "normalized_price_config", "exchange_rate_used", "exchange_rate_date",
+	).Update(current); err != nil {
+		if isModelOfficialPriceConflict(err) {
+			return nil, fmt.Errorf("%w: provider, model and billing type already exist", ErrModelOfficialPriceConflict)
+		}
+		return nil, err
+	}
+	if err = session.Commit(); err != nil {
+		return nil, err
+	}
+	return current, nil
+}
+
+func SetModelOfficialPriceStatus(ctx context.Context, id int64, active bool) (*model.ModelOfficialPrice, error) {
+	price, err := GetModelOfficialPrice(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	affected, err := db.Engine.Context(ctx).ID(id).Cols("is_active").Update(&model.ModelOfficialPrice{IsActive: active})
+	if err != nil {
+		return nil, err
+	}
+	if affected == 0 {
+		return nil, ErrModelOfficialPriceNotFound
+	}
+	price.IsActive = active
+	return price, nil
+}
+
+func DeleteModelOfficialPrice(ctx context.Context, id int64) (*model.ModelOfficialPrice, error) {
+	price, err := GetModelOfficialPrice(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	affected, err := db.Engine.Context(ctx).ID(id).Delete(new(model.ModelOfficialPrice))
+	if err != nil {
+		return nil, err
+	}
+	if affected == 0 {
+		return nil, ErrModelOfficialPriceNotFound
+	}
+	return price, nil
+}
+
+func GetModelOfficialPrice(ctx context.Context, id int64) (*model.ModelOfficialPrice, error) {
+	if id <= 0 {
+		return nil, ErrModelOfficialPriceNotFound
+	}
+	price := &model.ModelOfficialPrice{}
+	found, err := db.Engine.Context(ctx).ID(id).Get(price)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, ErrModelOfficialPriceNotFound
+	}
+	return price, nil
+}
+
+func ListModelOfficialPrices(ctx context.Context, filter ModelOfficialPriceListFilter) ([]ModelOfficialPriceSummary, int64, error) {
+	if filter.Page < 1 {
+		filter.Page = 1
+	}
+	if filter.Size < 1 || filter.Size > 100 {
+		filter.Size = 20
+	}
+	countQuery := applyModelOfficialPriceListFilter(db.Engine.Context(ctx).Table("model_official_prices").Alias("mop"), filter)
+	total, err := countQuery.Count(new(model.ModelOfficialPrice))
+	if err != nil {
+		return nil, 0, err
+	}
+	rows := make([]ModelOfficialPriceSummary, 0)
+	query := applyModelOfficialPriceListFilter(db.Engine.Context(ctx).Table("model_official_prices").Alias("mop"), filter).
+		Join("INNER", "model_providers mp", "mp.id = mop.model_provider_id").
+		Select("mop.*, mp.code AS model_provider_code, mp.name AS model_provider_name").
+		OrderBy("mop.updated_at DESC, mop.id DESC").
+		Limit(filter.Size, (filter.Page-1)*filter.Size)
+	if err := query.Find(&rows); err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
+}
+
+func GetUSDCNYExchangeRateStatus(ctx context.Context) (USDCNYExchangeRateStatus, error) {
+	keys := []string{
+		USDCNYExchangeRateSettingKey,
+		USDCNYExchangeRateSourceSettingKey,
+		USDCNYExchangeRateDateSettingKey,
+		USDCNYExchangeRateSyncedAtSettingKey,
+		USDCNYExchangeRateLastAttemptSettingKey,
+		USDCNYExchangeRateLastErrorSettingKey,
+	}
+	var rows []model.SystemSetting
+	if err := db.Engine.Context(ctx).In("key", keys).Find(&rows); err != nil {
+		return USDCNYExchangeRateStatus{}, err
+	}
+	settings := make(map[string]string, len(rows))
+	for _, row := range rows {
+		settings[row.Key] = row.Value
+	}
+	_, available := parseAutomaticUSDCNYExchangeRate(settings)
+	return USDCNYExchangeRateStatus{
+		Value:         settings[USDCNYExchangeRateSettingKey],
+		Source:        settings[USDCNYExchangeRateSourceSettingKey],
+		Date:          settings[USDCNYExchangeRateDateSettingKey],
+		SyncedAt:      settings[USDCNYExchangeRateSyncedAtSettingKey],
+		LastAttemptAt: settings[USDCNYExchangeRateLastAttemptSettingKey],
+		LastError:     settings[USDCNYExchangeRateLastErrorSettingKey],
+		Available:     available,
+	}, nil
+}
+
+func applyModelOfficialPriceListFilter(query *xorm.Session, filter ModelOfficialPriceListFilter) *xorm.Session {
+	if filter.ModelProviderID > 0 {
+		query = query.Where("mop.model_provider_id = ?", filter.ModelProviderID)
+	}
+	if modelName := strings.TrimSpace(filter.ModelName); modelName != "" {
+		query = query.Where("LOWER(mop.model_name) LIKE LOWER(?)", "%"+modelName+"%")
+	}
+	if filter.BillingType != "" {
+		query = query.Where("mop.billing_type = ?", filter.BillingType)
+	}
+	if filter.IsActive != nil {
+		query = query.Where("mop.is_active = ?", *filter.IsActive)
+	}
+	return query
+}
+
+func requireModelOfficialPriceProvider(session *xorm.Session, providerID int64) error {
+	found, err := session.ID(providerID).Exist(new(model.ModelProvider))
+	if err != nil {
+		return err
+	}
+	if !found {
+		return ErrModelOfficialPriceProviderNotFound
+	}
+	return nil
+}
+
+func normalizeModelOfficialPriceInSession(session *xorm.Session, input CreateModelOfficialPriceInput) (model.JSON, string, string, error) {
+	rate, rateDate := "", ""
+	if input.Currency == "USD" {
+		found, err := lockUSDCNYExchangeRateSetting(session, false)
+		if err != nil {
+			return nil, "", "", err
+		}
+		if !found {
+			return nil, "", "", ErrModelOfficialPriceExchangeRateUnavailable
+		}
+		settings, err := loadUSDCNYExchangeRateSettings(session)
+		if err != nil {
+			return nil, "", "", err
+		}
+		if _, ok := parseAutomaticUSDCNYExchangeRate(settings); !ok {
+			return nil, "", "", ErrModelOfficialPriceExchangeRateUnavailable
+		}
+		rate = settings[USDCNYExchangeRateSettingKey]
+		rateDate = settings[USDCNYExchangeRateDateSettingKey]
+	}
+	normalized, err := NormalizeOfficialPriceConfig(input.Currency, input.BillingType, input.SourcePriceConfig, rate)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("%w: %v", ErrModelOfficialPriceInvalid, err)
+	}
+	return normalized, rate, rateDate, nil
+}
+
+func rollbackSessionOnError(session *xorm.Session, err *error) {
+	if *err != nil {
+		_ = session.Rollback()
+	}
+}
+
+func isModelOfficialPriceConflict(err error) bool {
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "sqlstate 23505") || strings.Contains(message, "duplicate key") || strings.Contains(message, "unique constraint")
 }
 
 // NormalizeOfficialPriceConfig validates source quotes and converts them to credits.
