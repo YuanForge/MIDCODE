@@ -107,6 +107,9 @@ psql -U <user> -d <db> -f scripts/migrate_20260418_invite_rebate.sql
 
 # 号商表（vendors）及号池 Key 归属关联
 psql -U <user> -d <db> -f scripts/migrate_20260418_vendors.sql
+
+# 模型补充官方价表
+psql -U <user> -d <db> -f scripts/migrate_20260809_model_official_prices.sql
 ```
 
 ## 收钱吧接入自检清单（最小可用）
