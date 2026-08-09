@@ -19,8 +19,6 @@ import (
 )
 
 const (
-	USDCNYExchangeRateSettingKey       = "usd_cny_exchange_rate"
-	DefaultUSDCNYExchangeRate          = 7.20
 	liteLLMPriceCatalogURL             = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
 	liteLLMPriceMaxBytes         int64 = 8 << 20
 	liteLLMPriceCacheTTL               = 6 * time.Hour
@@ -266,19 +264,22 @@ func enrichModelGroupOfficialDiscounts(ctx context.Context, groups []ModelGroupS
 }
 
 func loadUSDCNYExchangeRate(ctx context.Context) (float64, error) {
-	var setting model.SystemSetting
-	found, err := db.Engine.Context(ctx).Where("key = ?", USDCNYExchangeRateSettingKey).Get(&setting)
+	keys := []string{
+		USDCNYExchangeRateSettingKey,
+		USDCNYExchangeRateSourceSettingKey,
+		USDCNYExchangeRateDateSettingKey,
+		USDCNYExchangeRateSyncedAtSettingKey,
+	}
+	var rows []model.SystemSetting
+	err := db.Engine.Context(ctx).In("key", keys).Find(&rows)
 	if err != nil {
 		return 0, err
 	}
-	if !found || strings.TrimSpace(setting.Value) == "" {
-		return DefaultUSDCNYExchangeRate, nil
+	settings := make(map[string]string, len(rows))
+	for _, row := range rows {
+		settings[row.Key] = row.Value
 	}
-	rate, err := ParseUSDCNYExchangeRate(setting.Value)
-	if err != nil {
-		log.Printf("[model-group-discount] invalid stored USD/CNY exchange rate %q; using %.2f", setting.Value, DefaultUSDCNYExchangeRate)
-		return DefaultUSDCNYExchangeRate, nil
-	}
+	rate, _ := parseAutomaticUSDCNYExchangeRate(settings)
 	return rate, nil
 }
 
@@ -292,12 +293,4 @@ func ParseUSDCNYExchangeRate(value string) (float64, error) {
 		return 0, fmt.Errorf("USD/CNY exchange rate must be a finite positive number")
 	}
 	return rate, nil
-}
-
-func USDCNYExchangeRateOrDefault(value string) float64 {
-	rate, err := ParseUSDCNYExchangeRate(value)
-	if err != nil {
-		return DefaultUSDCNYExchangeRate
-	}
-	return rate
 }

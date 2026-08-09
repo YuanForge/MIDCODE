@@ -79,9 +79,9 @@ func UpdateSettings(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if value, ok := updates[service.USDCNYExchangeRateSettingKey]; ok {
-		if _, err := service.ParseUSDCNYExchangeRate(value); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	for key := range updates {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(key)), service.USDCNYExchangeRateSettingKey) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "汇率配置由系统自动维护，不允许手工修改"})
 			return
 		}
 	}

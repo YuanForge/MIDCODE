@@ -37,12 +37,6 @@ func TestParseUSDCNYExchangeRate(t *testing.T) {
 	}
 }
 
-func TestUSDCNYExchangeRateOrDefault(t *testing.T) {
-	if got := USDCNYExchangeRateOrDefault("bad"); got != 7.2 {
-		t.Fatalf("USDCNYExchangeRateOrDefault = %v, want 7.2", got)
-	}
-}
-
 func TestLiteLLMTokenPricesAndModelMatch(t *testing.T) {
 	fixture := `{
 		"provider/model-a":{"mode":"chat","input_cost_per_token":0.00001,"output_cost_per_token":0.00002},
