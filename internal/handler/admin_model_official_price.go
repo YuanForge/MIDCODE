@@ -12,6 +12,7 @@ import (
 	"fanapi/internal/service"
 
 	"github.com/gin-gonic/gin"
+	"xorm.io/xorm"
 )
 
 func ListModelOfficialPrices(c *gin.Context) {
@@ -44,13 +45,10 @@ func CreateModelOfficialPrice(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	price, err := service.CreateModelOfficialPrice(c.Request.Context(), input)
-	if err != nil {
-		writeModelOfficialPriceError(c, err)
-		return
-	}
-	if err := writeModelOfficialPriceAudit(c, "create", price, model.JSON{}); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "官方价已创建，但审计日志写入失败"})
+	price, ok := commitModelOfficialPriceMutation(c, "create", model.JSON{}, func(session *xorm.Session) (*model.ModelOfficialPrice, error) {
+		return service.CreateModelOfficialPriceTx(session, input)
+	})
+	if !ok {
 		return
 	}
 	c.JSON(http.StatusCreated, price)
@@ -69,13 +67,10 @@ func UpdateModelOfficialPrice(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	price, err := service.UpdateModelOfficialPrice(c.Request.Context(), id, input)
-	if err != nil {
-		writeModelOfficialPriceError(c, err)
-		return
-	}
-	if err := writeModelOfficialPriceAudit(c, "update", price, model.JSON{}); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "官方价已更新，但审计日志写入失败"})
+	price, ok := commitModelOfficialPriceMutation(c, "update", model.JSON{}, func(session *xorm.Session) (*model.ModelOfficialPrice, error) {
+		return service.UpdateModelOfficialPriceTx(session, id, input)
+	})
+	if !ok {
 		return
 	}
 	c.JSON(http.StatusOK, price)
@@ -99,13 +94,10 @@ func SetModelOfficialPriceStatus(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	price, err := service.SetModelOfficialPriceStatus(c.Request.Context(), id, *input.IsActive)
-	if err != nil {
-		writeModelOfficialPriceError(c, err)
-		return
-	}
-	if err := writeModelOfficialPriceAudit(c, "status", price, model.JSON{"is_active": *input.IsActive}); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "官方价状态已更新，但审计日志写入失败"})
+	price, ok := commitModelOfficialPriceMutation(c, "status", model.JSON{"is_active": *input.IsActive}, func(session *xorm.Session) (*model.ModelOfficialPrice, error) {
+		return service.SetModelOfficialPriceStatusTx(session, id, *input.IsActive)
+	})
+	if !ok {
 		return
 	}
 	c.JSON(http.StatusOK, price)
@@ -119,13 +111,10 @@ func DeleteModelOfficialPrice(c *gin.Context) {
 	if !ok {
 		return
 	}
-	price, err := service.DeleteModelOfficialPrice(c.Request.Context(), id)
-	if err != nil {
-		writeModelOfficialPriceError(c, err)
-		return
-	}
-	if err := writeModelOfficialPriceAudit(c, "delete", price, model.JSON{}); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "官方价已删除，但审计日志写入失败"})
+	_, ok = commitModelOfficialPriceMutation(c, "delete", model.JSON{}, func(session *xorm.Session) (*model.ModelOfficialPrice, error) {
+		return service.DeleteModelOfficialPriceTx(session, id)
+	})
+	if !ok {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
@@ -188,10 +177,35 @@ func writeModelOfficialPriceError(c *gin.Context, err error) {
 	}
 }
 
-func writeModelOfficialPriceAudit(c *gin.Context, action string, price *model.ModelOfficialPrice, extra model.JSON) error {
+func commitModelOfficialPriceMutation(c *gin.Context, action string, extra model.JSON, mutate func(*xorm.Session) (*model.ModelOfficialPrice, error)) (*model.ModelOfficialPrice, bool) {
+	session := db.Engine.NewSession().Context(c.Request.Context())
+	defer session.Close()
+	if err := session.Begin(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存官方价失败，请稍后重试"})
+		return nil, false
+	}
+	price, err := mutate(session)
+	if err != nil {
+		_ = session.Rollback()
+		writeModelOfficialPriceError(c, err)
+		return nil, false
+	}
+	if err := writeModelOfficialPriceAudit(session, c, action, price, extra); err != nil {
+		_ = session.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存官方价失败，请稍后重试"})
+		return nil, false
+	}
+	if err := session.Commit(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存官方价失败，请稍后重试"})
+		return nil, false
+	}
+	return price, true
+}
+
+func writeModelOfficialPriceAudit(session *xorm.Session, c *gin.Context, action string, price *model.ModelOfficialPrice, extra model.JSON) error {
 	adminID := getAdminID(c)
 	var admin model.User
-	_, _ = db.Engine.ID(adminID).Cols("email", "username").Get(&admin)
+	_, _ = session.ID(adminID).Cols("email", "username").Get(&admin)
 	adminEmail := admin.Username
 	if admin.Email != nil && strings.TrimSpace(*admin.Email) != "" {
 		adminEmail = *admin.Email
@@ -221,6 +235,6 @@ func writeModelOfficialPriceAudit(c *gin.Context, action string, price *model.Mo
 		IP:           c.ClientIP(),
 		UA:           c.Request.UserAgent(),
 	}
-	_, err := db.Engine.Insert(audit)
+	_, err := session.Insert(audit)
 	return err
 }

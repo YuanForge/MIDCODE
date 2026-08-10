@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -14,6 +15,54 @@ import (
 
 	"xorm.io/xorm"
 )
+
+func TestPostgresDSNWithSearchPath(t *testing.T) {
+	t.Run("URL", func(t *testing.T) {
+		got, err := postgresDSNWithSearchPath("postgres://user:pass@localhost:5432/fanapi?sslmode=disable", "official_price_test_1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		parsed, err := url.Parse(got)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if parsed.Query().Get("search_path") != "official_price_test_1" || parsed.Query().Get("sslmode") != "disable" {
+			t.Fatalf("URL DSN = %q", got)
+		}
+	})
+
+	t.Run("keyword value", func(t *testing.T) {
+		got, err := postgresDSNWithSearchPath("host=localhost dbname=fanapi sslmode=disable", "official_price_test_2")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != "host=localhost dbname=fanapi sslmode=disable search_path=official_price_test_2" {
+			t.Fatalf("keyword DSN = %q", got)
+		}
+	})
+}
+
+func postgresDSNWithSearchPath(dsn, schema string) (string, error) {
+	for _, char := range schema {
+		if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') && (char < '0' || char > '9') && char != '_' {
+			return "", fmt.Errorf("invalid schema name %q", schema)
+		}
+	}
+	if schema == "" {
+		return "", fmt.Errorf("schema name is required")
+	}
+	if strings.Contains(dsn, "://") {
+		parsed, err := url.Parse(dsn)
+		if err != nil {
+			return "", err
+		}
+		query := parsed.Query()
+		query.Set("search_path", schema)
+		parsed.RawQuery = query.Encode()
+		return parsed.String(), nil
+	}
+	return strings.TrimSpace(dsn) + " search_path=" + schema, nil
+}
 
 func TestModelOfficialPricePostgres(t *testing.T) {
 	dsn := strings.TrimSpace(os.Getenv("FANAPI_TEST_DATABASE_URL"))
@@ -34,7 +83,11 @@ func TestModelOfficialPricePostgres(t *testing.T) {
 		_, _ = adminEngine.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`)
 	})
 
-	testEngine, err := xorm.NewEngine("postgres", dsn+" search_path="+schema)
+	testDSN, err := postgresDSNWithSearchPath(dsn, schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	testEngine, err := xorm.NewEngine("postgres", testDSN)
 	if err != nil {
 		t.Fatal(err)
 	}

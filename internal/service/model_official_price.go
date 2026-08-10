@@ -161,16 +161,17 @@ func normalizeModelOfficialPriceInput(input CreateModelOfficialPriceInput) (Crea
 }
 
 func CreateModelOfficialPrice(ctx context.Context, input CreateModelOfficialPriceInput) (_ *model.ModelOfficialPrice, err error) {
+	return runModelOfficialPriceTransaction(ctx, func(session *xorm.Session) (*model.ModelOfficialPrice, error) {
+		return CreateModelOfficialPriceTx(session, input)
+	})
+}
+
+func CreateModelOfficialPriceTx(session *xorm.Session, input CreateModelOfficialPriceInput) (*model.ModelOfficialPrice, error) {
+	var err error
 	input, err = normalizeModelOfficialPriceInput(input)
 	if err != nil {
 		return nil, err
 	}
-	session := db.Engine.NewSession().Context(ctx)
-	defer session.Close()
-	if err = session.Begin(); err != nil {
-		return nil, err
-	}
-	defer rollbackSessionOnError(session, &err)
 	if err = requireModelOfficialPriceProvider(session, input.ModelProviderID); err != nil {
 		return nil, err
 	}
@@ -195,26 +196,23 @@ func CreateModelOfficialPrice(ctx context.Context, input CreateModelOfficialPric
 		}
 		return nil, err
 	}
-	if err = session.Commit(); err != nil {
-		return nil, err
-	}
 	return price, nil
 }
 
 func UpdateModelOfficialPrice(ctx context.Context, id int64, input UpdateModelOfficialPriceInput) (_ *model.ModelOfficialPrice, err error) {
+	return runModelOfficialPriceTransaction(ctx, func(session *xorm.Session) (*model.ModelOfficialPrice, error) {
+		return UpdateModelOfficialPriceTx(session, id, input)
+	})
+}
+
+func UpdateModelOfficialPriceTx(session *xorm.Session, id int64, input UpdateModelOfficialPriceInput) (*model.ModelOfficialPrice, error) {
 	if id <= 0 {
 		return nil, ErrModelOfficialPriceNotFound
 	}
-	input, err = normalizeModelOfficialPriceInput(input)
+	input, err := normalizeModelOfficialPriceInput(input)
 	if err != nil {
 		return nil, err
 	}
-	session := db.Engine.NewSession().Context(ctx)
-	defer session.Close()
-	if err = session.Begin(); err != nil {
-		return nil, err
-	}
-	defer rollbackSessionOnError(session, &err)
 	current := &model.ModelOfficialPrice{}
 	found, err := session.ID(id).Get(current)
 	if err != nil {
@@ -247,18 +245,21 @@ func UpdateModelOfficialPrice(ctx context.Context, id int64, input UpdateModelOf
 		}
 		return nil, err
 	}
-	if err = session.Commit(); err != nil {
-		return nil, err
-	}
 	return current, nil
 }
 
 func SetModelOfficialPriceStatus(ctx context.Context, id int64, active bool) (*model.ModelOfficialPrice, error) {
-	price, err := GetModelOfficialPrice(ctx, id)
+	return runModelOfficialPriceTransaction(ctx, func(session *xorm.Session) (*model.ModelOfficialPrice, error) {
+		return SetModelOfficialPriceStatusTx(session, id, active)
+	})
+}
+
+func SetModelOfficialPriceStatusTx(session *xorm.Session, id int64, active bool) (*model.ModelOfficialPrice, error) {
+	price, err := getModelOfficialPriceInSession(session, id)
 	if err != nil {
 		return nil, err
 	}
-	affected, err := db.Engine.Context(ctx).ID(id).Cols("is_active").Update(&model.ModelOfficialPrice{IsActive: active})
+	affected, err := session.ID(id).Cols("is_active").Update(&model.ModelOfficialPrice{IsActive: active})
 	if err != nil {
 		return nil, err
 	}
@@ -270,11 +271,17 @@ func SetModelOfficialPriceStatus(ctx context.Context, id int64, active bool) (*m
 }
 
 func DeleteModelOfficialPrice(ctx context.Context, id int64) (*model.ModelOfficialPrice, error) {
-	price, err := GetModelOfficialPrice(ctx, id)
+	return runModelOfficialPriceTransaction(ctx, func(session *xorm.Session) (*model.ModelOfficialPrice, error) {
+		return DeleteModelOfficialPriceTx(session, id)
+	})
+}
+
+func DeleteModelOfficialPriceTx(session *xorm.Session, id int64) (*model.ModelOfficialPrice, error) {
+	price, err := getModelOfficialPriceInSession(session, id)
 	if err != nil {
 		return nil, err
 	}
-	affected, err := db.Engine.Context(ctx).ID(id).Delete(new(model.ModelOfficialPrice))
+	affected, err := session.ID(id).Delete(new(model.ModelOfficialPrice))
 	if err != nil {
 		return nil, err
 	}
@@ -285,11 +292,15 @@ func DeleteModelOfficialPrice(ctx context.Context, id int64) (*model.ModelOffici
 }
 
 func GetModelOfficialPrice(ctx context.Context, id int64) (*model.ModelOfficialPrice, error) {
+	return getModelOfficialPriceInSession(db.Engine.Context(ctx), id)
+}
+
+func getModelOfficialPriceInSession(session *xorm.Session, id int64) (*model.ModelOfficialPrice, error) {
 	if id <= 0 {
 		return nil, ErrModelOfficialPriceNotFound
 	}
 	price := &model.ModelOfficialPrice{}
-	found, err := db.Engine.Context(ctx).ID(id).Get(price)
+	found, err := session.ID(id).Get(price)
 	if err != nil {
 		return nil, err
 	}
@@ -410,6 +421,23 @@ func rollbackSessionOnError(session *xorm.Session, err *error) {
 	if *err != nil {
 		_ = session.Rollback()
 	}
+}
+
+func runModelOfficialPriceTransaction(ctx context.Context, mutate func(*xorm.Session) (*model.ModelOfficialPrice, error)) (_ *model.ModelOfficialPrice, err error) {
+	session := db.Engine.NewSession().Context(ctx)
+	defer session.Close()
+	if err = session.Begin(); err != nil {
+		return nil, err
+	}
+	defer rollbackSessionOnError(session, &err)
+	price, err := mutate(session)
+	if err != nil {
+		return nil, err
+	}
+	if err = session.Commit(); err != nil {
+		return nil, err
+	}
+	return price, nil
 }
 
 func isModelOfficialPriceConflict(err error) bool {

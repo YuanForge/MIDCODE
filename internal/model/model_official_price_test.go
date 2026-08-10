@@ -65,6 +65,18 @@ func TestModelOfficialPriceSchemaContract(t *testing.T) {
 			t.Errorf("migration missing %q", clause)
 		}
 	}
+	for _, constraint := range []string{
+		"fk_model_official_prices_model_provider",
+		"ck_model_official_prices_model_name_trimmed",
+		"ck_model_official_prices_billing_type",
+		"ck_model_official_prices_currency",
+		"uq_model_official_prices_provider_model_type",
+	} {
+		if !strings.Contains(compactMigration, "where conname = '"+constraint+"'") ||
+			!strings.Contains(compactMigration, "add constraint "+constraint) {
+			t.Errorf("migration does not converge existing tables for %q", constraint)
+		}
+	}
 	if !bytes.Contains(migration, []byte("BEGIN;")) || !bytes.Contains(migration, []byte("COMMIT;")) {
 		t.Error("migration must be transactional")
 	}
