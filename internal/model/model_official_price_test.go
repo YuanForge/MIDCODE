@@ -85,10 +85,10 @@ func TestModelOfficialPriceSchemaContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	providerPos := bytes.Index(dbSource, []byte("new(model.ModelProvider)"))
+	providerPos := bytes.Index(dbSource, []byte("if err := ensureModelProviderTable(); err != nil"))
 	officialPricePos := bytes.Index(dbSource, []byte("new(model.ModelOfficialPrice)"))
 	if providerPos < 0 || officialPricePos < 0 || providerPos > officialPricePos {
-		t.Fatal("Sync2 must register ModelProvider before ModelOfficialPrice")
+		t.Fatal("database startup must ensure ModelProvider before syncing ModelOfficialPrice")
 	}
 
 	readme, err := os.ReadFile("../../README.md")

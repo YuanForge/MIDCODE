@@ -56,13 +56,15 @@ func Init(cfg *config.DBConfig, migrate bool) error {
 	if err := ensureBillingTransactionTable(); err != nil {
 		return err
 	}
+	if err := ensureModelProviderTable(); err != nil {
+		return err
+	}
 
 	if err := Engine.Sync2(
 		new(model.SchemaMigration),
 		new(model.User),
 		new(model.EmailVerification),
 		new(model.APIKey),
-		new(model.ModelProvider),
 		new(model.ModelOfficialPrice),
 		new(model.ModelGroup),
 		new(model.ModelGroupModel),
@@ -138,6 +140,17 @@ func ensureBillingTransactionTable() error {
 		return nil
 	}
 	return Engine.Sync2(new(model.BillingTransaction))
+}
+
+func ensureModelProviderTable() error {
+	exists, err := Engine.IsTableExist(new(model.ModelProvider))
+	if err != nil {
+		return fmt.Errorf("check model_providers table: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	return Engine.Sync2(new(model.ModelProvider))
 }
 
 func recordSchemaMigration(version, description string) error {
