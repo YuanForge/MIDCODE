@@ -75,6 +75,42 @@ test('shows a wider model details sheet with a JavaScript call example', async (
   await expect.poll(async () => (await dialog.boundingBox())?.width ?? 1000).toBeLessThanOrEqual(390)
 })
 
+test('shows the lowest terminal group price on model cards and in detail order', async ({ page }) => {
+  await page.route('**/api/user/channels', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        channels: [{
+          id: 1,
+          name: 'gpt-5.6-sol',
+          routing_model: 'gpt-5.6-sol',
+          model_provider: 'OpenAI',
+          type: 'llm',
+          protocol: 'responses',
+          billing_type: 'token',
+          price_display: '¥2.1250 / 1M 输入 + ¥12.7500 / 1M 输出',
+          group_prices: [
+            { group_id: 1, group_code: 'gpt-k12', group_name: 'gpt-k12', price_display: '¥2.1250 / 1M 输入 + ¥12.7500 / 1M 输出', vip_prices: [] },
+            { group_id: 11, group_code: 'gpt-plus-temp', group_name: 'gpt-plus临时', price_display: '¥0.8500 / 1M 输入 + ¥5.1000 / 1M 输出', vip_prices: [] },
+          ],
+        }],
+      }),
+    })
+  })
+  await page.route('**/api/user/model-availability', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ models: [] }) })
+  })
+
+  await page.goto('/models')
+  await expect(page.getByText('¥0.8500 / 1M 输入 + ¥5.1000 / 1M 输出', { exact: true })).toBeVisible()
+  await expect(page.getByText('¥2.1250 / 1M 输入 + ¥12.7500 / 1M 输出', { exact: true })).toHaveCount(0)
+
+  await page.getByRole('heading', { name: 'gpt-5.6-sol' }).click()
+  const details = await page.getByRole('dialog').innerText()
+  expect(details.indexOf('gpt-plus临时')).toBeLessThan(details.indexOf('gpt-k12'))
+})
+
 test('configures Fast ratio through the channel editor', async ({ page }) => {
   let savedPayload: Record<string, unknown> | undefined
 

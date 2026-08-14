@@ -27,6 +27,7 @@ type DocMode = 'channel' | 'balance' | 'task'
 type LangTab = 'curl' | 'javascript' | 'python' | 'php' | 'go' | 'java'
 type SunoMode = 'inspire' | 'custom' | 'extend' | 'overpainting' | 'underpainting'
 type ProviderOption = { name: string; iconUrl?: string }
+type GroupPrice = NonNullable<UserChannel['group_prices']>[number]
 
 const typeOptions = [
   { labelKey: 'models.allTypes', value: '' },
@@ -51,6 +52,41 @@ const billingTypeLabels: Record<string, string> = {
   music: 'models.musicBilling',
   count: 'models.countBilling',
   custom: 'models.customBilling',
+}
+
+function terminalPriceSortKey(priceDisplay?: string) {
+  return Array.from(priceDisplay?.matchAll(/¥\s*([0-9]+(?:\.[0-9]+)?)/g) ?? [], (match) => Number(match[1]))
+    .filter(Number.isFinite)
+}
+
+function compareTerminalPrices(left?: string, right?: string) {
+  const leftPrices = terminalPriceSortKey(left)
+  const rightPrices = terminalPriceSortKey(right)
+  const width = Math.max(leftPrices.length, rightPrices.length, 1)
+  for (let index = 0; index < width; index += 1) {
+    const diff = (leftPrices[index] ?? Number.POSITIVE_INFINITY) - (rightPrices[index] ?? Number.POSITIVE_INFINITY)
+    if (diff !== 0) return diff
+  }
+  return (left ?? '').localeCompare(right ?? '')
+}
+
+function sortGroupPricesByTerminalPrice(groups?: GroupPrice[]) {
+  return [...(groups ?? [])].sort((left, right) =>
+    compareTerminalPrices(left.price_display, right.price_display)
+    || (left.group_name ?? '').localeCompare(right.group_name ?? '')
+    || left.group_code.localeCompare(right.group_code)
+    || left.group_id - right.group_id,
+  )
+}
+
+function channelSummaryPrice(channel: UserChannel) {
+  return sortGroupPricesByTerminalPrice(channel.group_prices)[0]?.price_display || channel.price_display || ''
+}
+
+function channelWithSortedPrices(channel: UserChannel): UserChannel {
+  if (!channel.group_prices?.length) return channel
+  const group_prices = sortGroupPricesByTerminalPrice(channel.group_prices)
+  return { ...channel, group_prices, price_display: group_prices[0]?.price_display || channel.price_display }
 }
 
 function copyText(text: string, label = '已复制') {
@@ -355,6 +391,7 @@ export function UserModelsPage() {
     }
   }, { channels: [] as UserChannel[], availability: null as ModelAvailability[] | null })
   const channels = data.channels
+  const displayChannels = useMemo(() => channels.map(channelWithSortedPrices), [channels])
   const availabilityByModel = useMemo(
     () => new Map((data.availability ?? []).map((item) => [item.routing_model, item])),
     [data.availability],
@@ -371,13 +408,13 @@ export function UserModelsPage() {
   const [sunoMode, setSunoMode] = useState<SunoMode>('inspire')
 
   const protocolOptions = useMemo(
-    () => Array.from(new Set(channels.map((channel) => channel.protocol || 'openai'))),
-    [channels],
+    () => Array.from(new Set(displayChannels.map((channel) => channel.protocol || 'openai'))),
+    [displayChannels],
   )
 
   const providerOptions = useMemo(() => {
     const providers = new Map<string, string>()
-    channels.forEach((channel) => {
+    displayChannels.forEach((channel) => {
       const provider = channel.model_provider?.trim()
       if (!provider) return
 
@@ -390,15 +427,15 @@ export function UserModelsPage() {
     return Array.from(providers, ([name, iconUrl]) => ({ name, iconUrl })).sort((left, right) =>
       left.name.localeCompare(right.name),
     )
-  }, [channels])
+  }, [displayChannels])
 
   const availableTypeOptions = useMemo(() => {
-    const presentTypes = new Set(channels.map((c) => c.type ?? ''))
+    const presentTypes = new Set(displayChannels.map((c) => c.type ?? ''))
     return typeOptions.filter((opt) => opt.value === '' || presentTypes.has(opt.value))
-  }, [channels])
+  }, [displayChannels])
 
   const filteredChannels = useMemo(() => {
-    return channels.filter((channel) => {
+    return displayChannels.filter((channel) => {
       if (filterType && channel.type !== filterType) return false
       if (filterProtocol && (channel.protocol || 'openai') !== filterProtocol) return false
       if (filterProvider && channel.model_provider?.trim() !== filterProvider) return false
@@ -408,7 +445,7 @@ export function UserModelsPage() {
       return [channel.name, channel.routing_model, channel.model_provider, channel.description]
         .some((value) => value?.toLowerCase().includes(keyword))
     })
-  }, [channels, filterName, filterProtocol, filterProvider, filterType])
+  }, [displayChannels, filterName, filterProtocol, filterProvider, filterType])
 
   function openDoc(channel: UserChannel) {
     setDocChannel(channel)
@@ -598,8 +635,8 @@ export function UserModelsPage() {
                       {channel.billing_type ? <Badge variant="outline">{getBillingTypeLabel(channel.billing_type)}</Badge> : null}
                     </div>
                     <div className="mt-2 text-xs text-muted-foreground">
-                      {channel.price_display ? (
-                        channel.price_display.split('\n').map((line, lineIndex) => (
+                      {channelSummaryPrice(channel) ? (
+                        channelSummaryPrice(channel).split('\n').map((line, lineIndex) => (
                           <div key={lineIndex} className={lineIndex === 0 ? 'font-medium text-primary/80' : 'text-[10px]'}>{line}</div>
                         ))
                       ) : (

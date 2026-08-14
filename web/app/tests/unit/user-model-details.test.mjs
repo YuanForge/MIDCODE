@@ -12,3 +12,13 @@ test('model details use a wider desktop sheet and include JavaScript examples', 
   assert.match(page, /<TabsTrigger value="javascript">JavaScript<\/TabsTrigger>/)
   assert.match(page, /await fetch\(/)
 })
+
+test('user model cards prefer the lowest terminal group price', async () => {
+  const page = await source()
+
+  assert.match(page, /function terminalPriceSortKey/)
+  assert.match(page, /function sortGroupPricesByTerminalPrice/)
+  assert.match(page, /function channelSummaryPrice/)
+  assert.match(page, /sortGroupPricesByTerminalPrice\(channel\.group_prices\)/)
+  assert.match(page, /channelSummaryPrice\(channel\)\.split\('\\n'\)/)
+})
