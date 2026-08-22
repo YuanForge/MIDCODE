@@ -332,7 +332,7 @@ test('renders extended user routes with authenticated session', async ({ page })
     })
   })
 
-  for (const route of ['/playground', '/image-gen', '/video-gen', '/docs', '/stats', '/exchange', '/invite']) {
+  for (const route of ['/playground', '/image-gen', '/video-gen', '/docs', '/stats', '/invite']) {
     await page.goto(route)
     if (route === '/docs') {
       await expect(page.getByTestId('scalar-root')).toBeVisible()
@@ -340,6 +340,11 @@ test('renders extended user routes with authenticated session', async ({ page })
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
     }
   }
+
+  await page.goto('/exchange')
+  await expect(page).toHaveURL(/\/billing\?tab=recharge$/)
+  await expect(page.getByRole('tab', { name: '积分充值' })).toHaveAttribute('data-state', 'active')
+  await expect(page.getByRole('heading', { name: '卡密充值' })).toBeVisible()
 })
 
 test('renders extended admin routes with authenticated session', async ({ page }) => {

@@ -33,7 +33,6 @@ const UserDocsPage = lazy(() => import('@/pages/user/UserDocsPage').then((m) => 
 const UserTutorialPage = lazy(() => import('@/pages/user/UserTutorialPage').then((m) => ({ default: m.UserTutorialPage })))
 const UserProfilePage = lazy(() => import('@/pages/user/UserProfilePage').then((m) => ({ default: m.UserProfilePage })))
 const UserStatsPage = lazy(() => import('@/pages/user/UserStatsPage').then((m) => ({ default: m.UserStatsPage })))
-const UserExchangePage = lazy(() => import('@/pages/user/UserExchangePage').then((m) => ({ default: m.UserExchangePage })))
 const UserInvitePage = lazy(() => import('@/pages/user/UserInvitePage').then((m) => ({ default: m.UserInvitePage })))
 
 const AdminLoginPage = lazy(() => import('@/pages/admin/AdminLoginPage').then((m) => ({ default: m.AdminLoginPage })))
@@ -176,7 +175,7 @@ export const router = createBrowserRouter([
           { path: '/billing', element: renderLazy(<UserBillingPage />) },
           { path: '/recharge', element: <Navigate replace to="/billing" /> },
           { path: '/stats', element: renderLazy(<UserStatsPage />) },
-          { path: '/exchange', element: renderLazy(<UserExchangePage />) },
+          { path: '/exchange', element: <Navigate replace to="/billing?tab=recharge" /> },
           { path: '/invite', element: renderLazy(<UserInvitePage />) },
           { path: '/profile', element: renderLazy(<UserProfilePage />) },
         ],

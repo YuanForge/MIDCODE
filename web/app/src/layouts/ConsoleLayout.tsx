@@ -413,7 +413,6 @@ export const userNavGroups: NavGroup[] = [
     items: [
       { label: 'API 密钥', labelKey: 'layout.navKeys', href: '/keys', icon: KeySquareIcon },
       { label: '积分充值', labelKey: 'layout.navBilling', href: '/billing', icon: ShoppingCartIcon },
-      { label: '兑换中心', labelKey: 'layout.navExchange', href: '/exchange', icon: TicketIcon },
       { label: '个人中心', labelKey: 'layout.navProfile', href: '/profile', icon: UserRoundIcon },
       { label: '邀请中心', labelKey: 'layout.navInvite', href: '/invite', icon: ShareIcon },
     ],

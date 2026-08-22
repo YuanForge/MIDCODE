@@ -460,7 +460,7 @@ export function AdminSettingsPage() {
                 <div className="max-w-2xl divide-y">
                   <FieldRow label="发卡网地址">
                     <Input value={form.card_purchase_url ?? ''} onChange={(e) => set('card_purchase_url', e.target.value)} placeholder="https://card.example.com" />
-                    <Tip>填写后用户端「积分充值」和「兑换中心」会显示购买卡密入口；留空则不显示。</Tip>
+                    <Tip>填写后用户端「积分充值」会显示购买卡密入口；留空则不显示。</Tip>
                   </FieldRow>
                   <FieldRow label="启用易支付">
                     <ToggleField
