@@ -9,6 +9,7 @@ type BillingMockState = {
   balanceCredits: number
   redemptionHistory: Array<{ code: string; credits: number; used_at: string }>
   redeemRequests: string[]
+  redeemMethods: string[]
 }
 
 async function mockBillingApi(page: Page, options: BillingMockOptions = {}) {
@@ -16,6 +17,7 @@ async function mockBillingApi(page: Page, options: BillingMockOptions = {}) {
     balanceCredits: 1_000_000,
     redemptionHistory: [],
     redeemRequests: [],
+    redeemMethods: [],
   }
   const cardPurchaseUrl = options.cardPurchaseUrl ?? 'https://cards.example.test/store'
 
@@ -61,6 +63,7 @@ async function mockBillingApi(page: Page, options: BillingMockOptions = {}) {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ records: state.redemptionHistory }) })
   })
   await page.route('**/api/user/cards/redeem', async (route) => {
+    state.redeemMethods.push(route.request().method())
     const payload = route.request().postDataJSON() as { code?: unknown }
     state.redeemRequests.push(String(payload.code ?? ''))
     await new Promise((resolve) => setTimeout(resolve, 150))
@@ -111,6 +114,7 @@ test('redeems a card in billing and refreshes history and balance', async ({ pag
   await expect(codeInput).toHaveValue('')
   await expect(page.getByText('兑换成功，获得 1.00 积分', { exact: true })).toBeVisible()
   expect(state.redeemRequests).toHaveLength(1)
+  expect(state.redeemMethods).toEqual(['POST'])
 })
 
 test('shows an accessible redemption error without clearing the card code', async ({ page }) => {
@@ -121,7 +125,6 @@ test('shows an accessible redemption error without clearing the card code', asyn
   await codeInput.fill('BAD-CARD')
   await page.getByRole('button', { name: '立即兑换', exact: true }).click()
 
-  await expect(codeInput).toHaveValue('BAD-CARD')
   await expect(codeInput).toHaveAttribute('aria-invalid', 'true')
   const describedBy = await codeInput.getAttribute('aria-describedby')
   expect(describedBy).toBeTruthy()
@@ -129,7 +132,9 @@ test('shows an accessible redemption error without clearing the card code', asyn
   await expect(alert).toBeVisible()
   await expect(alert).toHaveAttribute('role', 'alert')
   await expect(alert).toHaveText('卡密无效')
+  await expect(codeInput).toHaveValue('BAD-CARD')
   expect(state.redeemRequests).toEqual(['BAD-CARD'])
+  expect(state.redeemMethods).toEqual(['POST'])
 })
 
 test('keeps redemption available when no purchase URL is configured', async ({ page }) => {
