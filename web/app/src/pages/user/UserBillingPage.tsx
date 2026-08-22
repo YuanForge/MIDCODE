@@ -26,9 +26,10 @@ import { useAuth } from '@/hooks/use-auth'
 import { Badge } from '@/components/ui/badge'
 import { formatCredits } from '@/lib/formatters/credits'
 import { cn } from '@/lib/utils'
-import { Check, ExternalLinkIcon, Loader2, RefreshCcw, Wallet } from 'lucide-react'
+import { Check, Loader2, RefreshCcw, Wallet } from 'lucide-react'
 import { toast } from 'sonner'
 import type { PaymentOrder } from '@/lib/api/user'
+import { CardRedemptionSection } from './CardRedemptionSection'
 
 export function UserBillingPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -341,16 +342,7 @@ export function UserBillingPage() {
             </PageSection>
           ) : null}
 
-          {settings.cardPurchaseUrl ? (
-            <PageSection title="购买卡密" description="支付渠道异常时，可前往发卡网购买卡密后在兑换中心充值。">
-              <Button asChild variant="outline">
-                <a href={settings.cardPurchaseUrl} target="_blank" rel="noopener noreferrer">
-                  购买卡密
-                  <ExternalLinkIcon className="size-4" />
-                </a>
-              </Button>
-            </PageSection>
-          ) : null}
+          <CardRedemptionSection purchaseUrl={settings.cardPurchaseUrl} onRedeemed={reloadBalance} />
 
           {(settings.epayEnabled || settings.payApplyEnabled || settings.shouqianbaEnabled) && (
             <PageSection title="选择充值套餐" description="选择套餐或输入自定义金额，确认优惠与实付金额后发起支付。">
