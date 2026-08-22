@@ -141,6 +141,7 @@ test('keeps redemption available when no purchase URL is configured', async ({ p
   await mockBillingApi(page, { cardPurchaseUrl: '' })
   await page.goto('/billing?tab=recharge')
 
+  await expect(page.getByRole('button', { name: /100 积分/ })).toBeVisible()
   await expect(page.getByRole('link', { name: '购买卡密', exact: true })).toHaveCount(0)
   const codeInput = page.getByPlaceholder('请输入卡密')
   const redeemButton = page.getByRole('button', { name: '立即兑换', exact: true })
