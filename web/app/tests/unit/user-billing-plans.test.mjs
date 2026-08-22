@@ -18,7 +18,7 @@ test('billing owns card purchase, redemption, history, and balance refresh', asy
     source('src/hooks/use-site-settings.ts'),
   ])
 
-  assert.match(settingsHook, /cardPurchaseUrl/)
+  assert.match(settingsHook, /cardPurchaseUrl:\s*String\(record\.card_purchase_url\s*\|\|\s*''\)/)
   assert.match(billingPage, /CardRedemptionSection/)
   assert.match(billingPage, /purchaseUrl=\{settings\.cardPurchaseUrl\}/)
   assert.match(billingPage, /onRedeemed=\{reloadBalance\}/)
