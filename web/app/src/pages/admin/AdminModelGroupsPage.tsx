@@ -55,6 +55,14 @@ export function AdminModelGroupsPage() {
       options.push(channel)
       grouped.set(model, options)
     }
+    for (const binding of bindings) {
+      const model = binding.routing_model?.trim()
+      const channel = binding.channel ?? data.channels.find((item) => item.id === binding.channel_id)
+      if (!model || !channel?.id) continue
+      const options = grouped.get(model) ?? []
+      if (!options.some((item) => item.id === channel.id)) options.push(channel)
+      grouped.set(model, options)
+    }
     return [...grouped.entries()]
       .map(([model, channels]) => ({ model, channels: channels.sort((left, right) => (left.id ?? 0) - (right.id ?? 0)) }))
       .sort((left, right) => left.model.localeCompare(right.model))
