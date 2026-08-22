@@ -290,7 +290,7 @@ export const userApi = {
   getModelAvailability: () =>
     http.get<{ models: ModelAvailability[] }>('/user/model-availability'),
   redeemCard: (code: string) =>
-    http.post<Record<string, unknown>>('/user/cards/redeem', { code }),
+    http.post<{ credits?: number; message?: string }>('/user/cards/redeem', { code }),
   getRedeemHistory: (page = 1, size = 20) =>
     http.get<{ records?: RedeemRecord[]; list?: RedeemRecord[] } | RedeemRecord[]>('/user/cards/redeem-history', { params: { page, size } }),
   getInviteInfo: () => http.get<InviteInfo>('/user/invite'),
