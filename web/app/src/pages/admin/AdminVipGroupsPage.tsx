@@ -125,9 +125,14 @@ export function AdminVipGroupsPage() {
 
   async function remove(group: AdminVIPGroup) {
     if (!group.id) return
+    const userCount = group.user_count ?? 0
+    const message = userCount > 0
+      ? `分组“${group.name || group.code}”正在被 ${userCount} 个用户使用。确认删除分组并清除这些用户的 VIP 分组吗？`
+      : `确认删除分组“${group.name || group.code}”？`
+    if (!window.confirm(message)) return
     setMutError('')
     try {
-      await adminApi.deleteVipGroup(group.id)
+      await adminApi.deleteVipGroup(group.id, userCount > 0)
       reload()
     } catch (err) {
       const { getApiErrorMessage } = await import('@/lib/api/http')

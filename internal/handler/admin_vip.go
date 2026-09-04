@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"fanapi/internal/model"
 	"fanapi/internal/service"
 	"github.com/gin-gonic/gin"
@@ -72,7 +73,17 @@ func DeleteVIPGroup(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ID 格式错误"})
 		return
 	}
-	if err := service.DeleteVIPGroup(c.Request.Context(), id); err != nil {
+	clearUsers := c.Query("clear_users") == "true" || c.Query("clear_users") == "1"
+	if err := service.DeleteVIPGroup(c.Request.Context(), id, clearUsers); err != nil {
+		var referenced *service.VIPGroupUsersReferencedError
+		if errors.As(err, &referenced) {
+			c.JSON(http.StatusConflict, gin.H{
+				"error":                "VIP 分组仍有用户使用，请确认清理后再删除",
+				"user_count":           referenced.UserCount,
+				"requires_clear_users": true,
+			})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}

@@ -229,8 +229,76 @@ const docTemplate = `{
                                 },
                                 "invite_count": {
                                     "type": "integer"
+                                },
+                                "inviter_id": {
+                                    "type": "integer"
+                                },
+                                "can_bind": {
+                                    "type": "boolean"
+                                },
+                                "binding_deadline": {
+                                    "type": "string",
+                                    "format": "date-time"
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        },
+        "/user/invite/bind": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "注册七天内补填邀请码；每个用户只能绑定一次，且不能形成邀请循环。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "邀请"
+                ],
+                "summary": "绑定上级邀请码",
+                "parameters": [
+                    {
+                        "description": "邀请码",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "invite_code": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "message": {
+                                    "type": "string"
+                                },
+                                "inviter_id": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "绑定失败",
+                        "schema": {
+                            "type": "object"
                         }
                     }
                 }
@@ -501,6 +569,194 @@ const docTemplate = `{
                     },
                     "402": {
                         "description": "余额不足",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/images/generations": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "OpenAI 图片生成兼容接口。服务端等待任务完成后返回官方 {created, data} 响应；超时或失败返回明确错误。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "媒体生成"
+                ],
+                "summary": "OpenAI 图片生成",
+                "parameters": [
+                    {
+                        "description": "OpenAI 图片生成参数",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.ImageRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OpenAI 图片响应",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "created": {
+                                    "type": "integer"
+                                },
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "url": {
+                                                "type": "string"
+                                            },
+                                            "b64_json": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "502": {
+                        "description": "上游图片生成失败",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "504": {
+                        "description": "图片生成超时",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/images/edits": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "OpenAI 图片编辑兼容接口。服务端等待任务完成后返回官方 {created, data} 响应；超时或失败返回明确错误。",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "媒体生成"
+                ],
+                "summary": "OpenAI 图片编辑",
+                "parameters": [
+                    {
+                        "description": "源图片，可重复传入 image[]",
+                        "type": "file",
+                        "name": "image",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "description": "编辑提示词",
+                        "type": "string",
+                        "name": "prompt",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "description": "可选遮罩图片",
+                        "type": "file",
+                        "name": "mask",
+                        "in": "formData"
+                    },
+                    {
+                        "description": "图片模型",
+                        "type": "string",
+                        "name": "model",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "description": "生成数量",
+                        "type": "integer",
+                        "name": "n",
+                        "in": "formData"
+                    },
+                    {
+                        "description": "图片尺寸",
+                        "type": "string",
+                        "name": "size",
+                        "in": "formData"
+                    },
+                    {
+                        "description": "url 或 b64_json",
+                        "type": "string",
+                        "name": "response_format",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OpenAI 图片响应",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "created": {
+                                    "type": "integer"
+                                },
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "url": {
+                                                "type": "string"
+                                            },
+                                            "b64_json": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "参数或上传文件错误",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "502": {
+                        "description": "上游图片编辑失败",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "504": {
+                        "description": "图片编辑超时",
                         "schema": {
                             "type": "object"
                         }

@@ -3,8 +3,10 @@ package handler
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"mime"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -37,6 +39,13 @@ type uploadRule struct {
 	saveFailedMsg   string
 }
 
+type uploadFileError struct {
+	status  int
+	message string
+}
+
+func (e *uploadFileError) Error() string { return e.message }
+
 var imageUploadRule = uploadRule{
 	maxSize:         10 * 1024 * 1024,
 	contentPrefixes: []string{"image/"},
@@ -67,26 +76,39 @@ func hasAllowedContentType(contentType string, prefixes []string) bool {
 }
 
 func saveUploadedMedia(c *gin.Context, category string, rule uploadRule) {
-	userID := c.MustGet("user_id").(int64)
-
 	file, err := c.FormFile("file")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": rule.emptyFileMsg})
 		return
 	}
-	if file.Size <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "上传文件不能为空"})
+	url, err := saveUploadedFileURL(c, file, category, rule)
+	if err != nil {
+		var fileErr *uploadFileError
+		if errors.As(err, &fileErr) {
+			c.JSON(fileErr.status, gin.H{"error": fileErr.message})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": rule.saveFailedMsg})
+		}
 		return
 	}
+
+	c.JSON(http.StatusOK, gin.H{"url": url})
+}
+
+func saveUploadedFileURL(c *gin.Context, file *multipart.FileHeader, category string, rule uploadRule) (string, error) {
+	if file == nil {
+		return "", &uploadFileError{status: http.StatusBadRequest, message: rule.emptyFileMsg}
+	}
+	if file.Size <= 0 {
+		return "", &uploadFileError{status: http.StatusBadRequest, message: "上传文件不能为空"}
+	}
 	if file.Size > rule.maxSize {
-		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": rule.tooLargeMsg})
-		return
+		return "", &uploadFileError{status: http.StatusRequestEntityTooLarge, message: rule.tooLargeMsg}
 	}
 
 	contentType := file.Header.Get("Content-Type")
 	if contentType == "" || !hasAllowedContentType(contentType, rule.contentPrefixes) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": rule.invalidTypeMsg})
-		return
+		return "", &uploadFileError{status: http.StatusBadRequest, message: rule.invalidTypeMsg}
 	}
 
 	ext := strings.ToLower(filepath.Ext(file.Filename))
@@ -102,25 +124,20 @@ func saveUploadedMedia(c *gin.Context, category string, rule uploadRule) {
 
 	subdir := filepath.Join("uploads", category)
 	if err := os.MkdirAll(subdir, 0o755); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建上传目录失败"})
-		return
+		return "", &uploadFileError{status: http.StatusInternalServerError, message: "创建上传目录失败"}
 	}
 
+	userID := c.MustGet("user_id").(int64)
 	randomBytes := make([]byte, 8)
 	if _, err := rand.Read(randomBytes); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成文件名失败"})
-		return
+		return "", &uploadFileError{status: http.StatusInternalServerError, message: "生成文件名失败"}
 	}
 	filename := fmt.Sprintf("%d_%d_%s%s", userID, time.Now().Unix(), hex.EncodeToString(randomBytes), ext)
 	fullPath := filepath.Join(subdir, filename)
 	if err := c.SaveUploadedFile(file, fullPath); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": rule.saveFailedMsg})
-		return
+		return "", &uploadFileError{status: http.StatusInternalServerError, message: rule.saveFailedMsg}
 	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"url": requestBaseURL(c) + fmt.Sprintf("/uploads/%s/%s", category, filename),
-	})
+	return requestBaseURL(c) + fmt.Sprintf("/uploads/%s/%s", category, filename), nil
 }
 
 // UploadImage POST /upload/image

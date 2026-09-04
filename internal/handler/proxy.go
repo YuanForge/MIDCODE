@@ -439,7 +439,10 @@ func createTask(c *gin.Context, taskType string, reqData map[string]interface{})
 	// 标记为处理中（worker 收到后即开始执行）
 	db.Engine.Where("id = ?", task.ID).Cols("status").Update(&model.Task{Status: "processing"})
 
-	c.JSON(http.StatusAccepted, gin.H{"task_id": task.ID})
+	c.Set(createdTaskIDContextKey, task.ID)
+	if _, silent := c.Get(silentTaskCreationContextKey); !silent {
+		c.JSON(http.StatusAccepted, gin.H{"task_id": task.ID})
+	}
 }
 
 func estimateTaskCost(c *gin.Context, taskType string, reqData map[string]interface{}) {

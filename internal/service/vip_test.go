@@ -1,10 +1,38 @@
 package service
 
 import (
+	"errors"
 	"testing"
 
 	"fanapi/internal/model"
 )
+
+func TestVIPGroupDeleteRequiresExplicitUserCleanup(t *testing.T) {
+	err := validateVIPGroupDelete(3, false)
+	var referenced *VIPGroupUsersReferencedError
+	if !errors.As(err, &referenced) {
+		t.Fatalf("expected referenced-user error, got %v", err)
+	}
+	if !errors.Is(err, ErrVIPGroupReferenced) {
+		t.Fatalf("expected referenced-user sentinel, got %v", err)
+	}
+	if referenced.UserCount != 3 {
+		t.Fatalf("user count = %d, want 3", referenced.UserCount)
+	}
+	if err := validateVIPGroupDelete(3, true); err != nil {
+		t.Fatalf("explicit cleanup should allow deletion: %v", err)
+	}
+	if err := validateVIPGroupDelete(0, false); err != nil {
+		t.Fatalf("unused group should allow deletion: %v", err)
+	}
+}
+
+func TestVIPGroupDeleteResetUserAssignment(t *testing.T) {
+	reset := deletedVIPGroupUserUpdate()
+	if reset.Group != "" || reset.VIPRechargeBase != 0 {
+		t.Fatalf("reset user update = %+v, want empty group and zero baseline", reset)
+	}
+}
 
 func TestSelectVIPUpgradeUsesHighestEligibleActiveGroup(t *testing.T) {
 	groups := []model.VIPGroup{

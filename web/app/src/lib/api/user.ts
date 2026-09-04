@@ -199,6 +199,9 @@ export type InviteInfo = {
   invite_code?: string
   invite_count?: number
   frozen_balance?: number
+  inviter_id?: number | null
+  can_bind?: boolean
+  binding_deadline?: string
 }
 
 export type InviteeRecord = {
@@ -294,6 +297,8 @@ export const userApi = {
   getRedeemHistory: (page = 1, size = 20) =>
     http.get<{ records?: RedeemRecord[]; list?: RedeemRecord[] } | RedeemRecord[]>('/user/cards/redeem-history', { params: { page, size } }),
   getInviteInfo: () => http.get<InviteInfo>('/user/invite'),
+  bindInviteCode: (inviteCode: string) =>
+    http.post<{ message?: string; inviter_id?: number }>('/user/invite/bind', { invite_code: inviteCode }),
   getInviteeList: () => http.get<{ invitees: InviteeRecord[] }>('/user/invite/list'),
   convertFrozen: (amount = 0) =>
     http.post<Record<string, unknown>>('/user/invite/convert', { amount }),

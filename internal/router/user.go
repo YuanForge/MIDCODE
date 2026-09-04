@@ -41,6 +41,7 @@ func registerUserRoutes(authed *gin.RouterGroup, deps Dependencies) {
 		user.GET("/payment-orders", handler.GetUserPaymentOrders)
 		user.GET("/invite", handler.GetInviteInfo)
 		user.GET("/invite/list", handler.GetInviteeList)
+		user.POST("/invite/bind", handler.BindInviteCode)
 		user.POST("/invite/convert", handler.ConvertFrozenBalance)
 		user.GET("/payment-qr", handler.GetPaymentQR)
 		user.PUT("/payment-qr", handler.SavePaymentQR)

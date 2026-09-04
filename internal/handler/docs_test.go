@@ -57,7 +57,7 @@ func TestBuildUserSwaggerDocIncludesLLMSchemas(t *testing.T) {
 	var spec struct {
 		Paths map[string]map[string]struct {
 			Parameters []struct {
-				Schema map[string]string `json:"schema"`
+				Schema map[string]any `json:"schema"`
 			} `json:"parameters"`
 		} `json:"paths"`
 	}
@@ -85,4 +85,13 @@ func TestBuildUserSwaggerDocIncludesLLMSchemas(t *testing.T) {
 	assertBodyRef("/v1/responses", "post", "#/definitions/model.ResponsesRequest")
 	assertBodyRef("/v1/responses/compact", "post", "#/definitions/model.ResponsesRequest")
 	assertBodyRef("/v1beta/models/{path}", "post", "#/definitions/model.GeminiGenerateContentRequest")
+	if _, ok := spec.Paths["/v1/images/generations"]["post"]; !ok {
+		t.Fatal("missing OpenAI image generations operation")
+	}
+	if _, ok := spec.Paths["/v1/images/edits"]["post"]; !ok {
+		t.Fatal("missing OpenAI image edits operation")
+	}
+	if _, ok := spec.Paths["/user/invite/bind"]["post"]; !ok {
+		t.Fatal("missing invite binding operation")
+	}
 }

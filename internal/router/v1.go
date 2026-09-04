@@ -31,6 +31,8 @@ func registerV1Routes(authed *gin.RouterGroup, deps Dependencies) {
 		v1.POST("/gemini", handler.GeminiProxy)
 		v1.POST("/estimate", handler.EstimateGenerationCost)
 		v1.POST("/image", handler.CreateImageTask)
+		v1.POST("/images/generations", handler.CreateOpenAIImageGenerations)
+		v1.POST("/images/edits", handler.CreateOpenAIImageEdits)
 		v1.POST("/video", handler.CreateVideoTask)
 		v1.POST("/audio", handler.CreateAudioTask)
 		v1.POST("/music", handler.CreateMusicTask)

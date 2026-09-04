@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
-import { KeyRound, Mail, User, Wallet } from 'lucide-react'
+import { KeyRound, Mail, User, UserPlus, Wallet } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { PageSection } from '@/components/shared/PageSection'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { copyToClipboard } from '@/lib/clipboard'
 import { authApi } from '@/lib/api/public'
-import { userApi, type UserProfileResponse } from '@/lib/api/user'
+import { userApi, type InviteInfo, type UserProfileResponse } from '@/lib/api/user'
 import { useAsync } from '@/hooks/use-async'
 
 export function UserProfilePage() {
@@ -25,6 +25,37 @@ export function UserProfilePage() {
     const res = await userApi.getBalance()
     return res.balance_credits ?? 0
   }, 0)
+
+  const { data: inviteInfo, loading: inviteLoading, error: inviteLoadError, reload: reloadInvite } = useAsync(
+    () => userApi.getInviteInfo(),
+    {} as InviteInfo,
+  )
+  const [inviteCodeInput, setInviteCodeInput] = useState('')
+  const [inviteBindError, setInviteBindError] = useState('')
+  const [inviteBindLoading, setInviteBindLoading] = useState(false)
+
+  async function bindInviteCode() {
+    const code = inviteCodeInput.trim()
+    if (!code) {
+      setInviteBindError('请输入邀请码')
+      return
+    }
+    setInviteBindError('')
+    setInviteBindLoading(true)
+    try {
+      await userApi.bindInviteCode(code)
+      toast.success('邀请码绑定成功')
+      setInviteCodeInput('')
+      reloadInvite()
+    } catch (err) {
+      const { getApiErrorMessage } = await import('@/lib/api/http')
+      const message = getApiErrorMessage(err)
+      setInviteBindError(message)
+      toast.error(message)
+    } finally {
+      setInviteBindLoading(false)
+    }
+  }
 
   // 修改密码
   const [pwdForm, setPwdForm] = useState({ new_password: '', confirm: '' })
@@ -197,6 +228,44 @@ export function UserProfilePage() {
               }
             </div>
           </div>
+      </PageSection>
+
+      <PageSection title="邀请关系" description="注册七天内且尚未绑定上级时，可以补填邀请码。">
+        <div className="space-y-4">
+          {inviteLoadError ? <Alert variant="destructive"><AlertDescription>{inviteLoadError}</AlertDescription></Alert> : null}
+          {inviteBindError ? <Alert variant="destructive"><AlertDescription>{inviteBindError}</AlertDescription></Alert> : null}
+          {inviteLoading ? (
+            <Skeleton className="h-10 w-full" />
+          ) : inviteInfo.inviter_id ? (
+            <Alert>
+              <UserPlus className="h-4 w-4" />
+              <AlertDescription>已绑定上级用户 UID #{inviteInfo.inviter_id}，邀请关系不可重复修改。</AlertDescription>
+            </Alert>
+          ) : inviteInfo.can_bind ? (
+            <>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  value={inviteCodeInput}
+                  onChange={(event) => setInviteCodeInput(event.target.value)}
+                  onKeyDown={(event) => event.key === 'Enter' && void bindInviteCode()}
+                  placeholder="请输入上级邀请码"
+                  aria-label="上级邀请码"
+                />
+                <Button onClick={() => void bindInviteCode()} disabled={inviteBindLoading} className="shrink-0">
+                  <UserPlus data-icon="inline-start" />
+                  {inviteBindLoading ? '绑定中…' : '绑定邀请码'}
+                </Button>
+              </div>
+              {inviteInfo.binding_deadline ? (
+                <p className="text-xs text-muted-foreground">
+                  绑定截止：{new Date(inviteInfo.binding_deadline).toLocaleString()}
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">当前账号已超过绑定期限，或暂时无法补填邀请码。</p>
+          )}
+        </div>
       </PageSection>
 
       <div className="grid gap-4 lg:grid-cols-2">

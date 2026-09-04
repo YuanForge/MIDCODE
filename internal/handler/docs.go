@@ -24,6 +24,18 @@ var allowedUserDocOps = map[string]map[string]bool{
 	"/v1/tasks/{id}": {
 		"get": true,
 	},
+	"/user/invite": {
+		"get": true,
+	},
+	"/user/invite/bind": {
+		"post": true,
+	},
+	"/user/invite/list": {
+		"get": true,
+	},
+	"/user/invite/convert": {
+		"post": true,
+	},
 }
 
 var allowedUserDocTags = map[string]bool{

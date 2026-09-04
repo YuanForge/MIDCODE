@@ -1050,8 +1050,10 @@ export const adminApi = {
     http.post<{ ok: boolean; refreshed: number }>('/admin/vip-groups/refresh-users', {}),
   updateVipGroup: (id: number, payload: Partial<AdminVIPGroup>) =>
     http.put<AdminVIPGroup>(`/admin/vip-groups/${id}`, payload),
-  deleteVipGroup: (id: number) =>
-    http.delete<Record<string, unknown>>(`/admin/vip-groups/${id}`),
+  deleteVipGroup: (id: number, clearUsers = false) =>
+    http.delete<Record<string, unknown>>(`/admin/vip-groups/${id}`, {
+      params: clearUsers ? { clear_users: 'true' } : undefined,
+    }),
   // 客户充值明细
   listPaymentOrders: (params: Record<string, unknown> = {}) =>
     http.get<{ orders: AdminPaymentOrder[]; total: number; summary?: AdminPaymentSummary; daily?: AdminPaymentDailySummary[] }>('/admin/payments', { params }),

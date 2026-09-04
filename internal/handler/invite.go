@@ -3,12 +3,14 @@ package handler
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"time"
 
 	"fanapi/internal/billing"
 	"fanapi/internal/db"
 	"fanapi/internal/model"
+	"fanapi/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,13 +21,13 @@ import (
 // @Description  返回邀请码、邀请人数及冻结积分（待解冻返佣）
 // @Tags         邀请
 // @Security     BearerAuth
-// @Success      200  {object}  object{invite_code=string,invite_count=int,frozen_balance=int}
+// @Success      200  {object}  object{invite_code=string,invite_count=int,frozen_balance=int,inviter_id=int,can_bind=bool,binding_deadline=string}
 // @Router       /user/invite [get]
 func GetInviteInfo(c *gin.Context) {
 	userID := c.MustGet("user_id").(int64)
 
 	var user model.User
-	if found, err := db.Engine.ID(userID).Cols("invite_code", "frozen_balance").Get(&user); err != nil || !found {
+	if found, err := db.Engine.ID(userID).Cols("invite_code", "frozen_balance", "inviter_id", "created_at").Get(&user); err != nil || !found {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取用户信息失败"})
 		return
 	}
@@ -48,12 +50,67 @@ func GetInviteInfo(c *gin.Context) {
 	}
 
 	count, _ := db.Engine.Where("inviter_id = ?", userID).Count(&model.User{})
+	deadline := service.InviteBindingDeadline(user.CreatedAt)
 
 	c.JSON(http.StatusOK, gin.H{
-		"invite_code":    user.InviteCode,
-		"invite_count":   count,
-		"frozen_balance": user.FrozenBalance,
+		"invite_code":      user.InviteCode,
+		"invite_count":     count,
+		"frozen_balance":   user.FrozenBalance,
+		"inviter_id":       user.InviterID,
+		"can_bind":         service.CanBindInvite(user.CreatedAt, user.InviterID, time.Now()),
+		"binding_deadline": deadline,
 	})
+}
+
+// BindInviteCode 允许注册七天内且尚未绑定上级的用户补填邀请码。
+//
+// @Summary      绑定上级邀请码
+// @Description  注册七天内补填邀请码；每个用户只能绑定一次，且不能形成邀请循环。
+// @Tags         邀请
+// @Security     BearerAuth
+// @Param        body  body      object{invite_code=string}  true  "邀请码"
+// @Success      200   {object}  object{inviter_id=int,message=string}
+// @Failure      400   {object}  object  "绑定失败"
+// @Router       /user/invite/bind [post]
+func BindInviteCode(c *gin.Context) {
+	var req struct {
+		InviteCode string `json:"invite_code"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入邀请码"})
+		return
+	}
+
+	userID := c.MustGet("user_id").(int64)
+	inviterID, err := service.BindInviteCode(c.Request.Context(), userID, req.InviteCode)
+	if err != nil {
+		status := http.StatusBadRequest
+		message := err.Error()
+		known := []error{
+			service.ErrInviteCodeRequired,
+			service.ErrInviteCodeInvalid,
+			service.ErrInviteAlreadyBound,
+			service.ErrInviteBindingExpired,
+			service.ErrInviteSelf,
+			service.ErrInviteCycle,
+			service.ErrInviteChainInvalid,
+		}
+		isKnown := false
+		for _, candidate := range known {
+			if errors.Is(err, candidate) {
+				isKnown = true
+				break
+			}
+		}
+		if !isKnown {
+			status = http.StatusInternalServerError
+			message = "绑定邀请码失败，请稍后重试"
+		}
+		c.JSON(status, gin.H{"error": message})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "邀请码绑定成功", "inviter_id": inviterID})
 }
 
 // ConvertFrozenBalance 将冻结积分转为可用积分。

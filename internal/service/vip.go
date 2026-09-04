@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -11,6 +12,18 @@ import (
 	"fanapi/internal/model"
 	"xorm.io/xorm"
 )
+
+var ErrVIPGroupReferenced = errors.New("VIP 分组仍有用户使用")
+
+type VIPGroupUsersReferencedError struct {
+	UserCount int64
+}
+
+func (err *VIPGroupUsersReferencedError) Error() string {
+	return fmt.Sprintf("%s: user_count=%d", ErrVIPGroupReferenced, err.UserCount)
+}
+
+func (err *VIPGroupUsersReferencedError) Unwrap() error { return ErrVIPGroupReferenced }
 
 func init() {
 	billing.RegisterVIPDiscountLookup(VIPDiscountBpsForGroup)
@@ -86,16 +99,62 @@ func UpdateVIPGroup(ctx context.Context, group *model.VIPGroup) error {
 	return nil
 }
 
-func DeleteVIPGroup(ctx context.Context, id int64) error {
+func validateVIPGroupDelete(userCount int64, clearUsers bool) error {
+	if userCount > 0 && !clearUsers {
+		return &VIPGroupUsersReferencedError{UserCount: userCount}
+	}
+	return nil
+}
+
+func deletedVIPGroupUserUpdate() model.User {
+	return model.User{Group: "", VIPRechargeBase: 0}
+}
+
+func DeleteVIPGroup(ctx context.Context, id int64, clearUsers bool) error {
 	if id <= 0 {
 		return fmt.Errorf("VIP 分组 ID 不能为空")
 	}
-	affected, err := db.Engine.Context(ctx).ID(id).Delete(&model.VIPGroup{})
-	if err != nil {
+
+	session := db.Engine.NewSession().Context(ctx)
+	defer session.Close()
+	if err := session.Begin(); err != nil {
 		return err
 	}
-	if affected == 0 {
-		return fmt.Errorf("VIP 分组不存在")
+	rollback := func(err error) error {
+		_ = session.Rollback()
+		return err
+	}
+
+	var group model.VIPGroup
+	found, err := session.SQL("SELECT id, code FROM vip_groups WHERE id = ? FOR UPDATE", id).Get(&group)
+	if err != nil {
+		return rollback(err)
+	}
+	if !found {
+		return rollback(fmt.Errorf("VIP 分组不存在"))
+	}
+
+	userCount, err := session.Where(`"group" = ?`, group.Code).Count(new(model.User))
+	if err != nil {
+		return rollback(err)
+	}
+	if err := validateVIPGroupDelete(userCount, clearUsers); err != nil {
+		return rollback(err)
+	}
+	if clearUsers && userCount > 0 {
+		if _, err := session.Where(`"group" = ?`, group.Code).
+			Cols("group", "vip_recharge_baseline").Update(deletedVIPGroupUserUpdate()); err != nil {
+			return rollback(err)
+		}
+	}
+
+	if affected, err := session.ID(id).Delete(&model.VIPGroup{}); err != nil {
+		return rollback(err)
+	} else if affected == 0 {
+		return rollback(fmt.Errorf("VIP 分组不存在"))
+	}
+	if err := session.Commit(); err != nil {
+		return err
 	}
 	return nil
 }
