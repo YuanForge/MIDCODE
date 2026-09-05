@@ -111,6 +111,32 @@ test('shows the lowest terminal group price on model cards and in detail order',
   expect(details.indexOf('gpt-plus临时')).toBeLessThan(details.indexOf('gpt-k12'))
 })
 
+test('filters model cards by provider without leaking other providers', async ({ page }) => {
+  await page.route('**/api/user/channels', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        channels: [
+          { id: 1, name: 'claude-sonnet', routing_model: 'claude-sonnet', model_provider: 'Anthropic', type: 'llm', protocol: 'claude' },
+          { id: 2, name: 'gpt-5.6', routing_model: 'gpt-5.6', model_provider: 'OpenAI', type: 'llm', protocol: 'openai' },
+        ],
+      }),
+    })
+  })
+  await page.route('**/api/user/model-availability', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ models: [] }) })
+  })
+
+  await page.goto('/models')
+  await expect(page.getByRole('heading', { name: 'claude-sonnet' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'gpt-5.6' })).toBeVisible()
+
+  await page.getByText('OpenAI', { exact: true }).last().click()
+  await expect(page.getByRole('heading', { name: 'gpt-5.6' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'claude-sonnet' })).toHaveCount(0)
+})
+
 test('configures Fast ratio through the channel editor', async ({ page }) => {
   let savedPayload: Record<string, unknown> | undefined
 

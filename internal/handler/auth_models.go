@@ -145,7 +145,11 @@ func listGroupedModelChannels() ([]groupedModelChannel, error) {
 		}
 		for _, binding := range bindings {
 			var channel model.Channel
-			found, err := db.Engine.Where("id = ? AND is_active = true", binding.ChannelID).Get(&channel)
+			found, err := db.Engine.Table("channels").Alias("c").
+				Select("c.*, mp.name AS model_provider").
+				Join("INNER", "model_providers mp", "mp.id = c.model_provider_id").
+				Where("c.id = ? AND c.is_active = true AND mp.is_active = true", binding.ChannelID).
+				Get(&channel)
 			if err != nil {
 				return nil, err
 			}
