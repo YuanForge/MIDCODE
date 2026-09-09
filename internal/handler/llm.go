@@ -321,9 +321,9 @@ func llmProxy(c *gin.Context) {
 	}
 	// 保存原始请求体字节，供 passthrough_body 模式使用（在任何解析或修改之前）
 	c.Set("raw_body", bodyBytes)
-	var reqData map[string]interface{}
-	if err := json.Unmarshal(bodyBytes, &reqData); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体 JSON 格式错误"})
+	reqData, err := decodeLLMRequest(c, bodyBytes)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误: " + err.Error()})
 		return
 	}
 
@@ -521,6 +521,9 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 	origReqData := make(map[string]interface{}, len(reqData))
 	for k, v := range reqData {
 		origReqData[k] = v
+	}
+	if isOpenAIImageRoute(matchedLLMRoute(c)) {
+		origReqData["model"] = routingKey
 	}
 	requestedTier := billing.RequestedTier(origReqData)
 
@@ -811,8 +814,12 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 
 	// ---- 同步响应 ----
 	if !isStream {
-		respBytes, _ := io.ReadAll(resp.Body)
-		if !isResponsesCompact {
+		respBytes, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			llmRefundAndAbort(c, corrID, userID, apiKeyIDVal, totalHold, upstreamCostHold, poolKeyIDVal, http.StatusBadGateway, "读取上游响应失败: "+readErr.Error())
+			return
+		}
+		if !isResponsesCompact && !isOpenAIImageRoute(matchedLLMRoute(c)) {
 			if converted, detected, convErr := protocol.ConvertSSEToSyncResponse(respBytes, proto); detected {
 				if convErr != nil {
 					service.RecordChannelError(c.Request.Context(), channelID)
@@ -828,6 +835,10 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 		// 导致 NormalizeUsage 找不到对应字段而返回 nil，触发错误的全额退款。
 		var origRespJSON map[string]interface{}
 		_ = json.Unmarshal(respBytes, &origRespJSON)
+		if isOpenAIImageRoute(matchedLLMRoute(c)) && origRespJSON == nil {
+			llmRefundAndAbort(c, corrID, userID, apiKeyIDVal, totalHold, upstreamCostHold, poolKeyIDVal, http.StatusBadGateway, "上游图片响应不是 JSON 对象")
+			return
+		}
 
 		if origRespJSON != nil {
 			// 200 但 body 内含 error：优先跑 error_script，未命中时走通用 OpenAI error 检测。
@@ -869,6 +880,14 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 
 		// 从原始上游响应提取 usage（使用渠道原始格式，在任何协议转换之前）
 		syncUsage := protocol.NormalizeUsage(origRespJSON, proto)
+		if isOpenAIImageRoute(matchedLLMRoute(c)) {
+			data, ok := origRespJSON["data"].([]interface{})
+			if !ok || len(data) == 0 {
+				llmRefundAndAbort(c, corrID, userID, apiKeyIDVal, totalHold, upstreamCostHold, poolKeyIDVal, http.StatusBadGateway, "上游未返回图片数据")
+				return
+			}
+			syncUsage = openAIImageUsage(origRespJSON)
+		}
 
 		// 响应格式转换链：渠道格式 → OpenAI → 客户端格式
 		// 客户端格式 == 渠道格式时直接透传；有 response_script 时跳过自动转换。

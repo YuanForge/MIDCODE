@@ -583,7 +583,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "OpenAI 图片生成兼容接口。服务端等待任务完成后返回官方 {created, data} 响应；超时或失败返回明确错误。",
+                "description": "使用 LLM 渠道同步转发上游图片生成接口，直接返回上游 JSON，不创建异步任务。",
                 "consumes": [
                     "application/json"
                 ],
@@ -659,7 +659,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "OpenAI 图片编辑兼容接口。服务端等待任务完成后返回官方 {created, data} 响应；超时或失败返回明确错误。",
+                "description": "使用 LLM 渠道同步转发上游图片编辑接口，保留 multipart 文件，不创建异步任务。",
                 "consumes": [
                     "multipart/form-data"
                 ],

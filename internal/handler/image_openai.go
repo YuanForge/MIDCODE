@@ -1,222 +1,82 @@
 package handler
 
 import (
-	"context"
-	"encoding/base64"
-	"errors"
-	"io"
-	"net/http"
+	"encoding/json"
+	"fmt"
+	"math"
 	"strings"
-	"time"
 
-	"fanapi/internal/db"
-	"fanapi/internal/model"
-
+	"fanapi/internal/protocol"
 	"github.com/gin-gonic/gin"
 )
 
-const (
-	silentTaskCreationContextKey = "silent_task_creation"
-	createdTaskIDContextKey      = "created_task_id"
-	openAIImageWaitTimeout       = 180 * time.Second
-)
-
-var errOpenAIImageResultEmpty = errors.New("图片生成完成但未返回图片数据")
-
-type openAIImageDataItem struct {
-	URL     string `json:"url,omitempty"`
-	B64JSON string `json:"b64_json,omitempty"`
+func isOpenAIImageRoute(route string) bool {
+	return route == "/v1/images/generations" || route == "/v1/images/edits"
 }
 
-// CreateOpenAIImageGenerations adapts the platform task pipeline to the
-// official OpenAI image generations response contract.
-//
-// @Summary      OpenAI 图片生成
-// @Description  OpenAI 图片生成兼容接口。服务端等待任务完成后返回官方 {created, data} 响应；超时或失败返回明确错误。
-// @Tags         媒体生成
-// @Accept       json
-// @Produce      json
-// @Security     ApiKeyAuth
-// @Param        body  body      model.ImageRequest  true  "OpenAI 图片生成参数"
-// @Success      200   {object}  object{created=int,data=[]object}
-// @Failure      400   {object}  object  "参数错误"
-// @Failure      502   {object}  object  "上游图片生成失败"
-// @Failure      504   {object}  object  "图片生成超时"
-// @Router       /v1/images/generations [post]
+// CreateOpenAIImageGenerations forwards images through the synchronous LLM pipeline.
+// @Summary OpenAI 图片生成
+// @Description 使用 LLM 渠道同步转发上游图片生成接口，直接返回上游 JSON，不创建异步任务。
+// @Tags 媒体生成
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param body body model.ImageRequest true "OpenAI 图片生成参数"
+// @Success 200 {object} object
+// @Router /v1/images/generations [post]
 func CreateOpenAIImageGenerations(c *gin.Context) {
-	bodyBytes, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		writeOpenAIImageError(c, http.StatusBadRequest, "读取请求体失败", "invalid_request_error", 0)
-		return
-	}
-	req, err := bindImageRequest(bodyBytes)
-	if err != nil {
-		writeOpenAIImageError(c, http.StatusBadRequest, err.Error(), "invalid_request_error", 0)
-		return
-	}
-	req.ReferImages = expandReferImages(req.ReferImages, requestBaseURL(c))
-	serveOpenAIImageTask(c, req, req.ToMap())
-	return
+	c.Set("client_proto", protocolOpenAI)
+	c.Set(llmRouteContextKey, "/v1/images/generations")
+	llmProxy(c)
 }
 
-func serveOpenAIImageTask(c *gin.Context, req *model.ImageRequest, payload map[string]interface{}) {
-	c.Set(silentTaskCreationContextKey, true)
-	createTask(c, "image", payload)
-	if c.Writer.Written() {
-		return
-	}
-
-	rawTaskID, ok := c.Get(createdTaskIDContextKey)
-	if !ok {
-		writeOpenAIImageError(c, http.StatusInternalServerError, "创建图片任务失败，请稍后重试", "server_error", 0)
-		return
-	}
-	taskID, ok := rawTaskID.(int64)
-	if !ok || taskID <= 0 {
-		writeOpenAIImageError(c, http.StatusInternalServerError, "创建图片任务失败，请稍后重试", "server_error", 0)
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(c.Request.Context(), openAIImageWaitTimeout)
-	defer cancel()
-	task, err := waitForImageTask(ctx, c.MustGet("user_id").(int64), taskID)
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			writeOpenAIImageError(c, http.StatusGatewayTimeout, "图片生成超时，请稍后通过任务接口查询结果", "image_generation_timeout", taskID)
-			return
+func validateOpenAIImageRequest(req map[string]interface{}) error {
+	for _, key := range []string{"model", "prompt"} {
+		value, _ := req[key].(string)
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("%s is required", key)
 		}
-		writeOpenAIImageError(c, http.StatusInternalServerError, "查询图片任务失败，请稍后重试", "server_error", taskID)
-		return
 	}
-	if task.Status == "failed" {
-		message := task.ErrorMsg
-		if strings.TrimSpace(message) == "" {
-			message = "图片生成失败"
+	if n, exists := req["n"]; exists {
+		count, ok := n.(float64)
+		if !ok || math.IsNaN(count) || math.IsInf(count, 0) || count <= 0 || math.Trunc(count) != count {
+			return fmt.Errorf("n must be a positive integer")
 		}
-		writeOpenAIImageError(c, http.StatusBadGateway, message, "image_generation_failed", taskID)
-		return
 	}
-
-	responseFormat, _ := req.Extra["response_format"].(string)
-	data, err := openAIImageData(task, responseFormat)
-	if err != nil {
-		writeOpenAIImageError(c, http.StatusBadGateway, err.Error(), "image_generation_empty", taskID)
-		return
+	if stream, exists := req["stream"]; exists && stream != false {
+		return fmt.Errorf("image endpoints only support synchronous requests (stream=false)")
 	}
-	created := task.CreatedAt.Unix()
-	if created <= 0 {
-		created = time.Now().Unix()
-	}
-	c.JSON(http.StatusOK, gin.H{"created": created, "data": data})
+	return nil
 }
 
-func waitForImageTask(ctx context.Context, userID, taskID int64) (*model.Task, error) {
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		var task model.Task
-		found, err := db.Engine.Context(ctx).Where("id = ? AND user_id = ?", taskID, userID).
-			Cols("id", "user_id", "type", "status", "result", "error_msg", "created_at", "updated_at").Get(&task)
-		if err != nil {
-			return nil, err
-		}
-		if !found {
-			return nil, errors.New("task not found")
-		}
-		if task.Status == "done" || task.Status == "failed" {
-			return &task, nil
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-ticker.C:
+// Keep the original response untouched; normalize only the billing metadata.
+func openAIImageUsage(resp map[string]interface{}) map[string]interface{} {
+	proto := protocolOpenAI
+	if usage, ok := resp["usage"].(map[string]interface{}); ok {
+		if _, exists := usage["input_tokens"]; exists {
+			proto = protocolResponses
 		}
 	}
+	usage := protocol.NormalizeUsage(resp, proto)
+	if data, ok := resp["data"].([]interface{}); ok {
+		if usage == nil {
+			usage = make(map[string]interface{})
+		}
+		usage["image_count"] = int64(len(data))
+	}
+	return usage
 }
 
-func openAIImageData(task *model.Task, responseFormat string) ([]openAIImageDataItem, error) {
-	if task == nil || len(task.Result) == 0 {
-		return nil, errOpenAIImageResultEmpty
+func decodeLLMRequest(c *gin.Context, body []byte) (map[string]interface{}, error) {
+	var req map[string]interface{}
+	var err error
+	if matchedLLMRoute(c) == "/v1/images/edits" && strings.HasPrefix(c.GetHeader("Content-Type"), "multipart/form-data") {
+		req, err = decodeOpenAIImageMultipart(c, body)
+	} else {
+		err = json.Unmarshal(body, &req)
 	}
-	var data []openAIImageDataItem
-	var collect func(interface{})
-	collect = func(raw interface{}) {
-		switch value := raw.(type) {
-		case string:
-			value = strings.TrimSpace(value)
-			if value != "" {
-				data = append(data, imageDataItemFromString(value, responseFormat))
-			}
-		case []interface{}:
-			for _, item := range value {
-				collect(item)
-			}
-		case []string:
-			for _, item := range value {
-				collect(item)
-			}
-		case map[string]interface{}:
-			if b64, _ := value["b64_json"].(string); strings.TrimSpace(b64) != "" {
-				data = append(data, openAIImageDataItem{B64JSON: strings.TrimSpace(b64)})
-				return
-			}
-			if url, _ := value["url"].(string); strings.TrimSpace(url) != "" {
-				data = append(data, imageDataItemFromString(strings.TrimSpace(url), responseFormat))
-				return
-			}
-			for _, key := range []string{"data", "items", "result", "url"} {
-				if nested, ok := value[key]; ok {
-					collect(nested)
-					if len(data) > 0 {
-						return
-					}
-				}
-			}
-		}
+	if err == nil && isOpenAIImageRoute(matchedLLMRoute(c)) {
+		err = validateOpenAIImageRequest(req)
 	}
-
-	for _, key := range []string{"data", "url", "items", "result"} {
-		if value, ok := task.Result[key]; ok {
-			collect(value)
-			if len(data) > 0 {
-				break
-			}
-		}
-	}
-	if len(data) == 0 {
-		return nil, errOpenAIImageResultEmpty
-	}
-	return data, nil
-}
-
-func imageDataItemFromString(value, responseFormat string) openAIImageDataItem {
-	if responseFormat == "b64_json" {
-		if encoded, ok := decodeDataURI(value); ok {
-			return openAIImageDataItem{B64JSON: encoded}
-		}
-	}
-	return openAIImageDataItem{URL: value}
-}
-
-func decodeDataURI(value string) (string, bool) {
-	if !strings.HasPrefix(strings.ToLower(value), "data:") {
-		return "", false
-	}
-	comma := strings.IndexByte(value, ',')
-	if comma < 0 || !strings.Contains(strings.ToLower(value[:comma]), ";base64") {
-		return "", false
-	}
-	encoded := value[comma+1:]
-	if _, err := base64.StdEncoding.DecodeString(encoded); err != nil {
-		return "", false
-	}
-	return encoded, true
-}
-
-func writeOpenAIImageError(c *gin.Context, status int, message, code string, taskID int64) {
-	errBody := gin.H{"message": message, "type": "image_generation_error", "code": code}
-	if taskID > 0 {
-		errBody["task_id"] = taskID
-	}
-	c.JSON(status, gin.H{"error": errBody})
+	return req, err
 }

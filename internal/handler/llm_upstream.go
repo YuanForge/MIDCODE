@@ -27,6 +27,8 @@ import (
 func sendLLMRequest(c *gin.Context, ch *model.Channel, reqData map[string]interface{}, poolKey *model.PoolKey, channelProtocol string, resolvedModel string, isStream bool, responsesOperation ...string) (map[string]string, *http.Response, error) {
 	// passthrough_body=true：直接使用客户端原始请求体，不做任何序列化/修改
 	var body []byte
+	contentType := "application/json"
+	imageMultipart := isOpenAIImageRoute(matchedLLMRoute(c)) && c.Request.MultipartForm != nil
 	if ch.PassthroughBody {
 		if rb, ok := c.Get("raw_body"); ok {
 			if rawBytes, ok := rb.([]byte); ok {
@@ -35,7 +37,17 @@ func sendLLMRequest(c *gin.Context, ch *model.Channel, reqData map[string]interf
 		}
 	}
 	if len(body) == 0 {
-		body, _ = json.Marshal(reqData)
+		var err error
+		if imageMultipart {
+			body, contentType, err = encodeOpenAIImageMultipart(c.Request.MultipartForm, reqData)
+		} else {
+			body, err = json.Marshal(reqData)
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+	} else if imageMultipart {
+		contentType = c.GetHeader("Content-Type")
 	}
 	timeout := time.Duration(ch.TimeoutMs) * time.Millisecond
 	httpClient := newLLMHTTPClient(timeout, isStream)
@@ -119,6 +131,10 @@ func sendLLMRequest(c *gin.Context, ch *model.Channel, reqData map[string]interf
 	}
 
 	// 采集完整请求头（用于管理端日志排查，含完整 API Key）
+	if isOpenAIImageRoute(matchedLLMRoute(c)) {
+		upReq.Header.Set("Content-Type", contentType)
+		upReq.Header.Set("Accept", "application/json")
+	}
 	if err := applyChannelAuth(upReq, ch, poolKeyVal, body); err != nil {
 		return nil, nil, err
 	}
@@ -170,6 +186,23 @@ func resolveLLMUpstreamTarget(baseURL, route, channelProtocol, resolvedModel str
 	}
 
 	parsed, err := url.Parse(resolvedBaseURL)
+	if err == nil && isOpenAIImageRoute(route) {
+		path := strings.TrimRight(parsed.Path, "/")
+		switch {
+		case path == "":
+			parsed.Path = route
+		case strings.HasSuffix(path, "/v1"):
+			parsed.Path = path + strings.TrimPrefix(route, "/v1")
+		default:
+			for _, suffix := range []string{"/chat/completions", "/responses", "/images/generations", "/images/edits"} {
+				if strings.HasSuffix(path, suffix) {
+					parsed.Path = strings.TrimSuffix(path, suffix) + strings.TrimPrefix(route, "/v1")
+					break
+				}
+			}
+		}
+		return llmUpstreamTarget{URL: parsed.String(), Protocol: protocolOpenAI, Dynamic: parsed.String() != resolvedBaseURL}
+	}
 	if err != nil || strings.TrimRight(parsed.Path, "/") != "/v1" {
 		return fixedTarget
 	}

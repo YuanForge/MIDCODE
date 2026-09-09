@@ -69,6 +69,9 @@ func prepareLLMUpstreamAttempt(c *gin.Context, ch *model.Channel, poolKey *model
 		responsesOperation,
 	)
 	proto := target.Protocol
+	if isOpenAIImageRoute(matchedLLMRoute(c)) {
+		request["model"] = resolvedModel
+	}
 	requestedTier := billing.RequestedTier(source)
 	if requestedTier == billing.TierFast {
 		if _, ok := billing.FastRatio(ch); !ok {

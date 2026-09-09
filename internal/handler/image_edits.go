@@ -1,156 +1,124 @@
 package handler
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
+	"mime"
 	"mime/multipart"
-	"net/http"
-	"net/url"
 	"strconv"
-	"strings"
-
-	"fanapi/internal/model"
 
 	"github.com/gin-gonic/gin"
 )
 
-// CreateOpenAIImageEdits accepts OpenAI's multipart image editing request and
-// routes the uploaded files through the same billed image task pipeline.
-//
-// @Summary      OpenAI 图片编辑
-// @Description  OpenAI 图片编辑兼容接口。服务端等待任务完成后返回官方 {created, data} 响应；超时或失败返回明确错误。
-// @Tags         媒体生成
-// @Accept       mpfd
-// @Produce      json
-// @Security     ApiKeyAuth
-// @Param        image   formData  file    true   "源图片，可重复传入 image[]"
-// @Param        prompt  formData  string  true   "编辑提示词"
-// @Param        mask    formData  file    false  "可选遮罩图片"
-// @Param        model   formData  string  true   "图片模型"
-// @Param        n       formData  int     false  "生成数量"
-// @Param        size    formData  string  false  "图片尺寸"
-// @Param        response_format formData string false "url 或 b64_json"
-// @Success      200   {object}  object{created=int,data=[]object}
-// @Failure      400   {object}  object  "参数或上传文件错误"
-// @Failure      502   {object}  object  "上游图片编辑失败"
-// @Failure      504   {object}  object  "图片编辑超时"
-// @Router       /v1/images/edits [post]
+// CreateOpenAIImageEdits forwards uploaded images through the synchronous LLM pipeline.
+// @Summary OpenAI 图片编辑
+// @Description 使用 LLM 渠道同步转发上游图片编辑接口，保留 multipart 文件，不创建异步任务。
+// @Tags 媒体生成
+// @Accept mpfd,json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param image formData file true "源图片，可重复传入 image[]"
+// @Param model formData string true "图片模型"
+// @Param prompt formData string true "编辑提示词"
+// @Success 200 {object} object
+// @Router /v1/images/edits [post]
 func CreateOpenAIImageEdits(c *gin.Context) {
-	form, err := c.MultipartForm()
-	if err != nil {
-		writeOpenAIImageError(c, http.StatusBadRequest, "请求必须使用 multipart/form-data", "invalid_request_error", 0)
-		return
-	}
-	req, err := parseOpenAIImageEditValues(form.Value)
-	if err != nil {
-		writeOpenAIImageError(c, http.StatusBadRequest, err.Error(), "invalid_request_error", 0)
-		return
-	}
-	images, mask, err := collectOpenAIImageEditFiles(form)
-	if err != nil {
-		writeOpenAIImageError(c, http.StatusBadRequest, err.Error(), "invalid_request_error", 0)
-		return
-	}
-
-	imageURLs := make([]string, 0, len(images))
-	for _, file := range images {
-		imageURL, saveErr := saveUploadedFileURL(c, file, "image-edits", imageUploadRule)
-		if saveErr != nil {
-			writeOpenAIImageUploadError(c, saveErr)
-			return
+	c.Set("client_proto", protocolOpenAI)
+	c.Set(llmRouteContextKey, "/v1/images/edits")
+	defer func() {
+		if c.Request.MultipartForm != nil {
+			_ = c.Request.MultipartForm.RemoveAll()
 		}
-		imageURLs = append(imageURLs, imageURL)
-	}
-	var maskURL string
-	if mask != nil {
-		maskURL, err = saveUploadedFileURL(c, mask, "image-edits", imageUploadRule)
-		if err != nil {
-			writeOpenAIImageUploadError(c, err)
-			return
-		}
-	}
-
-	req.ReferImages = imageURLs
-	payload := buildOpenAIImageEditPayload(req, imageURLs, maskURL)
-	serveOpenAIImageTask(c, req, payload)
+	}()
+	llmProxy(c)
 }
 
-func parseOpenAIImageEditValues(values url.Values) (*model.ImageRequest, error) {
-	if values == nil {
-		values = url.Values{}
+func decodeOpenAIImageMultipart(c *gin.Context, body []byte) (map[string]interface{}, error) {
+	_, params, err := mime.ParseMediaType(c.GetHeader("Content-Type"))
+	if err != nil {
+		return nil, err
 	}
-	req := &model.ImageRequest{
-		Model:  strings.TrimSpace(values.Get("model")),
-		Prompt: strings.TrimSpace(values.Get("prompt")),
-		Size:   strings.ToLower(strings.TrimSpace(values.Get("size"))),
-		Extra:  make(map[string]interface{}),
+	form, err := multipart.NewReader(bytes.NewReader(body), params["boundary"]).ReadForm(32 << 20)
+	if err != nil {
+		return nil, err
 	}
-	if req.Model == "" {
-		return nil, fmt.Errorf("model is required")
+	c.Request.MultipartForm = form
+	if len(form.File["image"])+len(form.File["image[]"]) == 0 {
+		return nil, fmt.Errorf("image is required")
 	}
-	if req.Prompt == "" {
-		return nil, fmt.Errorf("prompt is required")
+	req := make(map[string]interface{}, len(form.Value))
+	for key, values := range form.Value {
+		if len(values) == 1 {
+			req[key] = values[0]
+		} else {
+			items := make([]interface{}, len(values))
+			for i, value := range values {
+				items[i] = value
+			}
+			req[key] = items
+		}
 	}
-	if rawN := strings.TrimSpace(values.Get("n")); rawN != "" {
-		n, err := strconv.Atoi(rawN)
-		if err != nil || n <= 0 {
+	if raw, ok := req["n"].(string); ok {
+		n, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
 			return nil, fmt.Errorf("n must be a positive integer")
 		}
-		req.N = n
+		req["n"] = n
 	}
-	known := map[string]bool{"model": true, "prompt": true, "size": true, "n": true, "image": true, "image[]": true, "mask": true}
-	for key, rawValues := range values {
-		if known[key] || len(rawValues) == 0 {
-			continue
+	if raw, ok := req["stream"].(string); ok {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			return nil, err
 		}
-		req.Extra[key] = rawValues[len(rawValues)-1]
+		req["stream"] = value
 	}
 	return req, nil
 }
 
-func collectOpenAIImageEditFiles(form *multipart.Form) ([]*multipart.FileHeader, *multipart.FileHeader, error) {
-	if form == nil {
-		return nil, nil, fmt.Errorf("image is required")
-	}
-	images := append([]*multipart.FileHeader(nil), form.File["image"]...)
-	images = append(images, form.File["image[]"]...)
-	if len(images) == 0 {
-		return nil, nil, fmt.Errorf("image is required")
-	}
-	for _, image := range images {
-		if image == nil {
-			return nil, nil, fmt.Errorf("image is required")
+// Rebuild each attempt with its mapped fields and the original file parts.
+func encodeOpenAIImageMultipart(form *multipart.Form, req map[string]interface{}) ([]byte, string, error) {
+	var body bytes.Buffer
+	w := multipart.NewWriter(&body)
+	for key, value := range req {
+		values, ok := value.([]interface{})
+		if !ok {
+			values = []interface{}{value}
+		}
+		for _, item := range values {
+			text, ok := item.(string)
+			if !ok {
+				encoded, err := json.Marshal(item)
+				if err != nil {
+					return nil, "", err
+				}
+				text = string(encoded)
+			}
+			if err := w.WriteField(key, text); err != nil {
+				return nil, "", err
+			}
 		}
 	}
-	var mask *multipart.FileHeader
-	if masks := form.File["mask"]; len(masks) > 0 {
-		mask = masks[0]
+	for _, files := range form.File {
+		for _, file := range files {
+			part, err := w.CreatePart(file.Header)
+			if err != nil {
+				return nil, "", err
+			}
+			src, err := file.Open()
+			if err != nil {
+				return nil, "", err
+			}
+			_, err = io.Copy(part, src)
+			_ = src.Close()
+			if err != nil {
+				return nil, "", err
+			}
+		}
 	}
-	return images, mask, nil
-}
-
-func buildOpenAIImageEditPayload(req *model.ImageRequest, imageURLs []string, maskURL string) map[string]interface{} {
-	payload := req.ToMap()
-	payload["refer_images"] = imageURLs
-	payload["_body_type"] = "multipart/form-data"
-	files := map[string]interface{}{}
-	if len(imageURLs) == 1 {
-		files["image"] = imageURLs[0]
-	} else {
-		files["image"] = imageURLs
+	if err := w.Close(); err != nil {
+		return nil, "", err
 	}
-	if strings.TrimSpace(maskURL) != "" {
-		files["mask"] = maskURL
-	}
-	payload["_files"] = files
-	return payload
-}
-
-func writeOpenAIImageUploadError(c *gin.Context, err error) {
-	status := http.StatusInternalServerError
-	message := "保存图片失败，请稍后重试"
-	if fileErr, ok := err.(*uploadFileError); ok {
-		status = fileErr.status
-		message = fileErr.message
-	}
-	writeOpenAIImageError(c, status, message, "invalid_request_error", 0)
+	return body.Bytes(), w.FormDataContentType(), nil
 }
