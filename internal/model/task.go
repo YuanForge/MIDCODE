@@ -55,7 +55,7 @@ type Task struct {
 	UpstreamTaskID   string     `xorm:"default('') 'upstream_task_id'" json:"upstream_task_id,omitempty"` // 异步渠道：第三方返回的任务 ID，用于轮询
 	ErrorMsg         string     `xorm:"text 'error_msg'" json:"error_msg,omitempty"`
 	CreditsCharged   int64      `xorm:"notnull default(0) 'credits_charged'" json:"credits_charged"`
-	CorrID           string     `xorm:"default('') 'corr_id'" json:"corr_id,omitempty"`               // 关联计费流水的唯一 ID
+	CorrID           string     `xorm:"index default('') 'corr_id'" json:"corr_id,omitempty"`         // 关联计费流水的唯一 ID
 	RetryChannelIDs  Int64Array `xorm:"jsonb 'retry_channel_ids'" json:"retry_channel_ids,omitempty"` // 稳定密钥：剩余待试渠道 ID（按价格升序），异步路径上由 poller 读取以触发重试
 	UserDeleted      bool       `xorm:"default(false) 'user_deleted'" json:"user_deleted,omitempty"`  // 用户侧已清除（软删除）
 	CreatedAt        time.Time  `xorm:"created 'created_at'" json:"created_at"`

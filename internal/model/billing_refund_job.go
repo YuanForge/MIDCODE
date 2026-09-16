@@ -11,7 +11,7 @@ type BillingRefundJob struct {
 	ChannelID           int64     `xorm:"'channel_id'" json:"channel_id"`
 	APIKeyID            int64     `xorm:"'api_key_id'" json:"api_key_id"`
 	PoolKeyID           int64     `xorm:"notnull default(0) 'pool_key_id'" json:"pool_key_id"`
-	CorrID              string    `xorm:"'corr_id'" json:"corr_id"`
+	CorrID              string    `xorm:"index 'corr_id'" json:"corr_id"`
 	Credits             int64     `xorm:"notnull 'credits'" json:"credits"`
 	Cost                int64     `xorm:"notnull default(0) 'cost'" json:"cost"`
 	ModelCreditRefunded int64     `xorm:"notnull default(0) 'model_credit_refunded'" json:"model_credit_refunded"`

@@ -150,7 +150,7 @@ func ConvertFrozenBalance(c *gin.Context) {
 
 	// 原子操作：减少 frozen_balance，增加可用余额。Redis 只作为缓存，失败不影响账务。
 	n, err := db.Engine.Exec(
-		"UPDATE users SET frozen_balance = frozen_balance - $1, balance = balance + $1 WHERE id = $2 AND frozen_balance >= $1",
+		"UPDATE users SET frozen_balance = frozen_balance - $1, balance = balance + $1, reward_balance = reward_balance + $1 WHERE id = $2 AND frozen_balance >= $1",
 		toConvert, userID,
 	)
 	if err != nil {

@@ -13,6 +13,8 @@ type User struct {
 	IsActive        bool      `xorm:"notnull default(true) 'is_active'" json:"is_active"`
 	FrozenReason    string    `xorm:"notnull default('') 'frozen_reason'" json:"frozen_reason,omitempty"` // 冻结原因（解冻后清空）
 	Balance         int64     `xorm:"notnull default(0) 'balance'" json:"balance"`
+	RewardBalance   int64     `xorm:"notnull default(0) 'reward_balance'" json:"reward_balance"` // 可用余额中不可再次返佣的邀请奖励，含已授权额度
+	RebateDebt      int64     `xorm:"notnull default(0) 'rebate_debt'" json:"rebate_debt"`       // 已转换奖励发生退款时，后续返佣先抵扣
 	FrozenBalance   int64     `xorm:"notnull default(0) 'frozen_balance'" json:"frozen_balance"` // 冻结余额（邀请返佣所得）
 	RebateRatio     *float64  `xorm:"'rebate_ratio' null" json:"rebate_ratio,omitempty"`         // 个人返佣比例（nil 时使用系统默认值）
 	InviteCode      string    `xorm:"'invite_code'" json:"invite_code,omitempty"`                // 邀请码（唯一，注册时自动生成）

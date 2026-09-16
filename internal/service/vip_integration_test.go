@@ -57,7 +57,8 @@ CREATE TABLE users (
   id BIGSERIAL PRIMARY KEY,
   username TEXT NOT NULL UNIQUE,
   "group" TEXT NOT NULL DEFAULT '',
-  vip_recharge_baseline BIGINT NOT NULL DEFAULT 0
+  vip_recharge_baseline BIGINT NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );`); err != nil {
 		t.Fatal(err)
 	}

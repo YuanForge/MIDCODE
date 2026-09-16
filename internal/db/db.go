@@ -84,6 +84,7 @@ func Init(cfg *config.DBConfig, migrate bool) error {
 		new(model.BillingQuotaLease),
 		new(model.BillingRefundJob),
 		new(model.BillingPostBillingJob),
+		new(model.InviteRebate),
 		new(model.ChatConversation),
 		new(model.VIPGroup),
 		new(model.Reseller),

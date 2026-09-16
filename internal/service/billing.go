@@ -236,7 +236,25 @@ func WriteTx(ctx context.Context, userID, channelID, apiKeyID, poolKeyID int64, 
 		}
 	}
 
-	if postJob := postBillingJobForTx(userID, poolKeyID, txType, credits, cost); postJob != nil {
+	if err := trackInviteFundsTx(sess, tx); err != nil {
+		_ = sess.Rollback()
+		return handlePreAppliedFailure("invite_funds", err)
+	}
+	// Invite rewards are settled separately after the request finishes. These
+	// existing jobs continue to handle vendor earnings without paying holds.
+	legacyRebateCredits := int64(0)
+	if txType == "refund" {
+		tracked, err := sess.Where("user_id = ? AND corr_id = ?", userID, corrID).Exist(new(model.InviteRebate))
+		if err != nil {
+			_ = sess.Rollback()
+			return handlePreAppliedFailure("invite_refund_lookup", err)
+		}
+		if !tracked {
+			legacyRebateCredits = credits
+		}
+	}
+	if postJob := postBillingJobForTx(userID, poolKeyID, txType, legacyRebateCredits, cost); postJob != nil {
+		postJob.RebateDone = legacyRebateCredits == 0
 		if _, err := sess.Insert(postJob); err != nil {
 			if rbErr := sess.Rollback(); rbErr != nil {
 				log.Printf("[billing] rollback failed: %v", rbErr)
@@ -885,6 +903,9 @@ func processBillingPostBillingJobs(ctx context.Context) {
 	if n, err := ProcessBillingPostBillingJobs(ctx, 100); err != nil {
 		log.Printf("[billing-post] process post-billing jobs failed after %d jobs: %v", n, err)
 	}
+	if err := ProcessInviteRebates(ctx, 100); err != nil {
+		log.Printf("[invite-rebate] settlement failed: %v", err)
+	}
 }
 
 func ProcessBillingPostBillingJobs(ctx context.Context, limit int) (int, error) {
@@ -998,6 +1019,16 @@ func completeBillingPostRebate(ctx context.Context, job model.BillingPostBilling
 	if err := sess.Begin(); err != nil {
 		return err
 	}
+	defer sess.Rollback()
+	var stored model.BillingPostBillingJob
+	found, err := sess.SQL("SELECT * FROM billing_post_billing_jobs WHERE id = ? FOR UPDATE", job.ID).Get(&stored)
+	if err != nil {
+		return err
+	}
+	if !found || stored.RebateDone || stored.Status != "running" {
+		return nil
+	}
+	job = stored
 	if job.Credits != 0 {
 		var inviterID int64
 		var rebateRatio *float64
@@ -1021,11 +1052,7 @@ func completeBillingPostRebate(ctx context.Context, job model.BillingPostBilling
 			ratio := getRebateRatio(ctx, rebateRatio)
 			rebateCredits := int64(float64(job.Credits) * ratio)
 			if rebateCredits != 0 {
-				sqlStmt := "UPDATE users SET frozen_balance = frozen_balance + $1 WHERE id = $2"
-				if rebateCredits < 0 {
-					sqlStmt = "UPDATE users SET frozen_balance = GREATEST(0, frozen_balance + $1) WHERE id = $2"
-				}
-				if _, err := sess.Exec(sqlStmt, rebateCredits, inviterID); err != nil {
+				if err := changeInviteRewardTx(sess, inviterID, rebateCredits); err != nil {
 					_ = sess.Rollback()
 					return fmt.Errorf("apply inviter rebate user=%d inviter=%d: %w", job.UserID, inviterID, err)
 				}
