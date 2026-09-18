@@ -119,7 +119,11 @@ test('filters model cards by provider without leaking other providers', async ({
       body: JSON.stringify({
         channels: [
           { id: 1, name: 'claude-sonnet', routing_model: 'claude-sonnet', model_provider: 'Anthropic', type: 'llm', protocol: 'claude' },
-          { id: 2, name: 'gpt-5.6', routing_model: 'gpt-5.6', model_provider: 'OpenAI', type: 'llm', protocol: 'openai' },
+          { id: 2, name: 'claude-opus', routing_model: 'claude-opus', model_provider: 'Anthropic', type: 'llm', protocol: 'claude' },
+          { id: 1, name: 'claude-sonnet-KIRO', routing_model: 'claude-sonnet-KIRO', model_provider: 'Anthropic', type: 'llm', protocol: 'claude' },
+          { id: 2, name: 'claude-opus-KIRO', routing_model: 'claude-opus-KIRO', model_provider: 'Anthropic', type: 'llm', protocol: 'claude' },
+          { id: 3, name: 'gpt-5.6', routing_model: 'gpt-5.6', model_provider: 'OpenAI', type: 'llm', protocol: 'openai' },
+          { id: 4, name: 'gemini-flash', routing_model: 'gemini-flash', model_provider: 'Google', type: 'llm', protocol: 'gemini' },
         ],
       }),
     })
@@ -129,12 +133,18 @@ test('filters model cards by provider without leaking other providers', async ({
   })
 
   await page.goto('/models')
-  await expect(page.getByRole('heading', { name: 'claude-sonnet' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'claude-sonnet', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'gpt-5.6' })).toBeVisible()
 
-  await page.getByText('OpenAI', { exact: true }).last().click()
-  await expect(page.getByRole('heading', { name: 'gpt-5.6' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'claude-sonnet' })).toHaveCount(0)
+  const cards = page.locator('[data-slot="card"] h3')
+  const providers = page.locator('[data-slot="badge"].cursor-pointer')
+  for (const provider of ['Google', 'OpenAI', 'Anthropic', 'Google', 'OpenAI']) {
+    await providers.filter({ hasText: new RegExp(`${provider}$`) }).click()
+    const expected = provider === 'Google' ? ['gemini-flash']
+      : provider === 'OpenAI' ? ['gpt-5.6']
+      : ['claude-sonnet', 'claude-opus', 'claude-sonnet-KIRO', 'claude-opus-KIRO']
+    await expect(cards).toHaveText(expected)
+  }
 })
 
 test('configures Fast ratio through the channel editor', async ({ page }) => {

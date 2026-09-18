@@ -601,9 +601,9 @@ export function UserModelsPage() {
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredChannels.map((channel, index) => (
+          {filteredChannels.map((channel) => (
             <Card
-              key={channel.id ?? index}
+              key={channel.routing_model || channel.name}
               className="group cursor-pointer overflow-hidden transition-colors hover:border-primary/50"
               onClick={() => openDoc(channel)}
             >
