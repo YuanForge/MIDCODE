@@ -3,6 +3,7 @@ package handler
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1017,7 +1018,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 	scanner.Buffer(buf, 10*1024*1024)
 
 	var streamReadErr error
-	c.Stream(func(w io.Writer) bool {
+	clientDisconnected := c.Stream(func(w io.Writer) bool {
 		if !scanner.Scan() {
 			streamReadErr = scanner.Err()
 			if sseConv != nil {
@@ -1055,5 +1056,8 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 		enqueueLLMLogPatch(corrID, []string{"status", "error_msg"}, model.LLMLog{Status: "error", ErrorMsg: streamReadErr.Error()})
 	}
 
-	llmSettle(c, ch, origReqData, usage.normalized(origReqData), totalHold, userID, channelID, apiKeyIDVal, poolKeyIDVal, corrID, userGroup)
+	if clientDisconnected {
+		streamReadErr = context.Canceled
+	}
+	llmSettle(c, ch, origReqData, usage.normalized(origReqData), totalHold, userID, channelID, apiKeyIDVal, poolKeyIDVal, corrID, userGroup, streamReadErr)
 }

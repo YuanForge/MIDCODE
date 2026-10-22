@@ -311,6 +311,7 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 	enqueueLLMLogInsert(*llmLog)
 
 	var usageForSettle map[string]interface{}
+	var settlementErr error
 	if useUpstreamWS {
 		usageWS, _, _, wsErr := forwardResponsesWSWithSession(c.Request.Context(), upstreamSession, conn, c, ch, poolKey, upstreamWSURL, openAIReq)
 		if wsErr != nil {
@@ -383,6 +384,7 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 				}
 				if writeErr := conn.WriteMessage(websocket.TextMessage, []byte(data)); writeErr != nil {
 					wsError = true
+					settlementErr = context.Canceled
 					break
 				}
 			}
@@ -412,7 +414,10 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 				if data == "[DONE]" {
 					continue
 				}
-				_ = conn.WriteMessage(websocket.TextMessage, []byte(data))
+				if writeErr := conn.WriteMessage(websocket.TextMessage, []byte(data)); writeErr != nil {
+					settlementErr = context.Canceled
+					break
+				}
 			}
 		}
 
@@ -420,7 +425,10 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 		usageForSettle = usg.normalized(origReqData)
 	}
 
-	llmSettle(c, ch, origReqData, usageForSettle, totalHold, userID, ch.ID, apiKeyIDVal, poolKeyIDVal, corrID, userGroup)
+	llmSettle(c, ch, origReqData, usageForSettle, totalHold, userID, ch.ID, apiKeyIDVal, poolKeyIDVal, corrID, userGroup, settlementErr)
+	if settlementErr != nil {
+		return settlementErr
+	}
 	upstreamSession.pinRoute(routingKey, ch, poolKey)
 	return nil
 }

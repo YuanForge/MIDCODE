@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -25,11 +26,35 @@ func newLLMBillingContext() (context.Context, context.CancelFunc) {
 // usageData 为精确或估算的 {prompt_tokens, completion_tokens}；
 // 为 nil 时（连接在任何输出前断开）全额退款。
 func llmSettle(c *gin.Context, ch *model.Channel, reqData, usageData map[string]interface{},
-	totalHold, userID, channelID, apiKeyIDVal, poolKeyIDVal int64, corrID string, userGroup string) {
+	totalHold, userID, channelID, apiKeyIDVal, poolKeyIDVal int64, corrID string, userGroup string, requestErrors ...error) {
 	ctx, cancel := newLLMBillingContext()
 	defer cancel()
 	requestedTier := billing.RequestedTier(reqData)
 	upstreamCostHold, _ := billing.CalcUpstreamCostWithTier(ch, reqData, requestedTier)
+
+	// Cancellation is not billable, even if partial output or exact usage arrived.
+	// Use the detached billing context so the canceled request cannot cancel its refund.
+	canceled := errors.Is(c.Request.Context().Err(), context.Canceled)
+	for _, err := range requestErrors {
+		canceled = canceled || errors.Is(err, context.Canceled)
+	}
+	if canceled {
+		status, message := "refunded", context.Canceled.Error()
+		if totalHold > 0 {
+			refunded, mcRefunded := llmRefundCredits(c, userID, totalHold)
+			recorded := recordLLMRefundTx(ctx, c, userID, channelID, apiKeyIDVal, poolKeyIDVal, corrID,
+				refunded, scaleRefundCost(upstreamCostHold, refunded, totalHold), mcRefunded,
+				model.JSON{"reason": "context_canceled"})
+			if refunded != totalHold || !recorded {
+				status = "error"
+				message += "; cancellation refund incomplete"
+			}
+		}
+		enqueueLLMLogPatch(corrID, []string{"status", "usage", "error_msg"}, model.LLMLog{
+			Status: status, Usage: model.JSON(usageData), ErrorMsg: message,
+		})
+		return
+	}
 
 	// 非 token 计费（image/video/audio/count/custom）：预扣即精确值，上游成功即结算完毕，不依赖 usageData。
 	// 例外：billing_type=image 且响应中检测到实际图片数量（image_count），按实际图片数调差。
