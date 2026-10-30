@@ -20,6 +20,8 @@ func registerUserRoutes(authed *gin.RouterGroup, deps Dependencies) {
 	user := authed.Group("/user")
 	{
 		user.GET("/profile", deps.Auth.GetProfile)
+		user.POST("/credits/transfer", deps.Auth.TransferCredits)
+		user.GET("/credits/transfer-balance", deps.Auth.GetTransferBalance)
 		user.POST("/image-studio/handoff", deps.Auth.CreateImageStudioHandoff)
 		user.GET("/balance", deps.Auth.GetBalance)
 		user.GET("/transactions", deps.Auth.GetTransactions)

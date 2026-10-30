@@ -1,3 +1,4 @@
+import { CreditTransferCard } from './CreditTransferCard'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
@@ -21,7 +22,7 @@ export function UserProfilePage() {
     null as UserProfileResponse | null,
   )
 
-  const { data: balanceCredits } = useAsync(async () => {
+  const { data: balanceCredits, reload: reloadBalance } = useAsync(async () => {
     const res = await userApi.getBalance()
     return res.balance_credits ?? 0
   }, 0)
@@ -230,6 +231,7 @@ export function UserProfilePage() {
           </div>
       </PageSection>
 
+      <CreditTransferCard userId={profile?.id} onSuccess={reloadBalance} />
       <PageSection title="邀请关系" description="注册七天内且尚未绑定上级时，可以补填邀请码。">
         <div className="space-y-4">
           {inviteLoadError ? <Alert variant="destructive"><AlertDescription>{inviteLoadError}</AlertDescription></Alert> : null}
