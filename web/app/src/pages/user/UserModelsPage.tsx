@@ -86,7 +86,15 @@ function channelSummaryPrice(channel: UserChannel) {
 function channelWithSortedPrices(channel: UserChannel): UserChannel {
   if (!channel.group_prices?.length) return channel
   const group_prices = sortGroupPricesByTerminalPrice(channel.group_prices)
-  return { ...channel, group_prices, price_display: group_prices[0]?.price_display || channel.price_display }
+  return { ...channel, group_prices, price_display: group_prices[0]?.price_display || channel.price_display, gpt_context_pricing: group_prices[0]?.gpt_context_pricing ?? channel.gpt_context_pricing }
+}
+
+function ContextPricingNote({ compact = false }: { compact?: boolean }) {
+  return <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs leading-5">
+    <div className="font-medium text-foreground">长上下文倍率：输入 / 缓存 ×2 · 输出 ×1.5</div>
+    <div className="text-muted-foreground">单次输入 ≤272,000 token 按所示短档价格计费；超过后，整次请求按上述倍率计费。</div>
+    {!compact ? <div className="mt-1 text-muted-foreground">输入含缓存读取和写入，输出不计入分档。倍率适用于本分组的普通价和对应会员价，并非只对超出部分加价。</div> : null}
+  </div>
 }
 
 function copyText(text: string, label = '已复制') {
@@ -645,6 +653,7 @@ export function UserModelsPage() {
                     </div>
                   </div>
                 </div>
+                {channel.gpt_context_pricing ? <ContextPricingNote compact /> : null}
                 <p className="min-h-10 text-xs leading-5 text-muted-foreground line-clamp-2">
                   {channel.description || t('models.fallbackDescription')}
                 </p>
@@ -794,6 +803,7 @@ export function UserModelsPage() {
                   {docChannel.group_prices?.length ? docChannel.group_prices.map((group) => <Card key={group.group_id}>
                     <CardContent className="space-y-3 p-4">
                       <div className="flex items-center justify-between gap-3"><div><div className="font-medium">{group.group_name}</div><div className="font-mono text-xs text-muted-foreground">{group.group_code}</div></div><Badge variant="secondary">普通价</Badge></div>
+                      {group.gpt_context_pricing ? <ContextPricingNote /> : null}
                       <div className="whitespace-pre-wrap text-sm font-medium">{group.price_display || t('models.defaultPriceEmpty')}</div>
                       {group.vip_prices?.length ? <div className="space-y-2 border-t pt-3">{group.vip_prices.map((vip) => <div key={vip.code} className="grid gap-1 sm:grid-cols-[10rem_1fr]"><div className="text-sm"><span className="font-medium">{vip.name}</span><span className="ml-2 font-mono text-xs text-muted-foreground">{vip.code}</span></div><div className="whitespace-pre-wrap text-sm text-primary">{vip.price_display || t('models.defaultPriceEmpty')}</div></div>)}</div> : null}
                     </CardContent>
@@ -801,6 +811,7 @@ export function UserModelsPage() {
                 </div>
 
                 <div className="rounded-xl border bg-accent/50 p-4 text-sm leading-relaxed">
+                  {docChannel.gpt_context_pricing ? <div className="mb-3"><ContextPricingNote compact /></div> : null}
                   <div className="whitespace-pre-wrap font-medium">{docChannel.price_display || t('models.defaultPriceEmpty')}</div>
                   {docChannel.description ? <div className="mt-3 whitespace-pre-wrap text-muted-foreground">{docChannel.description}</div> : null}
                 </div>

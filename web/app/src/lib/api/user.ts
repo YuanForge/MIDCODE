@@ -70,10 +70,12 @@ export type UserChannel = {
   icon_url?: string
   price_display?: string
   group_price?: string
+  gpt_context_pricing?: boolean
   group_prices?: Array<{
     group_id: number
     group_code: string
     group_name: string
+    gpt_context_pricing?: boolean
     price_display?: string
     vip_prices?: Array<{ code: string; name: string; price_display?: string }>
   }>
