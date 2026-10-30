@@ -1,3 +1,4 @@
+import { GiftArrival } from '@/components/shared/GiftArrival'
 import { BookOpenIcon } from 'lucide-react'
 
 import { ConsoleLayout, userNavGroups, type NavGroup } from '@/layouts/ConsoleLayout'
@@ -29,9 +30,12 @@ const userNavGroupsWithTutorial = withTutorialNav(userNavGroups)
 
 export function UserLayout() {
   return (
+    <>
+    <GiftArrival />
     <ConsoleLayout
       role="user"
       groups={userNavGroupsWithTutorial}
     />
+    </>
   )
 }

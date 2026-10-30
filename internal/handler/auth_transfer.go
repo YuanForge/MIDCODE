@@ -2,6 +2,8 @@ package handler
 
 import (
 	"errors"
+	"fanapi/internal/db"
+	"fanapi/internal/model"
 	"fanapi/internal/service"
 	"github.com/gin-gonic/gin"
 	"net/http"
@@ -39,4 +41,18 @@ func (h *AuthHandler) GetTransferBalance(c *gin.Context) {
 		return
 	}
 	c.JSON(200, gin.H{"credits": max(int64(0), balance)})
+}
+
+func (h *AuthHandler) LatestReceivedGift(c *gin.Context) {
+	var gift model.BillingTransaction
+	found, err := db.Engine.Context(c.Request.Context()).Where("user_id = ? AND type = ?", c.MustGet("user_id").(int64), "transfer_in").Desc("id").Get(&gift)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "获取转赠通知失败"})
+		return
+	}
+	if !found {
+		c.JSON(200, gin.H{"gift": nil})
+		return
+	}
+	c.JSON(200, gin.H{"gift": gin.H{"id": gift.ID, "credits": gift.Credits, "created_at": gift.CreatedAt}})
 }

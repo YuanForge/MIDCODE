@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fanapi/internal/model"
 	"fanapi/internal/service"
 	"github.com/gin-gonic/gin"
 	"net/http"
@@ -62,6 +63,17 @@ func (h *AuthHandler) GetTransactions(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	hideGiftSender(txs)
 	total, _ := service.CountTransactions(c.Request.Context(), userID, corrID, taskID, apiKeyID)
 	c.JSON(http.StatusOK, gin.H{"transactions": txs, "total": total})
+}
+
+// Recipient responses expose no sender metadata or shared correlation identifier.
+func hideGiftSender(txs []model.BillingTransaction) {
+	for i := range txs {
+		if txs[i].Type == "transfer_in" {
+			txs[i].Metrics = nil
+			txs[i].CorrID = ""
+		}
+	}
 }
