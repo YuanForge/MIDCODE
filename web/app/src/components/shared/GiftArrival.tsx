@@ -45,7 +45,7 @@ export function GiftArrival() {
     <Gift className="gift-icon mb-3 size-10 text-primary" aria-hidden="true" />
     <p className="font-semibold">收到一份积分礼物</p>
     <p className="mt-1 text-sm text-muted-foreground">有人向你转赠了积分，已到账！</p>
-    <p className="mt-3 text-2xl font-semibold text-primary">+ ¥{(gift.credits / 1e6).toFixed(6)}</p>
+    <p className="mt-3 text-2xl font-semibold text-primary">+ {(gift.credits / 1e6).toFixed(6)} 积分</p>
     <a href="/billing?tab=transactions" className="mt-3 inline-block text-sm underline">查看积分流水</a>
   </aside>
 }
