@@ -1,5 +1,17 @@
 # Server migration preparation — 2026-11-03
 
+## Current handover decision — 2026-11-03
+
+The user requires both application hosts to keep serving their own applications, with no old-to-new HTTP forwarding. The shop is explicitly excluded from the next migration phase. The user requested Redis and NATS on the existing PostgreSQL host `151.243.229.212`, then instructed that migration wait for a resource upgrade if capacity is insufficient.
+
+Read-only checks on that host found Debian 12, 2 CPUs, approximately 3.9 GiB RAM with 2.2 GiB available, and 45 GiB free on its root filesystem. The separately mentioned data disk was not assessed. Load averages were approximately 6–7; three one-second CPU samples showed 99–100% busy CPU, predominantly PostgreSQL work. No Docker, Redis or NATS was installed there, and no PostgreSQL configuration was changed. Redis/NATS relocation and independent new-host cutover are deferred pending the user's capacity upgrade.
+
+Two isolated Redis 7.4.9 failover rehearsals used the application's Go Redis client, 16 concurrent writers and 9,600 increments each. Both returned zero client failures and an exact final counter; the second also opened fresh connections throughout the handover. Promotion took approximately 670 ms and 549 ms. This is rehearsal evidence, not proof of a production failover. An isolated NATS 2.14.3 reload test rejected adding a cluster listener to a running standalone server; production NATS was not altered.
+
+A temporary persistent Redis replica (`redis-live`, new-host port 6381) and encrypted reverse data tunnel were prepared but never used by production. Before removing that replica, its replica role and absence of application clients were verified. Its container and all rehearsal containers were removed without deleting data directories; the tunnel was disabled and its scoped SSH forwarding exceptions were reverted. The original `redis-final` staging replica remains synchronized with the old production primary. No production API, worker, Redis or NATS container was stopped or restarted during this phase.
+
+Final checks confirmed old Redis remains primary and the existing replica is connected with matching replication offsets. Old NATS application streams had zero queued and unacknowledged messages at inspection. Main-site, OctoAPI and shop landing pages returned 200 through both ingress addresses. This does not validate paid-generation workflows. Caddy still forwards to old production; old-host shutdown is not yet safe. This documentation release records preparation and cleanup only; it does not relabel application images or claim deployment of an independent application stack.
+
 ## Incident repair — 19:51 Asia/Shanghai
 
 The old main ingress had been changed to port 8089 (`midcode-api-1`). Its static frontend responded, but its internal backend on 127.0.0.1:8080 refused connections, returning 502 for API requests. Restored only that ingress target to the still-healthy port 8138 (`midcode-allow-datacenter20261102-api-1`). The exact resulting location configuration is tracked in `deploy/migration-20261103/old-main-proxy.conf`. Nginx validation and graceful reload succeeded; no container was stopped, restarted, created or deleted.
