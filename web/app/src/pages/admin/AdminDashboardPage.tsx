@@ -1,3 +1,4 @@
+import { ServerPingCard } from './ServerPingCard'
 import { useState } from 'react'
 
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -231,6 +232,8 @@ export function AdminDashboardPage() {
           ) : null
         }
       />
+
+      <ServerPingCard />
       {error ? (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>

@@ -77,6 +77,7 @@ func registerAdminRoutes(authed *gin.RouterGroup, deps Dependencies) {
 		admin.GET("/cleanup/preview", handler.AdminPreviewCleanup)
 		admin.POST("/cleanup/run", handler.AdminRunCleanup)
 		admin.GET("/stats", handler.GetAdminStats)
+		admin.GET("/server-ping", handler.GetAdminServerPing)
 		admin.GET("/stats/trend", handler.GetAdminStatsTrend)
 		admin.GET("/stats/top", handler.GetAdminStatsTop)
 

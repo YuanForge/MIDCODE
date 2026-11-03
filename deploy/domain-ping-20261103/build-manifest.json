@@ -1,0 +1,21 @@
+{
+  "base_source_archive_sha256": "bf47c37999b79ae656c938bdddc35c1e1987267f3937ffaca525ef5d1d73e4cf",
+  "server_sha256": "a72af9417d6042e7f01d136eb6f0e8bb52307a7e7439398b3185ce4b2754b852",
+  "frontend_index_sha256": "ead66d5cbc03bf635c72984746829589611fd1fe01495e29010614028f3d564f",
+  "target": "sub.midaccs.com",
+  "version": "v1.0.62",
+  "source_overlays": [
+    "internal/handler/admin_ping.go",
+    "web/app/src/pages/admin/ServerPingCard.tsx",
+    "web/app/src/pages/admin/AdminDashboardPage.tsx",
+    "web/app/src/lib/api/admin.ts"
+  ],
+  "prepare_source_sha256": "0d259a08aab356a4d51e786b11b2dad1660a1be52d5ccbc959c45f22019abc8c",
+  "go_version": "go version go1.26.7 windows/amd64",
+  "images": {
+    "new": "sha256:9705683b9079c23b703d30a7a3e3fe1aaa0e756524cf27fbe39f91edc84a9020",
+    "old": "sha256:29e470ef9400763dd199300f0e6e2d9bb331a3a6f26059d6fcd8690e02be09d2"
+  },
+  "container": "midcode-domain-ping-final-v1062-api-1",
+  "port": 8143
+}

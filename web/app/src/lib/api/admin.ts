@@ -3,6 +3,8 @@ import { uploadAuthedImage, uploadAuthedVideo, type UploadImageCategory, type Up
 
 const http = createHttpClient('admin')
 
+export type AdminServerPing = { target: string; status: 'ok' | 'timeout' | 'error'; latency_ms: number | null; less_than: boolean; checked_at: string; message?: string }
+
 export type AdminLoginResponse = {
   token: string
 }
@@ -716,6 +718,7 @@ export const adminAuthApi = {
 }
 
 export const adminApi = {
+  getServerPing: (signal: AbortSignal) => http.get<AdminServerPing>('/admin/server-ping', { signal, timeout: 5000 }),
   getStats: () => http.get<AdminStatsResponse>('/admin/stats'),
   getStatsTrend: (days: 7 | 30, dim: 'revenue' | 'cost' | 'profit' | 'calls') =>
     http.get<{ points: AdminTrendPoint[]; dim: string; days: number }>('/admin/stats/trend', { params: { days, dim } }),

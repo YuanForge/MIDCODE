@@ -58,6 +58,7 @@ RUN apt-get update && \
         nginx \
         supervisor \
         curl \
+        iputils-ping \
         ca-certificates \
         tzdata && \
     rm -rf /var/lib/apt/lists/* && \
