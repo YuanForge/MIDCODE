@@ -1,5 +1,71 @@
 # Server migration preparation — 2026-11-03
 
+## Latest verified state after data-host upgrade
+
+This section supersedes the historical checkpoints below. Migration is **not
+complete** and DNS must not be switched on the strength of this release.
+
+- Data host `151.243.229.212`: 4 CPUs, 5,925 MiB RAM, approximately 4,217 MiB
+  available at inspection. `/data` has 82 GiB free. PostgreSQL remains active.
+- `shared-redis` is now the authoritative primary on this host, with persistent
+  data and AOF under `/data/shared-services/redis`. `shared-nats` runs here too;
+  its monitoring health endpoint returns `ok`. Redis/NATS bind to loopback and
+  both business hosts access them through their own persistent SSH tunnels.
+- Both business hosts run their own MIDCODE API (8141), studio API (8105),
+  OctoAPI (8091), image service (8797), and MIDCODE/OctoAPI workers. They share
+  PostgreSQL, Redis, NATS, and NFS upload directories on the third host.
+  Application systemd units depend on the shared mount and tunnel to prevent
+  startup against an empty local upload directory.
+- Authenticated MIDCODE, studio and OctoAPI profile requests returned 200 on
+  **both** hosts. Image landing pages returned 200. All five inspected API/worker
+  containers on each host were running with restart count zero. Redis ROLE
+  through each host's tunnel reported master.
+- Old Nginx now targets the **old host's own** shared-data applications. Twenty-
+  four main/OctoAPI probes across its graceful reload all returned 200. It does
+  not forward business requests to the new application host.
+- New public Caddy **still forwards to the old host**. The fully independent
+  new public ingress has not been activated. DNS remains unchanged per user.
+- Five video tenant volumes have an initial copy on the third host. The patched
+  shared-video candidate passed handoff 200, workspace 200 and cross-tenant 403
+  checks. Production video still runs on the old host. Source inspection found
+  no established video connections and no active-task markers among 11 JSON
+  files; this is a point-in-time observation, not a write lock.
+- Automatic approval rejected preparation of a final video-handover script
+  containing source-video quiescing and final synchronization (`blocked by
+  policy`, no more specific reason supplied). That script did not execute.
+  The shared-video entry remains closed and has no production route. No source
+  video container was stopped by that rejected action.
+- Shop remains excluded and runs on the old host. Homepage Ping restoration,
+  certificate renewal handover, independent new Caddy activation, final video
+  consistency and dependency-aware retirement of old containers remain pending.
+
+### Data migration evidence and rollback boundaries
+
+Redis relocation used native coordinated failover, first through the new host
+and then to the third host. During the first transition the shop's retained
+Redis connections briefly produced READONLY logs; its route was corrected.
+Do not describe this as proof that every background operation was uninterrupted.
+Final authenticated API checks passed. Legacy Redis endpoints are compatibility
+routes to the third host; former primaries are replicas. The old-to-new reverse
+data tunnel has been disabled. Old and new application tunnels reach the third
+host directly.
+
+Do not restore an old Redis snapshot as primary or restart copied video projects
+as a second writable source. Rollback must retain the current authoritative
+data. Old ingress backups are in
+`/root/fanapi-migration/old-ingress-before-shared/`; video authentication ingress
+backups are `main-before-video-handoff-old.conf` and
+`main-before-video-handoff-new.conf` in the same migration directory.
+
+This release publishes the deployed shared-video candidate source and current
+infrastructure evidence. It reuses the existing main/OctoAPI images, rather than
+claiming their binaries were rebuilt from this commit. Candidate image identity
+and verification are in `deploy/migration-20261103/shared-video/README.md`.
+No replaced production containers were deleted in this checkpoint: video and
+remaining legacy dependencies require a fresh traffic/dependency audit first.
+
+## Historical checkpoints (not current-state instructions)
+
 ## Current handover decision — 2026-11-03
 
 The user requires both application hosts to keep serving their own applications, with no old-to-new HTTP forwarding. The shop is explicitly excluded from the next migration phase. The user requested Redis and NATS on the existing PostgreSQL host `151.243.229.212`, then instructed that migration wait for a resource upgrade if capacity is insufficient.
