@@ -41,3 +41,28 @@ No source container was removed in the preparation phase: production still depen
 ## Release identity
 
 The Git commit and immutable version tag for this preparation are recorded by Git. They identify the migration configuration and evidence boundaries above; they do not relabel the existing application binaries as rebuilt from this repository revision. Final cutover, DNS handover and old-container cleanup require a subsequent completion record.
+
+## User-directed DNS preparation and latency check
+
+The user explicitly deferred final migration until they finish updating DNS and notify us. All externally reachable candidate ingress now forwards to the original host, keeping one authoritative set of production writers even when DNS changes gradually. The validated direct-candidate configuration is retained as `Caddyfile.candidate`; the active forwarding configuration is `Caddyfile`. There is no reverse forwarding from the old host, so this does not create a proxy loop.
+
+The old ingress now trusts client-IP headers from the new ingress. New Caddy overwrites spoofable CF-Connecting-IP headers on connections not arriving from a known Cloudflare range. A deliberately spoofed probe through the new ingress was recorded at the old ingress as the actual loopback test source, rather than either supplied forged address. Configuration validation and graceful reload passed. One first validation attempt hit transient DNS resolution failure for an existing upstream; its modifications were restored before a successful retry.
+
+The new web/API/gateway services, both staging Redis and the live Redis replica, and NATS are running. New NATS listens on the Docker host gateway only. Script workers and per-user video containers remain stopped/on-demand until the consistent final handover, avoiding premature task execution against copied files. Old production containers and data remain intact and in use; none were deleted. The candidate shop was briefly stopped after verification and restarted at the user's request.
+
+The four main HTTPS entrypoints through the new forwarding ingress returned 200 after activation. Final data synchronization, Redis promotion, worker handover, public traffic serving directly from the new applications, certificate-renewal handover and old-container cleanup are deferred until the user returns.
+
+### sub.midaccs.com measurements
+
+Five independent HTTPS homepage connections and four ICMP probes were sampled from each server on 2026-11-03 (Asia/Shanghai). All ten HTTPS requests returned 200; neither four-packet ICMP sample lost packets. Cloudflare trace reported HKG and TLS 1.3 from both servers.
+
+| Metric | New host | Old host |
+| --- | ---: | ---: |
+| ICMP average | 3.071 ms | 1.207 ms |
+| TCP handshake median, excluding DNS | 3.777 ms | 1.098 ms |
+| HTTPS homepage time-to-first-byte median | 310.283 ms | 238.172 ms |
+| HTTPS homepage time-to-first-byte range | 292.426–655.882 ms | 228.746–247.552 ms |
+
+The ICMP/TCP figures measure the Cloudflare edge, not the private origin. Homepage time-to-first-byte includes connection/TLS and server time; these are not authenticated model-generation latency measurements.
+
+Forwarding rollback before final migration: restore the user's original DNS while keeping old services running, or restore the saved old ingress configuration and gracefully reload it. Do not enable direct candidate writes by restoring `Caddyfile.candidate` until the final consistency handover is complete.
