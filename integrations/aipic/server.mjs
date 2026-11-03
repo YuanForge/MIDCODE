@@ -5,6 +5,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { resolve, extname, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { handlePromptOptimizer } from './prompt-optimizer.mjs'
+import { createImageMedia } from './media.mjs'
 
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.json': 'application/json', '.webmanifest': 'application/manifest+json' }
 
@@ -12,6 +13,7 @@ export function createStudioServer({ origin, secret, dist }) {
   const upstream = new URL(origin)
   if (!['http:', 'https:'].includes(upstream.protocol) || upstream.username || upstream.password || upstream.pathname !== '/' || upstream.search || upstream.hash || secret.length < 32) throw new Error('Invalid MidCode gateway configuration')
   const root = resolve(dist)
+  const media = createImageMedia({ secret })
   return createServer(async (req, res) => {
     res.setHeader('Referrer-Policy', 'no-referrer')
     res.setHeader('X-Content-Type-Options', 'nosniff')
@@ -21,6 +23,7 @@ export function createStudioServer({ origin, secret, dist }) {
     try {
       const pathname = new URL(req.url, 'http://localhost').pathname
       if (pathname === '/health') { res.end('ok'); return }
+      if (await media.handle(req, res, pathname)) return
       if (await handlePromptOptimizer(req, res, upstream, abort.signal)) return
       if (pathname === '/midcode/exchange') {
         res.setHeader('Cache-Control', 'no-store')
@@ -34,9 +37,10 @@ export function createStudioServer({ origin, secret, dist }) {
           method: 'POST', headers: { 'Content-Type': 'application/json', 'X-AIPic-Handoff-Secret': secret },
           body: JSON.stringify({ code }), redirect: 'error', signal: AbortSignal.any([abort.signal, AbortSignal.timeout(10000)]),
         })
-        res.writeHead(result.status, { 'Content-Type': 'application/json' })
-        if (result.body) await pipeline(Readable.fromWeb(result.body), res)
-        else res.end()
+        const data = await result.json()
+        const cookie = result.ok ? media.session(data) : null
+        res.writeHead(result.status, { 'Content-Type': 'application/json', ...(cookie ? { 'Set-Cookie': cookie } : {}) })
+        res.end(JSON.stringify(data))
         return
       }
       if (pathname.startsWith('/midcode-api/')) {

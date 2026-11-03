@@ -3,6 +3,7 @@ import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { prepareOptimizer } from './prepare-optimizer.mjs'
 import { prepareHistory } from './prepare-history.mjs'
+import { prepareMedia } from './prepare-media.mjs'
 
 const source = resolve(process.argv[2] || '.')
 const here = dirname(fileURLToPath(import.meta.url))
@@ -23,3 +24,4 @@ if (!workspaceText.includes(modeMarker)) throw new Error('Unsupported AIPic work
 await writeFile(workspace, workspaceText.replace(modeMarker, "useState<RetouchGenerationMode>('text')"))
 await prepareOptimizer(source)
 await prepareHistory(source)
+await prepareMedia(source)

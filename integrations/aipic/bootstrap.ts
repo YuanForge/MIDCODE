@@ -10,7 +10,7 @@ export async function bootstrapMidCode() {
   if (!/^[a-f0-9]{64}$/.test(code)) throw new Error('跳转凭证无效，请从 MidCode 重新进入。')
   const response = await fetch('/midcode/exchange', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code }), cache: 'no-store', credentials: 'omit',
+    body: JSON.stringify({ code }), cache: 'no-store', credentials: 'same-origin',
     signal: AbortSignal.timeout(15000),
   })
   if (!response.ok) throw new Error('跳转已过期或暂时不可用，请从 MidCode 重新进入。')

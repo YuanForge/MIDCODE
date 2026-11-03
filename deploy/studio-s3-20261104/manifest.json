@@ -1,0 +1,15 @@
+{
+  "version": "v1.0.63",
+  "business_host": "103.145.190.198",
+  "data_host": "151.243.229.212",
+  "s3_endpoint": "https://s3.fanapi.cc",
+  "seaweed_version": "4.52",
+  "seaweed_archive_sha256": "8b538c22d47d0c3fb6792adaa6b0c735a967401270a53427d5a476dcaca9b7ae",
+  "aipic_upstream": "f6cac8328d7ddb66c610a4d3fc89423d73976789",
+  "image_container": "midcode-image-s3-v1063",
+  "image_digest": "sha256:b00e0abefc0f2575e9f6b5ef2b8abdcf29efdafe57be2bd3bf92803c88743e1b",
+  "video_gateway_container": "midcode-video-s3-v1063",
+  "video_gateway_digest": "sha256:91cdab9bb91c3e1d2a71514e4a01653af8c55180263b4032724b4e1ff6ccee4c",
+  "video_gateway_base": "sha256:8c92019d4b9382c7451cab802d30f07ed2d0e3af7dd7071a3d9d6a732a448eec",
+  "video_tenant_base": "sha256:78b1256d954708344adb46a9ecd8a353127f0a9c2828c745d63e69da3ff631ba"
+}

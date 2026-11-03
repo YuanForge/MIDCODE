@@ -1,6 +1,8 @@
 services:
   aipic:
-    build: .
+    build:
+      context: ..
+      dockerfile: aipic/Dockerfile
     restart: unless-stopped
     ports:
       - "127.0.0.1:${AIPIC_PORT:-8790}:8788"
