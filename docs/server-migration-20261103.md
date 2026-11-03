@@ -1,5 +1,15 @@
 # Server migration preparation — 2026-11-03
 
+## Incident repair — 19:51 Asia/Shanghai
+
+The old main ingress had been changed to port 8089 (`midcode-api-1`). Its static frontend responded, but its internal backend on 127.0.0.1:8080 refused connections, returning 502 for API requests. Restored only that ingress target to the still-healthy port 8138 (`midcode-allow-datacenter20261102-api-1`). The exact resulting location configuration is tracked in `deploy/migration-20261103/old-main-proxy.conf`. Nginx validation and graceful reload succeeded; no container was stopped, restarted, created or deleted.
+
+Both old and new HTTPS ingress paths now return 200 for `/api/health` and `/api/public/settings`, and application JSON 401 for unauthenticated `/api/user/profile` and `/v1/models`. These checks establish backend reachability, not paid-generation or authenticated-session verification. New ingress still forwards to old production; independent new-host cutover is unfinished.
+
+The prior 503 maintenance experiment was reverted. The user requires uninterrupted old-host service and a DNS-only traffic handover once new-host services and data are ready. Do not execute the maintenance/stop-writer cutover scripts or treat the older handover proposal below as authorization.
+
+Pre-repair configuration is retained on the old host at `/root/fanapi-migration/proxy-repair-20261103-195127/`. Restoring it and gracefully reloading would restore the previous routing, but port 8089 must first have a working backend. This configuration-only release does not change or relabel application binaries.
+
 ## Scope and current state
 
 Prepared a separate Debian 12 candidate for all three existing projects: MIDCODE/FanAPI, OctoAPI, and dc-shop, including image/video workspaces, script workers, Redis, NATS and OpenCode bridges. Public DNS and production traffic remain on the original host. The user will update DNS after final validation and handover.
