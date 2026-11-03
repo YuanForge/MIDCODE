@@ -1,8 +1,88 @@
 # Server migration preparation — 2026-11-03
 
+## Final checkpoint: independent main/API ingress, video retained on source
+
+The user rejected any waiting or quiescing for video and explicitly instructed
+that video remain on the old host. No video handover was performed. The
+`image.midcode.cc` domain (both image and video) and `shop.fanapi.cc` remain on
+the old address and are excluded from the new Caddy configuration.
+
+New Caddy now routes the remaining 19 domains to loopback `migration-router`,
+which routes MIDCODE to new-host port 8141 and OctoAPI to new-host port 8091.
+There is **no old-business-host upstream in active new Caddy**. This retains a
+local OpenResty compatibility router for existing path rewriting and proxy
+semantics; it is not a connection to the old Nginx. Old Nginx continues serving
+the old host's own applications. Both use shared third-host data services.
+
+Domain-specific Host/SNI probes against the new address returned 200 for all
+19 landing pages, with valid certificates for all 18 HTTPS names; the existing
+HTTP-only domain remains HTTP. MIDCODE and OctoAPI authenticated profile checks
+through **new Caddy HTTPS**, not just container ports, returned 200. Direct studio
+API and image candidate checks also passed, but their public domain remains old.
+Old video and shop landing pages returned 200 after this change. No paid
+generation or payment was submitted, and DNS was not changed.
+
+The initial private-router readiness probe ran before graceful Nginx reload
+finished and returned 502. It prevented Caddy activation; after router readiness
+was established, Caddy validation/reload and authenticated HTTPS verification
+passed. No public traffic was switched to that failed private-router probe.
+
+Main proxy send/read timeouts remain 6000 seconds; Caddy response-header timeout
+is 6000 seconds with immediate flushing. Existing per-site inner-router behavior
+is retained rather than assuming Caddy automatically imports Nginx settings.
+
+Active Caddy configuration is tracked in `deploy/migration-20261103/Caddyfile`
+and the matching candidate file. Pre-switch new ingress is backed up at
+`/root/fanapi-migration/new-local-ingress-20261103214524/Caddyfile`. Restoring
+that configuration would reintroduce forwarding to the old host and is an
+emergency rollback only, not the desired independent topology. It does not
+roll back the shared authoritative data services.
+
+The DNS list and exclusions are in `docs/dns-handover-20261103.md`. Video final
+synchronization is deferred per the user, not required to publish this explicitly
+limited main/API handover. Manual certificate renewal handover and homepage
+Ping restoration remain outstanding. Old-host shutdown is **not safe** while
+image/video and shop remain there.
+
+### Cleanup at final checkpoint
+
+Removed 12 unused **new-host staging** containers after proxy and retained-
+container dependency checks and zero established connections for the only
+running removal candidate:
+
+```text
+midcode-domain-ping20261103-api-1
+octoapi-script-1
+midcode-yuxibox20261019-script-1
+octoapi-v10136-api-1
+midcode-security-audit20261026-api-1
+midcode-allow-datacenter20261102-api-1
+midcode-video-gateway-allow20261102
+midcode-video-user-3
+midcode-video-user-6
+midcode-video-user-79
+midcode-video-user-94
+midcode-video-user-306
+```
+
+Volumes, bind directories and rollback images were retained. Private container
+recreation snapshots are on the new host at
+`/root/fanapi-migration/new-retired-container-snapshots.json` (0600), and removal
+evidence is `new-retired-removed.json`. The SSH helper timed out during the
+candidate gateway's stop grace period; a subsequent read confirmed all 12
+removals completed. Authenticated new-ingress checks passed again afterward.
+No old-host video container was stopped or removed.
+
+The old source video/shop and their dependencies remain in service. New-host
+legacy image/shop staging containers and data-service compatibility replicas
+remain pending a separate background-dependency audit; this is not a claim that
+all historical containers have been cleaned up. The stopped Ping candidate
+container was removed, but its image and source remain for subsequent work.
+
 ## Latest verified state after data-host upgrade
 
-This section supersedes the historical checkpoints below. Migration is **not
+This historical intermediate section supersedes the older checkpoints below,
+but the final checkpoint above takes precedence. At that time migration was **not
 complete** and DNS must not be switched on the strength of this release.
 
 - Data host `151.243.229.212`: 4 CPUs, 5,925 MiB RAM, approximately 4,217 MiB
