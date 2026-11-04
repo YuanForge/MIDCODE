@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/table'
 import { userApi, type ApiKeyRecord, type UserLog } from '@/lib/api/user'
 import { formatCredits, formatTokenPricePerMillion } from '@/lib/formatters/credits'
+import { formatTTFT, formatTPS } from '@/lib/formatters/performance'
 
 function renderStatus(status?: string) {
   if (status === 'ok') {
@@ -182,13 +183,15 @@ export function UserLogsPage() {
       />
 
       <Card className="overflow-hidden">
-        <Table className="min-w-[1040px]">
+        <Table className="min-w-[1240px]">
           <TableHeader>
             <TableRow>
               <TableHead>模型</TableHead>
               <TableHead>请求时间</TableHead>
               <TableHead className="text-right">输入 Tokens</TableHead>
               <TableHead className="text-right">输出 Tokens</TableHead>
+              <TableHead className="text-right" title="首字延迟：请求开始到首次输出内容的时间">TTFT</TableHead>
+              <TableHead className="text-right" title="输出速度：基于实际输出 Token 和流式输出时间计算">TPS</TableHead>
               <TableHead className="text-right">输入价格</TableHead>
               <TableHead className="text-right">输出价格</TableHead>
               <TableHead className="text-right">消耗积分</TableHead>
@@ -197,12 +200,12 @@ export function UserLogsPage() {
             </TableRow>
           </TableHeader>
           {loading ? (
-            <TableSkeleton cols={9} rows={8} />
+            <TableSkeleton cols={11} rows={8} />
           ) : (
             <TableBody>
               {rows.length === 0 ? (
                 <TableEmpty
-                  cols={9}
+                  cols={11}
                   Icon={FileClockIcon}
                   title="还没有调用日志"
                   description="使用 API 密钥发起 LLM 请求后，调用记录会展示在这里。"
@@ -249,6 +252,8 @@ export function UserLogsPage() {
                         <span className="text-muted-foreground/50">-</span>
                       )}
                     </TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums">{formatTTFT(row.usage?.performance_ttft_ms)}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums">{formatTPS(row.usage?.performance_tps)}</TableCell>
                     <TableCell className="text-right">{renderTokenPrice(row.input_price_per_1m_tokens)}</TableCell>
                     <TableCell className="text-right">{renderTokenPrice(row.output_price_per_1m_tokens)}</TableCell>
                     <TableCell className="text-right">
@@ -318,6 +323,17 @@ export function UserLogsPage() {
                     ) : null}
                   </div>
                   <div>{currentLog.usage?.completion_tokens ?? '-'}</div>
+                </div>
+                <div>
+                  <div className="mb-1 text-muted-foreground">TTFT · 首字延迟</div>
+                  <div className="tabular-nums">{formatTTFT(currentLog.usage?.performance_ttft_ms)}</div>
+                </div>
+                <div>
+                  <div className="mb-1 text-muted-foreground">TPS · 输出速度</div>
+                  <div className="tabular-nums">{formatTPS(currentLog.usage?.performance_tps)}</div>
+                </div>
+                <div className="text-xs text-muted-foreground sm:col-span-2">
+                  性能指标来自本次流式请求的实际采集；未采集的记录显示“—”，TPS 不使用估算 Token。
                 </div>
                 <div>
                   <div className="mb-1 text-muted-foreground">输入价格</div>

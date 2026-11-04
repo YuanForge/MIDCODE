@@ -121,6 +121,8 @@ export type UserTask = {
 }
 
 export interface UserLogUsage {
+  performance_ttft_ms?: number | null;
+  performance_tps?: number | null;
   prompt_tokens?: number;
   completion_tokens?: number;
   total_tokens?: number;
