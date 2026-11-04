@@ -113,3 +113,29 @@ The supported public base path is `/studio-preview`.
 The pushed release tag identifies the exact integration recipe. Deployment
 records also bind the resolved commit to the image digest and verified runtime
 file hashes; credentials and private snapshots are not committed.
+
+## v1.0.73 formal entry switch (2026-11-04)
+
+At the user's request, `image.midcode.cc/` and `/index.html` now temporarily
+redirect (302, no-store) to the unified studio entry on `midcode.cc`. The
+explicit empty URL fragment prevents an old image handoff ticket from being
+mistaken for a video/unified handoff ticket. The entry obtains a fresh handoff
+using the existing MIDCODE login. Users signed in on a different domain may
+need to sign in on `midcode.cc` once.
+
+Deployment source: `activate-image-entry.py`. The verified v1.0.72 application
+container/image remain unchanged; v1.0.73 identifies this ingress-only release.
+No new container is needed. Existing image API/media endpoints and `/video/`
+remain on the original services so ongoing tasks and old projects can continue;
+those containers still serve traffic and are not eligible for removal.
+
+Validation: nginx configuration check and graceful reload; root/index redirect
+headers; authenticated Chrome entry with an old image ticket fragment discarded;
+UID isolation preserved; image/video switching without document navigation;
+existing image/video login and isolation checks. No additional paid generations.
+
+Rollback: remove the two exact-match locations added by this script, run
+`docker exec migration-router nginx -t`, then `nginx -s reload` in that container.
+The private pre-change snapshot is retained as
+`/root/fanapi-migration/image-entry-before-v1073.conf`; preserve any later unrelated
+changes rather than blindly restoring it. No user data or old-server changes.
