@@ -105,9 +105,8 @@ function copyText(text: string, label = '已复制') {
 function availabilityState(item: ModelAvailability | undefined, unavailable: boolean) {
   if (unavailable) return { label: '统计暂不可用', tone: 'text-muted-foreground' }
   if (!item || item.total === 0) return { label: '暂无调用数据', tone: 'text-muted-foreground' }
-  if (item.total < 20) return { label: '数据较少', tone: 'text-amber-600' }
-  if (item.availability_percent >= 99) return { label: '正常', tone: 'text-emerald-600' }
-  if (item.availability_percent >= 95) return { label: '降级', tone: 'text-amber-600' }
+  if (item.availability_percent > 90) return { label: '正常', tone: 'text-emerald-600' }
+  if (item.availability_percent >= 80) return { label: '波动', tone: 'text-amber-600' }
   return { label: '异常', tone: 'text-destructive' }
 }
 
