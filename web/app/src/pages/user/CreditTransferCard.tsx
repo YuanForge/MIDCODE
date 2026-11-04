@@ -46,7 +46,7 @@ export function CreditTransferCard({ userId, onSuccess }: { userId?: number; onS
   }
   return <PageSection title="积分转赠" description="通过用户 ID 将自己的通用积分转赠给其他用户。">
     <div className="flex flex-col gap-4">
-      <p className="text-sm text-muted-foreground">可转赠积分：{data ? (data.credits / 1e6).toFixed(6) : '加载中'}。用户端按 1 元 = 1 积分显示；冻结、模型专属及 API 请求预留积分不参与转赠。</p>
+      <p className="text-sm text-muted-foreground">可转赠积分：{data ? (data.credits / 1e6).toFixed(6) : '加载中'}。冻结、模型专属及 API 请求预留积分不参与转赠。</p>
       {error || balanceError ? <Alert variant="destructive"><AlertDescription>{error || balanceError}</AlertDescription></Alert> : null}
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-2"><Label htmlFor="gift-recipient">接收用户 ID</Label><Input id="gift-recipient" inputMode="numeric" placeholder="请输入对方 UID" value={recipient} onChange={e => setRecipient(e.target.value)} disabled={busy} /></div>
