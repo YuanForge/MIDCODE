@@ -192,7 +192,7 @@ is never stored in browser storage. External image failures are not bypassed.
 
 Use `deploy-workspace-ux.py RELEASE_DIRECTORY COMMIT TAG` with the built `out/`
 and matching entry sources. It retains old immutable chunks, builds a clean
-recovery image, and atomically exchanges the live static directory without
+recovery image, and atomically publishes resources followed by HTML without
 restarting the gateway or tenant task processes. It does not replace a container.
 The release manifest records every static-file hash and the source commit/tag.
 See `docs/studio-workspace-ux-20261104.md` for verification and rollback.
