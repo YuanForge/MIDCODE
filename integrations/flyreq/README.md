@@ -1,64 +1,115 @@
-# MIDCODE unified studio — branding candidate
+# MIDCODE unified studio — integrated preview
 
-This directory reproducibly prepares a MIDCODE-branded evaluation build of
+A separately deployed MIDCODE-branded image/video studio based on
 [FlyReq Image Studio](https://github.com/doudou770/flyreq-image-studio), pinned to
-`bcec8c8992b407997a5f872bcb7fa1436d7505cd` (upstream package version 1.5.1).
+`bcec8c8992b407997a5f872bcb7fa1436d7505cd` (upstream 1.5.1).
+
+Preview entry: https://midcode.cc/studio-preview/entry (sign in to MIDCODE first).
+This release adds an isolated preview route; it does not replace the existing
+main site, image studio or video studio, and does not update the old server.
+
+## Integration
+
+- The entry exchanges the existing MIDCODE one-time handoff for a Secure,
+  HttpOnly session. Long-lived API keys stay server-side, never in a URL or
+  browser model registry. Existing main-site login is preserved.
+- Each UID has a separate native backend process, SQLite task database and
+  media directory. HTTP and WebSocket requests are authenticated and routed
+  to that UID. Browser storage is also namespaced by UID.
+- Approved models and keys come from MIDCODE. Internal signed capabilities
+  force upstream traffic through MIDCODE routing, billing and logs.
+- Synchronous image models use `/v1/images/generations` or edits. Asynchronous
+  image/video channels use `/api/v1/image`, `/api/v1/video` and task polling.
+- Generated media and async reference uploads are archived in the existing
+  private S3 bucket. Stable signed MIDCODE media links redirect to short-lived
+  S3 URLs. These are shareable bearer links: anyone holding a link can read it.
+- Upstream license, copyright and source attribution remain. The settings page
+  links this versioned modification recipe and the original AGPL source.
 
 ## Reproduce
 
-Clone the upstream into a separate directory, check out the pinned commit, and run
-`npm ci` in its `frontend` directory. From this repository run:
+Use a fresh clone at the pinned upstream commit. Install frontend dependencies
+with `npm ci`, then run from this repository:
 
-```powershell
-node integrations/flyreq/prepare.mjs C:/path/to/flyreq integrations/flyreq/branding.env.example
+```sh
+node integrations/flyreq/prepare.mjs /path/to/flyreq integrations/flyreq/branding.env.example
+node integrations/flyreq/prepare-integration.mjs /path/to/flyreq
 ```
 
-Then run `npm run build` in the upstream `frontend` directory. The preparer uses
-the MIDCODE M logo in this directory and `sharp` from the upstream dependency
-lock. Environment variables override the example configuration. Apply to a fresh
-checkout once, not to a previously prepared checkout. No API keys are included.
+Run `npm run build` in the prepared frontend. Copy this repository's
+`integrations/flyreq` and `integrations/media-storage` into the prepared root's
+`integrations` directory. Build using `integrations/flyreq/Dockerfile` with that
+prepared root as context. The Dockerfile-specific ignore file excludes secrets,
+SQLite databases and development dependencies while including frontend output.
+Never package deployment env files or state directories.
 
-Changed surfaces: frontend and backend fallback names, model/provider labels,
-API defaults, Chinese and English copy, document titles, PWA manifest/icons,
-key guidance, and source link. Internal API paths and storage keys retain upstream
-names to preserve compatibility. Original LICENSE, README, attribution links and
-copyright notices are retained. The settings page links both the modifications
-here and the original source; the license is also copied to `/LICENSE.txt`.
+`deploy-candidate.py` is the site-specific deployment recipe for the verified
+new-server topology. It reads credentials from existing running containers,
+writes a root-only env file, and starts a parallel candidate. Review current
+container names, free ports and dependency targets before reuse; do not assume
+these historical names remain current. `activate-preview.py` adds only the new
+preview route after configuration validation. It does not replace main routes.
 
-## Release boundary
+Required runtime configuration: `MIDCODE_BACKEND`, `MIDCODE_PUBLIC_ORIGIN`,
+`TOONFLOW_HANDOFF_SECRET`, the existing `MEDIA_S3_*` configuration, `MIDCODE_STATE`,
+`MIDCODE_TENANT_PORT_BASE`, `PORT`, `APP_VERSION`. Bind the gateway and tenant
+ports to loopback. The proxy must overwrite `X-Midcode-Client-IP`, preserve
+WebSocket upgrades, disable response buffering, and allow long generation calls.
+The supported public base path is `/studio-preview`.
 
-This is a branding candidate, **not a production migration**. Do not expose the
-upstream backend as the public MIDCODE studio without the following integration:
+## Candidate boundaries
 
-- Redeem existing MIDCODE one-time handoff server-side; do not put API keys in URLs.
-- Authenticate task creation, polling, cancellation, media and WebSocket access;
-  bind all records to MIDCODE user IDs and test cross-user denial.
-- Route approved image/video models through MIDCODE billing and request logs.
-- Archive media to the existing private SeaweedFS S3 bucket and serve stable URLs.
-- Preserve old image histories and video projects; this UI does not import them.
-- Verify real generation, polling, download, isolation and graceful production cutover.
+- Maximum eight simultaneously resident user processes; this preview is for
+  evaluation, not a replacement of the public workbench for every user yet.
+- Old image history/video projects are preserved in their original workbenches;
+  this preview does not import them. Library/history browser metadata remains
+  browser-local; S3 media URLs alone do not provide cross-device project sync.
+- Real generation requires an existing key with the corresponding model groups.
+  The preview follows those permissions and does not grant new model access.
+- Submitted MIDCODE video tasks cannot currently be canceled through the preview;
+  the endpoint returns an explicit error instead of falsely reporting cancellation.
+- Main-site logout does not itself clear the separate workbench session. Sessions
+  expire after 12 hours and are revalidated against MIDCODE user/password state.
+- Reference-image/video workflows and optional upstream Agent/canvas features have
+  not received the same real-generation coverage as text-to-image/text-to-video.
 
-Upstream uses AGPL-3.0. Retain its license and notices and provide users with the
-corresponding modified source when serving a modified deployment. The pinned
-source plus this versioned preparer records how the candidate was produced.
+## v1.0.72 verification and deployment (2026-11-04)
 
-Production proxies, business containers, data, and credentials are not changed by
-the preparer. Rolling back this candidate means discarding the separate build;
-there is no production rollback operation.
+- Frontend production build/TypeScript passed. Fresh preparation reproduced the
+  deployed backend and frontend sources. Gateway integration tests: 3 passed,
+  covering key redaction, async protocol translation, cross-user HTTP/WebSocket
+  denial, one-time login, origin checks and fixed upstream enforcement.
+- Chrome checked zh/en, light/dark and widths 1440/390: eight cases, no page
+  errors or document navigation on image/video switching (51–157 ms observed).
+  Browser plugin was unavailable, so regular Playwright was used. Desktop and
+  mobile screenshots were inspected.
+- Real synchronous image generation completed and displayed in the browser;
+  real async image generation completed and decoded at 1024×1024. A real
+  Seedance video completed, was archived, decoded at 1280×720 / 6.08 seconds,
+  and played successfully. No production user requests were canceled.
+- S3 synthetic image/video byte roundtrips matched; stable links decoded in
+  Chrome. Fresh entry login, HttpOnly session and preserved main login passed.
+- UID 3 was the existing verification account. Temporary test key 577 was deleted
+  after terminal results and its cached profile removed by fresh handoff.
+  Existing key 264 was retained. Test ledger debits netted CNY 6.100416, including
+  CNY 0.075888 from an early wrong-protocol image attempt reported successful by
+  the platform but not displayed by that candidate. The initial invalid-size
+  attempt was automatically refunded. No balances or ledger rows were edited.
+- Active candidate: `midcode-unified-preview-v1072-r3`, loopback 8198,
+  `APP_VERSION=v1.0.72`, image `midcode-unified:preview-v1072-r3`,
+  SHA256 `c6387f9ec462fc77e072582a832833e50b210f15907498e020e227d2d158caa6`.
+  Running with zero restarts. Existing main API remains v1.0.69; this tag is the
+  unified preview release, not a claim that the main API was redeployed.
+- Existing image/video handoff and cross-user isolation probes passed after
+  deployment. Three superseded preview containers were drained and removed:
+  `midcode-unified-candidate-v1072`, `midcode-unified-preview-v1072`, and
+  `midcode-unified-preview-v1072-r2`. Images and bind-mounted state were retained.
+- Rollback: remove only the added `/studio-preview/` location, validate nginx
+  configuration and gracefully reload `migration-router`. Preserve unrelated
+  subsequent configuration changes. Drain candidate tasks/connections before
+  stopping/removing it; retain S3 objects, state directories and rollback images.
+  Main/image/video original routes need no rollback because they were unchanged.
 
-## v1.0.71 candidate verification (2026-11-04)
-
-- Production frontend build and TypeScript checks passed on Node 24.15.0.
-- Local backend bound only to `127.0.0.1:3097`; config returned MIDCODE names
-  and `https://midcode.cc` defaults without credentials.
-- Playwright/Chrome checked widths 1440 and 390, light/dark, and zh/en (8 cases).
-  No page errors or horizontal overflow; image/video switches generated no
-  document navigations. Empty-state local switches measured 53–199 ms.
-- Browser plugin not available; regular Playwright was used. Screenshots were
-  visually inspected for desktop light and mobile dark layouts.
-- Real image/video generation, billing, S3, account isolation and old-project
-  import are not verified by this branding release.
-- Deployment: local preview only. No production container created/replaced,
-  no proxy changes, and no old-container deletion required. Production remains
-  on its existing release. The `v1.0.71` tag identifies this candidate's recipe,
-  not a new production main/API version.
+The pushed release tag identifies the exact integration recipe. Deployment
+records also bind the resolved commit to the image digest and verified runtime
+file hashes; credentials and private snapshots are not committed.
