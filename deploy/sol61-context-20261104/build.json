@@ -1,0 +1,12 @@
+{
+  "baseline_binary_sha256": "c5b281f55681fbecce0b9835ecc99f83ddf7f5feb77793acd0259c23d193d710",
+  "binary_sha256": "993cb41adfdd44434c5b8cb11c8a68ff96173612539b17976680c06aae32a4f3",
+  "source_sha256": {
+    "internal/billing/context_pricing.go": "f17fc23d5fc95edfb9e35c9679fa263888da1c2889e570de081c2821fdf26869",
+    "internal/billing/pricer.go": "ff394d9d859ddc97e39ee9b2bf5e617ce4f877d5db1518d2cde396f61e01b28c",
+    "internal/handler/llm_billing.go": "da3e307278f24ed103be931b7b3324e53f2348b2497c54d903c4ada9cc5bcb28",
+    "internal/handler/llm_log.go": "973eb018059a5b8a5c1f98a30866b5cbfef60d60f015663e76036337b5e65479",
+    "web/app/src/pages/user/UserModelsPage.tsx": "d478de2cd04673c76bd20639042d6a961c189b112d37ebae9dd550da6ebe10f5"
+  },
+  "index_sha256": "35b086065d872857186e7a0a3d4fa3993a326b07f6f005f43921dfbd8b7121cb"
+}

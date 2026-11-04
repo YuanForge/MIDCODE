@@ -93,7 +93,7 @@ function ContextPricingNote({ compact = false, model }: { compact?: boolean; mod
   const isSol61 = model?.toLowerCase() === 'gpt-6.1-sol'
   return <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs leading-5">
     <div className="font-medium text-foreground">长上下文倍率：输入 / 缓存 ×2 · 输出 ×1.5</div>
-    <div className="text-muted-foreground">{isSol61 ? 'GPT-6.1 Sol 默认上下文窗口为 500K token。' : '单次输入 ≤272,000 token 按所示短档价格计费；超过后，整次请求按上述倍率计费。'}</div>
+    <div className="text-muted-foreground">{isSol61 ? '单次输入 ≤500,000 token 按所示短档价格计费；超过后，整次请求按上述倍率计费。' : '单次输入 ≤272,000 token 按所示短档价格计费；超过后，整次请求按上述倍率计费。'}</div>
     {!compact ? <div className="mt-1 text-muted-foreground">输入含缓存读取和写入，输出不计入分档。倍率适用于本分组的普通价和对应会员价，并非只对超出部分加价。</div> : null}
   </div>
 }
