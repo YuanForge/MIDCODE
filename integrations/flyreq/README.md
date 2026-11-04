@@ -139,3 +139,38 @@ Rollback: remove the two exact-match locations added by this script, run
 The private pre-change snapshot is retained as
 `/root/fanapi-migration/image-entry-before-v1073.conf`; preserve any later unrelated
 changes rather than blindly restoring it. No user data or old-server changes.
+
+## v1.0.74 entry latency fix (2026-11-04)
+
+`optimize-entry.py` serves `entry.js` through an exact ingress location and keeps
+using the existing v1.0.72 gateway/task processes. A matching server-validated
+session can resume directly. Only the per-account model-refresh timestamp is
+cached in browser storage; it never grants authorization. Changed accounts,
+invalid sessions and model profiles older than 15 minutes use fresh handoff.
+API keys remain server-side. Each entry request has a 12-second timeout and a
+visible retry state. First sign-in still needs the full permission handoff.
+
+Authenticated hashed Next.js resources are privately cached for one year and
+compressed with gzip. HTML, session responses and APIs remain no-store. The
+asset cache header is applied only to successful responses; failed responses
+remain no-store. No shared proxy cache is enabled. Browser storage and session
+ownership checks continue to isolate accounts.
+
+Measured in Chrome against the new server: before, first/repeat entry 8061/8175
+ms and 2,149,618 static bytes each time; after, first/repeat entry 9473/553 ms,
+628,790/0 static transfer bytes. These are individual observations, not an SLA.
+Initial account handoff was not made faster by this ingress-only change.
+
+Four focused entry tests cover resume, account changes/stale profiles/expired
+sessions, timeouts and explicit one-time tickets. Browser plugin not available;
+regular Playwright checked real login and repeat navigation, desktop/mobile
+rendering, image/video switching, no runtime errors, and visible retry on a
+simulated backend failure. No paid generations were submitted for this change.
+
+Deployment is ingress-only v1.0.74; main API remains v1.0.69 and unified runtime
+remains v1.0.72. No new containers, restarts, or removed containers. Original
+image/video services still serve prior task/media/project routes. Rollback removes
+only the added entry/static locations and `unified_asset_cache` map, followed by
+nginx validation and graceful reload; the private snapshot is
+`/root/fanapi-migration/unified-entry-before-v1074.conf`. Preserve later unrelated
+configuration edits when rolling back.
