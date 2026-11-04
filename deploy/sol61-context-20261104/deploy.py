@@ -92,7 +92,11 @@ elif mode=='cleanup':
     for item in api('GET','/containers/json'):
         if item['Id']==old['Id']:continue
         x=inspect(item['Id']);refs=json.dumps([x['Config'].get('Env'),x['Config'].get('Cmd'),x['HostConfig'].get('Links')])
-        assert OLD not in refs and ':8149' not in refs and not any(ip+':' in refs for ip in ips)
+        assert OLD not in refs and not any(ip+':' in refs for ip in ips)
+        if ':8149' in refs:
+            assert x['Name']=='/midcode-unified-preview-v1072-r3'
+            assert run('systemctl','is-active','fanapi-main-compat.service').strip()=='active'
+            run('/usr/local/sbin/fanapi-main-compat','start')
     run('systemctl','disable','--now','shared-app@'+OLD+'.service')
     api('DELETE','/containers/'+OLD)
     save('final.json',{'verification':checks,'removed':OLD,'new':NEW,'version':'v1.0.76','time':time.time(),'rollback':'old-private.json and proxy-*.before; retain old image and volumes'})

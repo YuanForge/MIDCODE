@@ -1,0 +1,13 @@
+[Unit]
+Description=Stable MIDCODE studio backend endpoint
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/fanapi-main-compat start
+ExecStop=/usr/local/sbin/fanapi-main-compat stop
+
+[Install]
+WantedBy=multi-user.target
