@@ -50,7 +50,7 @@ def main():
     assert not BACKUP.exists(), 'Do not overwrite rollback snapshot'
     script = Path(__file__).with_name('entry.js').read_text(encoding='utf-8-sig')
     assert '</script' not in script.lower()
-    html = '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MIDCODE Studio</title><body><p id="status">正在连接 MIDCODE / Connecting to MIDCODE…</p><a id="retry" hidden href="/studio-preview/entry">重试 / Retry</a> <a href="/login">MIDCODE 登录 / Sign in</a><script>' + script + '</script></body></html>'
+    html = Path(__file__).with_name('entry.html').read_text(encoding='utf-8-sig').replace('/* ENTRY_SCRIPT */', script)
     HTML.write_text(html)
     HTML.chmod(0o644)
     shutil.copy2(CONFIG, BACKUP)

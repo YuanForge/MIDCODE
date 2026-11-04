@@ -174,3 +174,25 @@ only the added entry/static locations and `unified_asset_cache` map, followed by
 nginx validation and graceful reload; the private snapshot is
 `/root/fanapi-migration/unified-entry-before-v1074.conf`. Preserve later unrelated
 configuration edits when rolling back.
+
+## Workspace navigation and random-image viewer
+
+After `prepare.mjs` and `prepare-integration.mjs`, run
+`node integrations/flyreq/prepare-workspace-ux.mjs UPSTREAM_ROOT` before the
+frontend build. This count-checked patch portals the image viewer outside the
+desktop-hidden header, adds a dashboard link to desktop/mobile navigation, and
+gives unavailable external image sources a bounded loading/error state.
+
+`entry.html` replaces the plain resume interstitial with the workspace skeleton.
+`entry.js` installs the authenticated same-origin workspace document directly,
+avoiding the separate session probe and subsequent document navigation. The
+gateway account marker must match the current account before installation;
+stale profiles and changed accounts still require handoff. Authenticated HTML
+is never stored in browser storage. External image failures are not bypassed.
+
+Use `deploy-workspace-ux.py RELEASE_DIRECTORY COMMIT TAG` with the built `out/`
+and matching entry sources. It retains old immutable chunks, builds a clean
+recovery image, and atomically exchanges the live static directory without
+restarting the gateway or tenant task processes. It does not replace a container.
+The release manifest records every static-file hash and the source commit/tag.
+See `docs/studio-workspace-ux-20261104.md` for verification and rollback.
