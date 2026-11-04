@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"fanapi/internal/billing"
 	"fanapi/internal/db"
@@ -294,6 +295,7 @@ func ResponsesCompactProxy(c *gin.Context) {
 //   - 用户分组定价
 //   - 失败自动重试（最多 3 个不同渠道）
 func llmProxy(c *gin.Context) {
+	c.Set("model_performance_start", time.Now())
 	userID := c.MustGet("user_id").(int64)
 	apiKeyID, _ := c.Get("api_key_id")
 	var apiKeyIDVal int64
@@ -660,6 +662,8 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 		Status:         "pending",
 	}
 	enqueueLLMLogInsert(*llmLog)
+	performance := installModelPerformance(c)
+	defer func() { c.Writer = performance.ResponseWriter }()
 
 	// 6. 号池 Key 已在步骤1分配，直接发送上游请求
 	// 7. 发送上游请求
@@ -1059,5 +1063,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 	if clientDisconnected {
 		streamReadErr = context.Canceled
 	}
-	llmSettle(c, ch, origReqData, usage.normalized(origReqData), totalHold, userID, channelID, apiKeyIDVal, poolKeyIDVal, corrID, userGroup, streamReadErr)
+	finalUsage := usage.normalized(origReqData)
+	performance.addUsage(finalUsage, time.Now())
+	llmSettle(c, ch, origReqData, finalUsage, totalHold, userID, channelID, apiKeyIDVal, poolKeyIDVal, corrID, userGroup, streamReadErr)
 }

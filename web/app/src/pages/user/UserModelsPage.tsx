@@ -127,6 +127,17 @@ function ModelAvailabilityPanel({ item, unavailable }: { item?: ModelAvailabilit
         <div><div className="text-muted-foreground">P50</div><div className="mt-1 font-medium">{item?.p50_latency_ms ? `${item.p50_latency_ms}ms` : '—'}</div></div>
         <div><div className="text-muted-foreground">请求数</div><div className="mt-1 font-medium">{item?.total ?? 0}</div></div>
       </div>
+      <div className="mt-3 grid grid-cols-2 gap-3 rounded-lg bg-muted/40 px-3 py-2 text-xs">
+        <div title={`最近 7 天成功流式调用的首个文本、思考或工具参数输出延迟中位数；${item?.ttft_samples ?? 0} 个样本。不含仅有角色或心跳的事件。`}>
+          <div className="text-muted-foreground">TTFT · 首字延迟</div>
+          <div className="mt-1 font-medium tabular-nums">{!unavailable && item?.ttft_ms != null ? `${(item.ttft_ms / 1000).toFixed(2)} s` : '—'}</div>
+        </div>
+        <div title={`最近 7 天成功流式调用的输出速度中位数；${item?.tps_samples ?? 0} 个样本。按上游实际输出 token（含思考）与首字之后的流时长计算，排除估算用量。`}>
+          <div className="text-muted-foreground">TPS · 输出速度</div>
+          <div className="mt-1 font-medium tabular-nums">{!unavailable && item?.tps != null ? `${item.tps.toFixed(1)} token/s` : '—'}</div>
+        </div>
+        <div className="col-span-2 text-[10px] text-muted-foreground">流式调用 P50 · {item?.ttft_samples ?? 0} / {item?.tps_samples ?? 0} 个有效样本</div>
+      </div>
       <div className="mt-3 flex h-8 items-end gap-px" aria-label={`最近 60 次调用，${item?.success ?? 0} 次成功`}>
         {bars.map((entry, index) => (
           <span

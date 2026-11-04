@@ -93,6 +93,10 @@ export type ModelAvailability = {
   success: number
   availability_percent: number
   p50_latency_ms: number
+  ttft_ms: number | null
+  tps: number | null
+  ttft_samples: number
+  tps_samples: number
   recent: ModelAvailabilityRecent[]
 }
 
