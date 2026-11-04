@@ -196,3 +196,26 @@ recovery image, and atomically publishes resources followed by HTML without
 restarting the gateway or tenant task processes. It does not replace a container.
 The release manifest records every static-file hash and the source commit/tag.
 See `docs/studio-workspace-ux-20261104.md` for verification and rollback.
+
+## Random photo sources (v1.0.80)
+
+Run `prepare-random-sources.mjs UPSTREAM_ROOT` after `prepare-workspace-ux.mjs`
+and before building. At the user's request, the unavailable BA/Bing providers
+are replaced with Picsum color and grayscale photography. Both languages,
+menus and settings source links use the new labels. Each open/refresh generates
+a fresh `random` parameter while preserving grayscale, following
+https://picsum.photos/ documentation. This is not a BA or Bing image collection.
+
+The existing viewer error timeout remains in place because availability of an
+external provider cannot be guaranteed. Candidate Playwright checks loaded
+twelve distinct real images across desktop/mobile and both categories, including
+consecutive refreshes. No mock image responses were used for these checks.
+Browser plugin not available; regular Playwright was used.
+
+Release evidence: `/root/fanapi-migration/studio-random-v1080/release.json` and
+`verification.json`. Tag v1.0.80 identifies the source; the manifest records the
+full commit and published asset hashes. Reuse `deploy-workspace-ux.py` to publish
+assets first and HTML last without restarting tenant/task processes. Recovery
+image: `midcode-unified:workspace-v1.0.80`. Rollback restores that release's
+`out-before/` and `entry-before.html` using the previous section's procedure.
+No container is replaced, so no old container becomes eligible for deletion.
