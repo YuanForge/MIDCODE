@@ -180,6 +180,7 @@ export type TokenStatsResponse = {
 }
 
 export type UserLog = {
+  cache_hit_percent?: number | null
   id?: number
   model?: string
   created_at?: string

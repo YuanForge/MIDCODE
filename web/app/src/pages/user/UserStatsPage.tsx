@@ -23,6 +23,7 @@ import {
 import { useAsync } from '@/hooks/use-async'
 import { userApi, type TokenStatsResponse } from '@/lib/api/user'
 import { formatTokenCount, tokenStatsTodayRange } from '@/lib/token-usage'
+import { formatCacheHitPercent, inputCacheHitPercent } from '@/lib/formatters/cache'
 
 const pageSize = 20
 
@@ -87,29 +88,31 @@ export function UserStatsPage() {
       {!loading && data.items.length > 0 ? <TokenUsageBarChart rows={data.items} /> : null}
 
       <Card className="overflow-hidden">
-        <Table className="min-w-[980px]">
+        <Table className="min-w-[1100px]">
           <TableHeader>
             <TableRow>
               <TableHead>模型</TableHead>
               <TableHead className="text-right">非缓存输入</TableHead>
               <TableHead className="text-right">缓存读取</TableHead>
               <TableHead className="text-right">缓存写入</TableHead>
+              <TableHead className="text-right" title="缓存读取 ÷（非缓存输入＋缓存读取＋缓存写入），按当前筛选范围的 Token 总量计算">缓存命中率</TableHead>
               <TableHead className="text-right">输出</TableHead>
               <TableHead className="text-right">总 Token</TableHead>
             </TableRow>
           </TableHeader>
           {loading ? (
-            <TableSkeleton cols={6} />
+            <TableSkeleton cols={7} />
           ) : (
             <TableBody>
               {data.items.length === 0 ? (
-                <TableEmpty cols={6} Icon={BarChart3Icon} title="暂无 Token 使用记录" description="当前模型或时间范围内没有成功调用。" />
+                <TableEmpty cols={7} Icon={BarChart3Icon} title="暂无 Token 使用记录" description="当前模型或时间范围内没有成功调用。" />
               ) : data.items.map((row) => (
                 <TableRow key={row.model}>
                   <TableCell className="font-mono text-xs">{row.model}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{formatTokenCount(row.non_cached_input_tokens)}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{formatTokenCount(row.cache_read_tokens)}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{formatTokenCount(row.cache_creation_tokens)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{formatCacheHitPercent(inputCacheHitPercent(row.non_cached_input_tokens, row.cache_read_tokens, row.cache_creation_tokens))}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{formatTokenCount(row.output_tokens)}</TableCell>
                   <TableCell className="text-right font-mono font-semibold tabular-nums">{formatTokenCount(row.total_tokens)}</TableCell>
                 </TableRow>

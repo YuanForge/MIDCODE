@@ -31,6 +31,7 @@ import {
 import { userApi, type ApiKeyRecord, type UserLog } from '@/lib/api/user'
 import { formatCredits, formatTokenPricePerMillion } from '@/lib/formatters/credits'
 import { formatTTFT, formatTPS } from '@/lib/formatters/performance'
+import { formatCacheHitPercent } from '@/lib/formatters/cache'
 
 function renderStatus(status?: string) {
   if (status === 'ok') {
@@ -183,12 +184,13 @@ export function UserLogsPage() {
       />
 
       <Card className="overflow-hidden">
-        <Table className="min-w-[1240px]">
+        <Table className="min-w-[1340px]">
           <TableHeader>
             <TableRow>
               <TableHead>模型</TableHead>
               <TableHead>请求时间</TableHead>
               <TableHead className="text-right">输入 Tokens</TableHead>
+              <TableHead className="text-right" title="缓存读取 ÷ 全部输入 Token（含缓存读取和写入）">缓存命中率</TableHead>
               <TableHead className="text-right">输出 Tokens</TableHead>
               <TableHead className="text-right" title="首字延迟：请求开始到首次输出内容的时间">TTFT</TableHead>
               <TableHead className="text-right" title="输出速度：基于实际输出 Token 和流式输出时间计算">TPS</TableHead>
@@ -200,12 +202,12 @@ export function UserLogsPage() {
             </TableRow>
           </TableHeader>
           {loading ? (
-            <TableSkeleton cols={11} rows={8} />
+            <TableSkeleton cols={12} rows={8} />
           ) : (
             <TableBody>
               {rows.length === 0 ? (
                 <TableEmpty
-                  cols={11}
+                  cols={12}
                   Icon={FileClockIcon}
                   title="还没有调用日志"
                   description="使用 API 密钥发起 LLM 请求后，调用记录会展示在这里。"
@@ -238,6 +240,7 @@ export function UserLogsPage() {
                         <span className="text-muted-foreground/50">-</span>
                       )}
                     </TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums">{formatCacheHitPercent(row.cache_hit_percent)}</TableCell>
                     <TableCell className="text-right">
                       {row.usage?.completion_tokens != null ? (
                         <div className="flex flex-col items-end gap-1">
@@ -323,6 +326,10 @@ export function UserLogsPage() {
                     ) : null}
                   </div>
                   <div>{currentLog.usage?.completion_tokens ?? '-'}</div>
+                </div>
+                <div>
+                  <div className="mb-1 text-muted-foreground" title="缓存读取 ÷ 全部输入 Token（含缓存读取和写入）">缓存命中率</div>
+                  <div className="tabular-nums">{formatCacheHitPercent(currentLog.cache_hit_percent)}</div>
                 </div>
                 <div>
                   <div className="mb-1 text-muted-foreground">TTFT · 首字延迟</div>

@@ -21,6 +21,7 @@ type tokenPriceMeta struct {
 }
 
 type userLogDetail struct {
+	CacheHitPercent        *float64   `json:"cache_hit_percent"`
 	ID                     int64      `json:"id"`
 	CorrID                 string     `json:"corr_id"`
 	Model                  string     `json:"model"`
@@ -140,7 +141,7 @@ func loadChannelPricingMap(channelIDs []int64) map[int64]model.Channel {
 
 	var channels []model.Channel
 	if err := db.Engine.In("id", channelIDs).
-		Cols("id", "billing_type", "billing_config").
+		Cols("id", "protocol", "billing_type", "billing_config").
 		Find(&channels); err != nil {
 		return map[int64]model.Channel{}
 	}
@@ -542,7 +543,8 @@ func UserListLLMLogs(c *gin.Context) {
 
 	type logWithCredits struct {
 		model.LLMLog
-		CreditsCharged int64 `json:"credits_charged"`
+		CreditsCharged  int64    `json:"credits_charged"`
+		CacheHitPercent *float64 `json:"cache_hit_percent"`
 	}
 	result := make([]logWithCredits, len(logs))
 	for i, l := range logs {
@@ -557,8 +559,9 @@ func UserListLLMLogs(c *gin.Context) {
 		l.InputPricePer1MTokens = displayPrice.InputPricePer1MTokens
 		l.OutputPricePer1MTokens = displayPrice.OutputPricePer1MTokens
 		result[i] = logWithCredits{
-			LLMLog:         l,
-			CreditsCharged: creditsMap[l.CorrID],
+			LLMLog:          l,
+			CreditsCharged:  creditsMap[l.CorrID],
+			CacheHitPercent: logCacheHitPercent(l.Usage, ch),
 		}
 	}
 
@@ -622,5 +625,6 @@ func UserGetLLMLog(c *gin.Context) {
 		InputPricePer1MTokens:  displayPrice.InputPricePer1MTokens,
 		OutputPricePer1MTokens: displayPrice.OutputPricePer1MTokens,
 		CreditsCharged:         creditsCharged,
+		CacheHitPercent:        logCacheHitPercent(log.Usage, channel),
 	})
 }
