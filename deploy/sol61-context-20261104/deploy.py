@@ -4,10 +4,10 @@ from pathlib import Path
 sys.path.insert(0, '/root/fanapi-migration')
 from redis_migrate import api
 
-ROOT = Path('/root/fanapi-migration/sol61-context-v1075')
+ROOT = Path('/root/fanapi-migration/sol61-context-v1076')
 OLD = 'midcode-retry-v1069-api-1'
-NEW = 'midcode-sol61-v1075-api-1'
-IMAGE = 'fanapi-api:sol61-v1.0.75'
+NEW = 'midcode-sol61-v1076-api-1'
+IMAGE = 'fanapi-api:sol61-v1.0.76'
 PROXIES = [Path('/etc/fanapi-migration/conf.d/api.fanapi.cc.conf'), Path('/opt/1panel/apps/openresty/openresty/www/sites/api.fanapi.cc/proxy/root.conf')]
 def run(*args): return subprocess.check_output(args, text=True)
 def inspect(name): return api('GET', '/containers/'+name+'/json')
@@ -44,10 +44,11 @@ if mode=='prepare':
         assert '127.0.0.1:8149;' in p.read_text()
         (ROOT/f'proxy-{i}.before').write_bytes(p.read_bytes())
     run('docker','cp',OLD+':/app/web/dist/env.js',str(ROOT/'dist/env.js'))
-    (ROOT/'Dockerfile').write_text('FROM '+old['Image']+'\nCOPY --chmod=755 fanapi-server /app/fanapi-server\nCOPY dist/ /app/web/dist/\nLABEL midcode.release="v1.0.75" midcode.commit="'+sys.argv[2]+'"\n')
+    run('docker','tag',old['Image'],'fanapi-api:sol61-base')
+    (ROOT/'Dockerfile').write_text('FROM fanapi-api:sol61-base'+'\nCOPY --chmod=755 fanapi-server /app/fanapi-server\nCOPY dist/ /app/web/dist/\nLABEL midcode.release="v1.0.76" midcode.commit="'+sys.argv[2]+'"\n')
     run('docker','build','-t',IMAGE,str(ROOT))
     cfg=copy.deepcopy(old['Config']);cfg['Image']=IMAGE;cfg['Hostname']=NEW
-    cfg['Labels']=dict(cfg.get('Labels') or {},**{'midcode.release':'v1.0.75','midcode.commit':sys.argv[2]})
+    cfg['Labels']=dict(cfg.get('Labels') or {},**{'midcode.release':'v1.0.76','midcode.commit':sys.argv[2]})
     host=copy.deepcopy(old['HostConfig']);host['PortBindings']={'80/tcp':[{'HostIp':'127.0.0.1','HostPort':'8151'}]};cfg['HostConfig']=host
     cfg['NetworkingConfig']={'EndpointsConfig':{n:{} for n in old['NetworkSettings']['Networks']}}
     api('POST','/containers/create?name='+NEW,cfg)
@@ -67,7 +68,7 @@ elif mode=='cutover':
     except Exception:
         for i,p in enumerate(PROXIES):p.write_bytes((ROOT/f'proxy-{i}.before').read_bytes())
         run('docker','exec','migration-router','nginx','-s','reload');raise
-    save('cutover.json',{'version':'v1.0.75','time':time.time(),'old':OLD,'new':NEW});print('CUTOVER_COMPLETE')
+    save('cutover.json',{'version':'v1.0.76','time':time.time(),'old':OLD,'new':NEW});print('CUTOVER_COMPLETE')
 elif mode=='drain':
     rows=incoming(OLD);print('OLD_INCOMING',len(rows))
     if rows:sys.exit(2)
@@ -94,6 +95,6 @@ elif mode=='cleanup':
         assert OLD not in refs and ':8149' not in refs and not any(ip+':' in refs for ip in ips)
     run('systemctl','disable','--now','shared-app@'+OLD+'.service')
     api('DELETE','/containers/'+OLD)
-    save('final.json',{'verification':checks,'removed':OLD,'new':NEW,'version':'v1.0.75','time':time.time(),'rollback':'old-private.json and proxy-*.before; retain old image and volumes'})
+    save('final.json',{'verification':checks,'removed':OLD,'new':NEW,'version':'v1.0.76','time':time.time(),'rollback':'old-private.json and proxy-*.before; retain old image and volumes'})
     print('CLEANUP_COMPLETE_NO_VOLUMES_REMOVED')
 else:raise ValueError(mode)
