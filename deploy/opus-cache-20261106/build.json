@@ -1,0 +1,10 @@
+{
+  "baseline_binary_sha256": "993cb41adfdd44434c5b8cb11c8a68ff96173612539b17976680c06aae32a4f3",
+  "binary_sha256": "b7d282f226518a71f87211006980aef641572696e995c9f57431cbdaa358c4e5",
+  "source_sha256": {
+    "internal/handler/llm_stream.go": "89498e9c727b91fc2473094ab5fb633ee538a45ebe24293028246e5cdcbd036d",
+    "internal/handler/claude_cache_delta_test.go": "a52a6733d38bed2596c256547e2783226655e7c4140506181e4db3ed509eb6c7"
+  },
+  "tests": "go test ./... passed on preserved production source",
+  "build": "GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build ./cmd/server; go1.26.7"
+}
