@@ -60,6 +60,17 @@ func (u *usageState) processLine(line string) {
 				}
 			case "message_delta":
 				if usg, ok := chunk["usage"].(map[string]interface{}); ok {
+					// Some upstreams finalize input and cache usage only at the end.
+					// Missing fields preserve the start values; explicit zero replaces them.
+					for key, dest := range map[string]*int64{
+						"input_tokens":                &u.promptTokens,
+						"cache_creation_input_tokens": &u.cacheCreationTokens,
+						"cache_read_input_tokens":     &u.cacheReadTokens,
+					} {
+						if n, ok := usg[key].(float64); ok && n >= 0 {
+							*dest = int64(n)
+						}
+					}
 					if speed, _ := usg["speed"].(string); speed != "" {
 						u.actualSpeed = speed
 					}
