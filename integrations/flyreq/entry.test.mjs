@@ -15,12 +15,12 @@ async function runEntry({uid=3, resumeStatus=200, resumeUid=3, finalUid=uid, fre
  await vm.runInNewContext(source,context);
  return {calls,status,retry,destination,installed};
 }
-test('return visit reuses matching validated session without handoff',async()=>{
- const r=await runEntry();assert.deepEqual(r.calls,['/studio-preview/zh/']);assert.equal(r.destination,'/studio-preview/zh/');
+test('return visit refreshes model bindings even within the previous cache window',async()=>{
+ const r=await runEntry();assert.deepEqual(r.calls,['/api/user/video-studio/handoff','/studio-preview/midcode/exchange','/studio-preview/zh/']);assert.equal(r.destination,'/studio-preview/zh/');
 });
 test('account switch and stale model profile require fresh handoff',async()=>{
  for(const options of [{resumeUid:4},{resumeStatus:401}]){
-  const r=await runEntry(options);assert.deepEqual(r.calls,['/studio-preview/zh/','/api/user/video-studio/handoff','/studio-preview/midcode/exchange','/studio-preview/zh/']);assert.equal(r.destination,'/studio-preview/zh/');
+  const r=await runEntry(options);assert.deepEqual(r.calls,['/api/user/video-studio/handoff','/studio-preview/midcode/exchange','/studio-preview/zh/']);assert.equal(r.destination,'/studio-preview/zh/');
  }
 });
 test('network timeout exits loading with retry instead of creating another handoff',async()=>{

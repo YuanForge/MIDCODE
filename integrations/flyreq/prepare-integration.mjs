@@ -9,7 +9,7 @@ async function replace(file, before, after) {
 }
 await fs.copyFile(new URL('./tenant.cjs', import.meta.url), path.join(root, 'backend/midcode-tenant.cjs'));
 await replace('backend/server.js', "const http = require('http');", "const http = require('http');\nconst midcode = require('./midcode-tenant.cjs');");
-await replace('backend/server.js', 'resolve(raw ? JSON.parse(raw) : {});', "const parsed = raw ? JSON.parse(raw) : {};\n        resolve(parsed.apiKey ? midcode.lock(parsed) : parsed);");
+await replace('backend/server.js', 'resolve(raw ? JSON.parse(raw) : {});', "const parsed = raw ? JSON.parse(raw) : {};\n        resolve(Promise.resolve().then(() => parsed.apiKey ? midcode.lock(parsed) : parsed));");
 await replace('backend/server.js', 'const { fields, files } = await readVideoMultipartBody(req);', 'const { fields, files } = await readVideoMultipartBody(req);\n      midcode.lock(fields);');
 await replace('backend/server.js', 'function saveImageToDisk(taskId,', 'async function saveImageToDisk(taskId,');
 await replace('backend/server.js', 'return { filePath, httpUrl: `/api/flyreq/images/${taskId}/${itemIndex}/${subIndex}` };', 'return { filePath, httpUrl: await midcode.archive(filePath, mimeType || "image/png") };');

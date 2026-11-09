@@ -25,18 +25,7 @@
     const token = localStorage.getItem('token');
     if (!token) throw Error('请先登录 MIDCODE / Please sign in to MIDCODE');
 
-    try {
-      const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-      const claims = JSON.parse(atob(part));
-      if (Number(claims.exp) * 1000 > Date.now()) uid = String(claims.sub);
-    } catch {}
-    // JWT payload is only an account-matching hint, never an authorization decision.
-    if (uid && /^\d+$/.test(uid)) {
-      if (Date.now() - Number(localStorage.getItem('midcode-entry:' + uid + ':refreshedAt') || 0) < 900000) {
-        const workspace = await loadWorkspace();
-        if (workspace.owner === uid) { displayWorkspace(workspace, uid); return; }
-      }
-    }
+    // Always refresh trusted model bindings when entering the workspace.
     status.textContent = '正在同步账户模型 / Connecting account models…';
     const handoff = await request('/api/user/video-studio/handoff', { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: '{}' });
     if (!handoff.ok) throw Error('无法连接账户，请重新登录或重试 / Please sign in again or retry');
