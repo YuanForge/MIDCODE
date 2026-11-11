@@ -1,0 +1,27 @@
+{
+  "passed": true,
+  "requests": 30,
+  "users": 9,
+  "credits": 9233663,
+  "user247_refund": 16354,
+  "refund_jobs": {
+    "done": 30
+  },
+  "containers": [
+    {
+      "name": "midcode-refund-v1087-api-1",
+      "healthy": true,
+      "restarts": 0
+    },
+    {
+      "name": "midcode-studio-refund-v1087-api-1",
+      "healthy": true,
+      "restarts": 0
+    }
+  ],
+  "removed": [
+    "midcode-preferences-v1086-api-1",
+    "midcode-studio-independent-api-1"
+  ],
+  "recent_user247_requests": []
+}

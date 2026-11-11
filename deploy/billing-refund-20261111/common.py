@@ -74,6 +74,10 @@ def incoming(name):
     for proto in ('tcp', 'tcp6'):
         for line in run('docker', 'exec', name, 'cat', '/proc/net/' + proto).splitlines()[1:]:
             fields = line.split()
+            # nginx keeps a loopback upstream socket to the Go server for
+            # health checks. Only external ingress must drain before removal.
+            if fields[1].split(':')[1] == '1F90' and fields[2].split(':')[0] in ('0100007F', '0000000000000000FFFF00000100007F', '00000000000000000000000001000000'):
+                continue
             if fields[3] in ('01', '03', '08') and fields[1].split(':')[1] in ('0050', '1F90'):
                 result.append(fields[1:4])
     return result
