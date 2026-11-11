@@ -1,0 +1,11 @@
+{
+  "incident": "redis-refund-timeout-20261111",
+  "requests": 30,
+  "users": 9,
+  "credits": 9233663,
+  "plan_sha256": "ac1b0f6ca8b17a6ab90cf17f6949a86c2b616b16328edb8a224744b959f9edda",
+  "status": "reviewed_not_applied",
+  "scope": "26 logged refund failures plus 4 confirmed historical cancellation/upstream failures",
+  "unresolved_history": 120,
+  "partial_refund_upstream_cost_not_reconstructed": 14
+}

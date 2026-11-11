@@ -1,0 +1,25 @@
+{
+  "release": "v1.0.87",
+  "commit": "88536a388f1178c68f992c430078265fcb2f66ef",
+  "binary_sha256": "772385f88783bac9848799e57a60161c684a2a1fa2bb06b9a4c3e668360ec8d4",
+  "recovery_binary_sha256": "47c8aceea3d1050033e1916dc22ddc93a2cef668bff94741c74ac35fb12d0b47",
+  "baseline_binary_sha256": "ca8a43eba3a35c1632256d09165bf61825802e250c6489e092213aea7fc08f90",
+  "baseline_index_sha256": "4df2126a058485b555ff82f260b4987c46d632ae71b1468aafb4bb610efb926a",
+  "build": "go build -trimpath; GOOS=linux GOARCH=amd64 CGO_ENABLED=0",
+  "tests": "production go test ./...; repository go test ./cmd/... ./internal/... ./pkg/...; isolated PostgreSQL and Redis fault integration passed",
+  "production_files": {
+    "cmd/refund-recover/main.go": "74a7697c1a9c0f4af37f1ff252321912a88af34ba76a4c6abc464f5e2e0bf576",
+    "cmd/refund-recover/main_test.go": "e87cb74addd6890c498e5dd9bd533b0431e6c285f9dcc40ae9aefd823d2c740b",
+    "internal/billing/balance.go": "2464862095d5a923b65575aebfe8453576358454207fcefdb3fad7c0f39b84c5",
+    "internal/billing/model_credit_transaction.go": "69e3d82c518e996cf834368094fb2cb2cddade62c56f67df389093fd1462fb25",
+    "internal/billing/quota_lease.go": "add3feb27977ec1a11f7d049c52711328b429898c25eba263223f0775da55d61",
+    "internal/handler/llm_billing.go": "0ce389782e9e022c48e80da7f566e2367256ef4d02cd0fb503b43c4704534e5e",
+    "internal/handler/llm_refund_intent_test.go": "db77190d5443c8d4592c9d3f4d71a0b8fd957de9dff0043830df3ba806c044d4",
+    "internal/handler/proxy.go": "91ab1b2d4175809c15881ac1a1b6a1b939fa153e875037eec30f12e23fe4aeff",
+    "internal/handler/responses_ws.go": "c2a4ba5980880286b9992cead997fde08e10d6b824ac3b2095ca6b0610faab7d",
+    "internal/service/billing.go": "56ebc66de17edb3ba93bade8641bf12a83acd3185b978823067d40d8896be2a9",
+    "internal/service/billing_refund_durable.go": "533f371a960a3f04464caa3367c960d75bd791f9fe6b59715f0e17509a8b94da",
+    "internal/service/billing_refund_durable_integration_test.go": "d75d7d831fe8e269dd79c5a5ffc814603ce140a0ed8a559542d4c5e09e87b863",
+    "internal/taskresult/handler.go": "e217f90e2d6e45a86f2eb8f089c836628524ec9856f2591eff5a85ca5be62486"
+  }
+}
