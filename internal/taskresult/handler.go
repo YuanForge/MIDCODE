@@ -215,33 +215,14 @@ func handleResult(msg *nats.Msg) {
 							routingKeyOld = rk
 						}
 					}
-					if mcChargedOld > 0 && routingKeyOld != "" {
-						if err := billing.RefundModelCredit(ctx, res.UserID, routingKeyOld, mcChargedOld); err != nil {
-							log.Printf("[result-proc] task %d: refund old model credit failed: %v", res.TaskID, err)
-							mcChargedOld = 0
-						}
-					}
-					generalRefundOld := res.CreditsCharged - chargeTx.ModelCreditCharged
-					refundedOld := mcChargedOld
-					if generalRefundOld > 0 {
-						if err := billing.Refund(ctx, res.UserID, generalRefundOld); err != nil {
-							log.Printf("[result-proc] task %d: refund old general balance failed: %v", res.TaskID, err)
-						} else {
-							refundedOld += generalRefundOld
-						}
-					}
-					if refundedOld <= 0 {
-						failTaskDB(ctx, res.TaskID, res.UserID, res.ChannelID, res.APIKeyID, res.CorrID, 0, "retry refund failed")
-						_ = msg.Ack()
-						return
-					}
-					if err := service.WriteTx(ctx, res.UserID, res.ChannelID, res.APIKeyID, res.PoolKeyID, res.CorrID, "refund", refundedOld, scaleCost(upstreamCostOld, refundedOld, res.CreditsCharged), mcChargedOld, model.JSON{
+					refundedOld := res.CreditsCharged
+
+					if err := service.RefundTx(ctx, res.UserID, res.ChannelID, res.APIKeyID, res.PoolKeyID, res.CorrID, refundedOld, scaleCost(upstreamCostOld, refundedOld, res.CreditsCharged), mcChargedOld, model.JSON{
 						"task_id":     res.TaskID,
 						"routing_key": routingKeyOld,
 						"reason":      "stable_key_channel_retry",
 					}); err != nil {
 						log.Printf("[result-proc] task %d: write retry refund tx failed: %v", res.TaskID, err)
-						revertTaskRefund(ctx, res.UserID, res.TaskID, res.CreditsCharged, mcChargedOld, routingKeyOld)
 						failTaskDB(ctx, res.TaskID, res.UserID, res.ChannelID, res.APIKeyID, res.CorrID, 0, "billing refund transaction failed: "+err.Error())
 						_ = msg.Ack()
 						return
@@ -444,33 +425,14 @@ func failTaskDB(ctx context.Context, taskID, userID, channelID, apiKeyID int64, 
 		}
 	}
 
-	// 优先退还专属模型积分，剩余退还通用余额
-	if mcCharged > 0 && routingKey != "" {
-		if err := billing.RefundModelCredit(ctx, userID, routingKey, mcCharged); err != nil {
-			log.Printf("[result-proc] task %d: refund model credit failed: %v", taskID, err)
-			mcCharged = 0
-		}
-	}
-	generalRefund := credits - chargeTx.ModelCreditCharged
-	refunded := mcCharged
-	if generalRefund > 0 {
-		if err := billing.Refund(ctx, userID, generalRefund); err != nil {
-			log.Printf("[result-proc] task %d: refund (Redis) failed: %v", taskID, err)
-		} else {
-			refunded += generalRefund
-		}
-	}
-	if refunded <= 0 {
-		log.Printf("[result-proc] task %d: no credits refunded to user %d", taskID, userID)
-		return
-	}
-	if err := service.WriteTx(ctx, userID, channelID, apiKeyID, poolKeyID, corrID, "refund", refunded, scaleCost(upstreamCost, refunded, credits), mcCharged, model.JSON{
+	refunded := credits
+
+	if err := service.RefundTx(ctx, userID, channelID, apiKeyID, poolKeyID, corrID, refunded, scaleCost(upstreamCost, refunded, credits), mcCharged, model.JSON{
 		"task_id":     taskID,
 		"routing_key": routingKey,
 		"reason":      userMsg,
 	}); err != nil {
 		log.Printf("[result-proc] task %d: write refund tx failed: %v", taskID, err)
-		revertTaskRefund(ctx, userID, taskID, credits, mcCharged, routingKey)
 		return
 	}
 	updateTaskCreditsCharged(ctx, taskID, credits-refunded)
@@ -486,19 +448,6 @@ func updateTaskCreditsCharged(ctx context.Context, taskID, credits int64) {
 		Cols("credits_charged").
 		Update(&model.Task{CreditsCharged: credits}); err != nil {
 		log.Printf("[result-proc] task %d: update credits_charged failed: %v", taskID, err)
-	}
-}
-
-func revertTaskRefund(ctx context.Context, userID, taskID, credits, modelRefunded int64, routingKey string) {
-	if modelRefunded > 0 && routingKey != "" {
-		charged, err := billing.ChargeModelCredit(ctx, userID, routingKey, modelRefunded)
-		if err != nil {
-			log.Printf("[result-proc] task %d: revert model refund failed user=%d routing_key=%s credits=%d err=%v",
-				taskID, userID, routingKey, modelRefunded, err)
-		} else if charged != modelRefunded {
-			log.Printf("[result-proc] task %d: revert model refund partial user=%d routing_key=%s expected=%d charged=%d",
-				taskID, userID, routingKey, modelRefunded, charged)
-		}
 	}
 }
 

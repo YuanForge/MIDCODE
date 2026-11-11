@@ -35,6 +35,9 @@ const (
 //     WriteTx 在同一 DB 事务中写流水并同步扣减/返还 billing_quota_leases.remaining_credits。
 //   - "recharge"/"adjust"：先在 DB 原子更新 users.balance，再增量同步余额缓存。
 func WriteTx(ctx context.Context, userID, channelID, apiKeyID, poolKeyID int64, corrID, txType string, credits, cost, modelCreditCharged int64, metrics model.JSON) error {
+	if txType == "refund" && metrics["refund_mode"] == durableRefundMode {
+		return writeDurableRefund(ctx, userID, channelID, apiKeyID, poolKeyID, corrID, credits, cost, modelCreditCharged, metrics)
+	}
 	if metrics == nil {
 		metrics = model.JSON{}
 	}
@@ -163,6 +166,12 @@ func WriteTx(ctx context.Context, userID, channelID, apiKeyID, poolKeyID int64, 
 			if rbErr := sess.Rollback(); rbErr != nil {
 				log.Printf("[billing] rollback failed: %v", rbErr)
 			}
+			if errors.Is(err, billing.ErrQuotaLeaseInsufficient) {
+				// Adding the rejected pre-charge back would perpetuate the corrupt bucket.
+				// The next request rebuilds from authoritative DB leases before reserving.
+				billing.InvalidateQuotaCache(context.Background(), userID)
+				return err
+			}
 			return handlePreAppliedFailure("quota_lease_update", err)
 		}
 		if bal, err := billing.SpendableBalanceTx(sess, userID); err == nil {
@@ -285,14 +294,8 @@ func WriteTx(ctx context.Context, userID, channelID, apiKeyID, poolKeyID int64, 
 		}
 	}
 
-	// 消费类交易触发邀请返佣和号商收益：
-	//   hold    — 输入费预扣（input_from_response=false 时精确，=true 时为估算）
-	//   settle  — 输出费或差额补扣
-	//   charge  — 图片/视频/音频一次性扣费
-	//   refund  — 退款时反向扣回已发放的返佣/收益（传负值）
-	if isPostBillingTx(txType) {
-		go processBillingPostBillingJobs(context.Background())
-	}
+	// Durable post-billing jobs are drained by the periodic worker.
+
 	return nil
 }
 
@@ -825,11 +828,11 @@ func enqueueRefundJob(ctx context.Context, userID, channelID, apiKeyID, poolKeyI
 			return err
 		}
 		if found {
-			if existing.Status == "done" || existing.Status == "pending" {
+			if existing.Status == "done" || existing.Status == "pending" || existing.Status == "running" || existing.Status == "pending_db" || existing.Status == "running_db" {
 				return nil
 			}
 			patch := &model.BillingRefundJob{
-				Status:    "pending",
+				Status:    refundPendingStatus(metrics),
 				NextRunAt: time.Now(),
 				LastError: fmt.Sprint(cause),
 			}
@@ -860,7 +863,7 @@ func enqueueRefundJob(ctx context.Context, userID, channelID, apiKeyID, poolKeyI
 		ModelCreditRefunded: modelCreditRefunded,
 		Metrics:             jobMetrics,
 		DedupeKey:           dedupeKey,
-		Status:              "pending",
+		Status:              refundPendingStatus(metrics),
 		NextRunAt:           time.Now(),
 		LastError:           fmt.Sprint(cause),
 	}
@@ -1139,7 +1142,7 @@ func ProcessBillingRefundJobs(ctx context.Context, limit int) (int, error) {
 	}
 	var jobs []model.BillingRefundJob
 	if err := db.Engine.Context(ctx).
-		Where("status = ? AND next_run_at <= ?", "pending", time.Now()).
+		Where("status IN (?, ?) AND next_run_at <= ?", "pending", "pending_db", time.Now()).
 		Asc("id").
 		Limit(limit).
 		Find(&jobs); err != nil {
@@ -1167,37 +1170,24 @@ func ProcessBillingRefundJobs(ctx context.Context, limit int) (int, error) {
 }
 
 func reclaimStaleBillingRefundJobs(ctx context.Context, before time.Time) (int64, error) {
-	return db.Engine.Context(ctx).
-		Where("status = ? AND updated_at < ?", "running", before).
-		Cols("status", "next_run_at", "last_error", "updated_at").
-		Update(&model.BillingRefundJob{
-			Status:    "pending",
-			NextRunAt: time.Now(),
-			LastError: "reclaimed stale running refund job",
-			UpdatedAt: time.Now(),
-		})
+	result, err := db.Engine.Context(ctx).Exec(`UPDATE billing_refund_jobs SET status=CASE WHEN status='running_db' THEN 'pending_db' ELSE 'pending' END, next_run_at=$1, last_error='reclaimed stale running refund job', updated_at=$1 WHERE status IN ('running','running_db') AND updated_at<$2`, time.Now(), before)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 func claimBillingRefundJob(ctx context.Context, jobID int64) (bool, error) {
-	affected, err := db.Engine.Context(ctx).
-		Where("id = ? AND status = ?", jobID, "pending").
-		Cols("status", "updated_at").
-		Update(&model.BillingRefundJob{Status: "running", UpdatedAt: time.Now()})
+	result, err := db.Engine.Context(ctx).Exec(`UPDATE billing_refund_jobs SET status=CASE WHEN status='pending_db' THEN 'running_db' ELSE 'running' END, updated_at=$1 WHERE id=$2 AND status IN ('pending','pending_db')`, time.Now(), jobID)
 	if err != nil {
 		return false, err
 	}
-	return affected > 0, nil
+	n, err := result.RowsAffected()
+	return n > 0, err
 }
 
 func releaseBillingRefundJob(ctx context.Context, jobID int64, cause error) error {
-	_, err := db.Engine.Context(ctx).
-		ID(jobID).
-		Cols("status", "last_error", "updated_at").
-		Update(&model.BillingRefundJob{
-			Status:    "pending",
-			LastError: fmt.Sprint(cause),
-			UpdatedAt: time.Now(),
-		})
+	_, err := db.Engine.Context(ctx).Exec(`UPDATE billing_refund_jobs SET status=CASE WHEN status='running_db' THEN 'pending_db' ELSE 'pending' END, last_error=$1,updated_at=$2 WHERE id=$3 AND status IN ('running','running_db')`, fmt.Sprint(cause), time.Now(), jobID)
 	return err
 }
 
@@ -1240,7 +1230,7 @@ func processBillingRefundJob(ctx context.Context, job model.BillingRefundJob) er
 			ID(job.ID).
 			Cols("status", "attempts", "next_run_at", "last_error", "updated_at").
 			Update(&model.BillingRefundJob{
-				Status:    "pending",
+				Status:    refundPendingStatus(job.Metrics),
 				Attempts:  attempts,
 				NextRunAt: time.Now().Add(backoff),
 				LastError: err.Error(),

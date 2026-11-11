@@ -391,46 +391,17 @@ func createTask(c *gin.Context, taskType string, reqData map[string]interface{})
 	if pubErr := mq.Publish(natSubject, msgBytes); pubErr != nil {
 		db.Engine.Where("id = ?", task.ID).Cols("status", "error_msg").Update(&model.Task{Status: "failed", ErrorMsg: "publish error"})
 		if cost > 0 {
-			refunded := int64(0)
-			generalRefund := cost - modelCreditCharged
-			if generalRefund > 0 {
-				if err := billing.Refund(c.Request.Context(), userID, generalRefund); err != nil {
-					log.Printf("[proxy-billing] refund general balance failed user_id=%d task_id=%d credits=%d err=%v",
-						userID, task.ID, generalRefund, err)
-				} else {
-					refunded += generalRefund
-				}
-			}
-			if modelCreditCharged > 0 {
-				if err := billing.RefundModelCredit(c.Request.Context(), userID, routingKey, modelCreditCharged); err != nil {
-					log.Printf("[proxy-billing] refund model credit failed user_id=%d task_id=%d credits=%d err=%v",
-						userID, task.ID, modelCreditCharged, err)
-					modelCreditCharged = 0
-				} else {
-					refunded += modelCreditCharged
-				}
-			}
-			if refunded <= 0 {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "任务投递失败，退款失败，请联系管理员"})
+			refundCtx, refundCancel := newLLMBillingContext()
+			err := service.RefundTx(refundCtx, userID, channelID, apiKeyIDVal, poolKeyID, corrID, cost, upstreamCost, modelCreditCharged, model.JSON{
+				"task_id": task.ID, "routing_key": routingKey, "reason": "publish error",
+			})
+			refundCancel()
+			if err != nil {
+				log.Printf("[proxy-billing] persist publish-error refund failed user_id=%d task_id=%d corr_id=%s err=%v", userID, task.ID, corrID, err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "任务投递失败，退款待人工核对"})
 				return
 			}
-			if err := service.WriteTx(c.Request.Context(), userID, channelID, apiKeyIDVal, poolKeyID, corrID, "refund", refunded, scaleRefundCost(upstreamCost, refunded, cost), modelCreditCharged, model.JSON{
-				"task_id":     task.ID,
-				"routing_key": routingKey,
-				"reason":      "publish error",
-			}); err != nil {
-				log.Printf("[proxy-billing] write publish-error refund tx failed user_id=%d task_id=%d corr_id=%s err=%v",
-					userID, task.ID, corrID, err)
-				if modelCreditCharged > 0 {
-					if charged, chargeErr := billing.ChargeModelCredit(c.Request.Context(), userID, routingKey, modelCreditCharged); chargeErr != nil {
-						log.Printf("[proxy-billing] revert model refund failed user_id=%d task_id=%d credits=%d err=%v",
-							userID, task.ID, modelCreditCharged, chargeErr)
-					} else if charged != modelCreditCharged {
-						log.Printf("[proxy-billing] revert model refund partial user_id=%d task_id=%d expected=%d charged=%d",
-							userID, task.ID, modelCreditCharged, charged)
-					}
-				}
-			}
+
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "任务投递失败，请稍后重试"})
 		return

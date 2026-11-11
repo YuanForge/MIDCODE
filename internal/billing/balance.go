@@ -395,24 +395,3 @@ func Charge(ctx context.Context, userID, credits int64) error {
 	expireQuotaCache(ctx, userID)
 	return nil
 }
-
-// Refund returns credits to the authorized quota bucket. The matching
-// billing transaction later mirrors this into the DB lease.
-func Refund(ctx context.Context, userID, credits int64) error {
-	if credits <= 0 {
-		return nil
-	}
-	if err := ensureRefundQuotaLease(ctx, userID); err != nil {
-		return err
-	}
-	key := quotaKey(userID)
-	if _, err := quotaRemaining(ctx, userID); err != nil {
-		return err
-	}
-	if err := cache.Client.IncrBy(ctx, key, credits).Err(); err != nil {
-		return err
-	}
-	markQuotaCacheVersion(ctx, userID)
-	expireQuotaCache(ctx, userID)
-	return nil
-}

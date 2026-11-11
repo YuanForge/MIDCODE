@@ -249,34 +249,8 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 	c.Set("model_credit_charged", modelCreditCharged)
 	c.Set("model_credit_general_charged", generalCreditCharged)
 
-	// refundHold 在错误路径下退还本次预扣
-	refundHold := func(_ string) (refunded, modelRefunded int64) {
-		if totalHold <= 0 {
-			return 0, 0
-		}
-		if generalCreditCharged > 0 {
-			refundCtx, refundCancel := newLLMBillingContext()
-			err := billing.Refund(refundCtx, userID, generalCreditCharged)
-			refundCancel()
-			if err != nil {
-				log.Printf("[responses-ws] refund general hold failed user_id=%d credits=%d err=%v", userID, generalCreditCharged, err)
-			} else {
-				refunded += generalCreditCharged
-			}
-		}
-		if modelCreditCharged > 0 {
-			refundCtx, refundCancel := newLLMBillingContext()
-			err := billing.RefundModelCredit(refundCtx, userID, routingKey, modelCreditCharged)
-			refundCancel()
-			if err != nil {
-				log.Printf("[responses-ws] refund model hold failed user_id=%d routing_key=%s credits=%d err=%v", userID, routingKey, modelCreditCharged, err)
-			} else {
-				refunded += modelCreditCharged
-				modelRefunded = modelCreditCharged
-			}
-		}
-		return refunded, modelRefunded
-	}
+	// Plan; recordLLMRefundTxDetached durably accepts it below.
+	refundHold := func(_ string) (int64, int64) { return llmRefundCredits(c, userID, totalHold) }
 
 	corrID := uuid.New().String()
 	if totalHold > 0 {

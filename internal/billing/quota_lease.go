@@ -2,6 +2,7 @@ package billing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -37,6 +38,8 @@ const quotaLeaseLockNamespace int64 = 20260618
 // rebuilt from billing_quota_leases before being trusted.
 const quotaCacheVersion = "2"
 
+var ErrQuotaLeaseInsufficient = errors.New("授权额度不足或不存在")
+
 var quotaLeaseTTL = 30 * time.Minute
 var quotaLeaseReclaimGrace = 2 * time.Minute
 var quotaChargeRetryDelay = 25 * time.Millisecond
@@ -57,6 +60,11 @@ func markQuotaCacheVersion(ctx context.Context, userID int64) {
 func expireQuotaCache(ctx context.Context, userID int64) {
 	_ = cache.Client.Expire(ctx, quotaKey(userID), quotaLeaseTTL).Err()
 	_ = cache.Client.Expire(ctx, quotaVersionKey(userID), quotaLeaseTTL).Err()
+}
+
+// InvalidateQuotaCache discards an unbacked hot bucket. No money is moved.
+func InvalidateQuotaCache(ctx context.Context, userID int64) {
+	clearQuotaCache(ctx, userID)
 }
 
 func clearQuotaCache(ctx context.Context, userID int64) {
@@ -498,7 +506,7 @@ FOR UPDATE`, userID).Find(&leases); err != nil {
 		}
 		plan, ok := quotaLeaseDebitPlan(leases, generalCredits)
 		if !ok {
-			return fmt.Errorf("授权额度不足或不存在")
+			return ErrQuotaLeaseInsufficient
 		}
 		for _, debit := range plan {
 			rows, err := sess.QueryString(`
@@ -512,7 +520,7 @@ RETURNING remaining_credits`, debit.Amount, expiresAt, debit.ID)
 				return err
 			}
 			if len(rows) == 0 {
-				return fmt.Errorf("授权额度不足或不存在")
+				return ErrQuotaLeaseInsufficient
 			}
 		}
 	case "refund":

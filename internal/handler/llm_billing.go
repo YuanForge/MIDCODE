@@ -29,6 +29,11 @@ func llmSettle(c *gin.Context, ch *model.Channel, reqData, usageData map[string]
 	totalHold, userID, channelID, apiKeyIDVal, poolKeyIDVal int64, corrID string, userGroup string, requestErrors ...error) {
 	ctx, cancel := newLLMBillingContext()
 	defer cancel()
+	defer func() {
+		if c.GetBool("llm_refund_failed") {
+			enqueueLLMLogPatch(corrID, []string{"status", "error_msg"}, model.LLMLog{Status: "error", ErrorMsg: "refund intent could not be persisted; manual reconciliation required"})
+		}
+	}()
 	requestedTier := billing.RequestedTier(reqData)
 	upstreamCostHold, _ := billing.CalcUpstreamCostWithTier(ch, reqData, requestedTier)
 
@@ -306,62 +311,16 @@ func llmChargeExtra(c *gin.Context, userID, amount int64) (modelExtraCharged, ge
 
 // llmRefundCredits 退款：优先退通用余额，再退专属模型积分（与扣款顺序相反）。
 // 返回实际退款总额和其中的专属模型积分数量，供 WriteTx 记录。
+// Plan only: RefundTx persists the intent and both balances atomically.
 func llmRefundCredits(c *gin.Context, userID, amount int64) (refunded, modelRefunded int64) {
 	if amount <= 0 {
 		return 0, 0
 	}
-	ctx, cancel := newLLMBillingContext()
-	defer cancel()
-
-	// 读取本次请求的扣款记录
-	modelCharged := int64(0)
-	if mc, ok := c.Get("model_credit_charged"); ok {
-		if v, ok := mc.(int64); ok {
-			modelCharged = v
-		}
-	}
-	generalCharged := int64(0)
-	if gc, ok := c.Get("model_credit_general_charged"); ok {
-		if v, ok := gc.(int64); ok {
-			generalCharged = v
-		}
-	}
-
-	// 优先退通用余额，再退模型积分
-	generalRefund := int64(0)
-	modelRefund := int64(0)
-	if amount <= generalCharged {
-		generalRefund = amount
-	} else {
-		generalRefund = generalCharged
-		modelRefund = amount - generalCharged
-		if modelRefund > modelCharged {
-			modelRefund = modelCharged
-		}
-	}
-
-	if generalRefund > 0 {
-		if err := billing.Refund(ctx, userID, generalRefund); err != nil {
-			log.Printf("[llm-billing] refund general balance failed user_id=%d credits=%d err=%v", userID, generalRefund, err)
-		} else {
-			refunded += generalRefund
-			c.Set("model_credit_general_charged", generalCharged-generalRefund)
-		}
-	}
-	if modelRefund > 0 {
-		if rk, ok := c.Get("model_credit_routing_key"); ok {
-			if routingKey, ok := rk.(string); ok && routingKey != "" {
-				if err := billing.RefundModelCredit(ctx, userID, routingKey, modelRefund); err != nil {
-					log.Printf("[llm-billing] refund model credit failed user_id=%d routing_key=%s credits=%d err=%v", userID, routingKey, modelRefund, err)
-				} else {
-					refunded += modelRefund
-					modelRefunded = modelRefund
-					c.Set("model_credit_charged", modelCharged-modelRefund)
-				}
-			}
-		}
-	}
-	return refunded, modelRefunded
+	general := c.GetInt64("model_credit_general_charged")
+	model := c.GetInt64("model_credit_charged")
+	generalRefund := min(amount, max(int64(0), general))
+	modelRefund := min(amount-generalRefund, max(int64(0), model))
+	return generalRefund + modelRefund, modelRefund
 }
 
 func recordLLMChargeTx(ctx context.Context, c *gin.Context, userID, channelID, apiKeyIDVal, poolKeyIDVal int64, corrID, txType string, credits, upstreamCost, modelCharged int64, metrics model.JSON) bool {
@@ -381,12 +340,17 @@ func recordLLMRefundTx(ctx context.Context, c *gin.Context, userID, channelID, a
 	if credits <= 0 {
 		return true
 	}
-	if err := service.WriteTx(ctx, userID, channelID, apiKeyIDVal, poolKeyIDVal, corrID, "refund", credits, upstreamCost, modelRefunded, metrics); err != nil {
-		log.Printf("[llm-billing] write refund tx failed user_id=%d corr_id=%s credits=%d model_credit=%d err=%v",
-			userID, corrID, credits, modelRefunded, err)
-		revertLLMRefund(ctx, c, userID, credits, modelRefunded)
+	if metrics == nil {
+		metrics = model.JSON{}
+	}
+	metrics["routing_key"] = getLLMRoutingKey(c)
+	if err := service.RefundTx(ctx, userID, channelID, apiKeyIDVal, poolKeyIDVal, corrID, credits, upstreamCost, modelRefunded, metrics); err != nil {
+		log.Printf("[llm-billing] persist refund intent failed user_id=%d corr_id=%s credits=%d model_credit=%d err=%v", userID, corrID, credits, modelRefunded, err)
+		c.Set("llm_refund_failed", true)
 		return false
 	}
+	adjustContextCounter(c, "model_credit_general_charged", -(credits - modelRefunded))
+	adjustContextCounter(c, "model_credit_charged", -modelRefunded)
 	return true
 }
 
@@ -418,25 +382,6 @@ func revertLLMCharge(ctx context.Context, c *gin.Context, userID, credits, model
 				log.Printf("[llm-billing] revert model charge failed user_id=%d routing_key=%s credits=%d err=%v", userID, routingKey, modelCharged, err)
 			}
 			adjustContextCounter(c, "model_credit_charged", -modelCharged)
-		}
-	}
-}
-
-func revertLLMRefund(ctx context.Context, c *gin.Context, userID, credits, modelRefunded int64) {
-	generalRefunded := credits - modelRefunded
-	if generalRefunded > 0 {
-		// WriteTx compensates the Redis general quota when a refund cannot be queued.
-		adjustContextCounter(c, "model_credit_general_charged", generalRefunded)
-	}
-	if modelRefunded > 0 {
-		if routingKey := getLLMRoutingKey(c); routingKey != "" {
-			if charged, err := billing.ChargeModelCredit(ctx, userID, routingKey, modelRefunded); err != nil {
-				log.Printf("[llm-billing] revert model refund failed user_id=%d routing_key=%s credits=%d err=%v", userID, routingKey, modelRefunded, err)
-			} else if charged != modelRefunded {
-				log.Printf("[llm-billing] revert model refund partial user_id=%d routing_key=%s expected=%d charged=%d", userID, routingKey, modelRefunded, charged)
-			} else {
-				adjustContextCounter(c, "model_credit_charged", modelRefunded)
-			}
 		}
 	}
 }
