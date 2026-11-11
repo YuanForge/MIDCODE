@@ -80,6 +80,7 @@ func Init(cfg *config.DBConfig, migrate bool) error {
 		new(model.Vendor),
 		new(model.WithdrawRequest),
 		new(model.UserModelCredit),
+		new(model.UserModelPreference),
 		new(model.BalanceSyncJob),
 		new(model.BillingQuotaLease),
 		new(model.BillingRefundJob),

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { BlocksIcon, Copy, Search, TerminalSquare } from 'lucide-react'
+import { BlocksIcon, Copy, Pin, Search, Star, TerminalSquare } from 'lucide-react'
 
 import { EmptyState } from '@/components/shared/EmptyState'
 import { FilterBar } from '@/components/shared/FilterBar'
@@ -20,6 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { copyToClipboard } from '@/lib/clipboard'
 import { useAsync } from '@/hooks/use-async'
+import { useModelPreferences } from '@/hooks/use-model-preferences'
 import { userApi, type ModelAvailability, type UserChannel } from '@/lib/api/user'
 import { cn } from '@/lib/utils'
 
@@ -399,6 +400,9 @@ function ProviderLogoStack({ providers }: { providers: ProviderOption[] }) {
 
 export function UserModelsPage() {
   const { i18n, t } = useTranslation()
+  const modelPreferences = useModelPreferences()
+  const { preferences } = modelPreferences
+  const [collection, setCollection] = useState('all')
   const { data, loading, error, reload } = useAsync(async () => {
     const [response, availability] = await Promise.all([
       userApi.listChannels(),
@@ -455,6 +459,7 @@ export function UserModelsPage() {
 
   const filteredChannels = useMemo(() => {
     return displayChannels.filter((channel) => {
+      if (collection === 'favorites' && !preferences.get(channel.routing_model || channel.name || '')?.favorite) return false
       if (filterType && channel.type !== filterType) return false
       if (filterProtocol && (channel.protocol || 'openai') !== filterProtocol) return false
       if (filterProvider && channel.model_provider?.trim() !== filterProvider) return false
@@ -463,8 +468,10 @@ export function UserModelsPage() {
       const keyword = filterName.toLowerCase()
       return [channel.name, channel.routing_model, channel.model_provider, channel.description]
         .some((value) => value?.toLowerCase().includes(keyword))
-    })
-  }, [displayChannels, filterName, filterProtocol, filterProvider, filterType])
+    }).sort((left, right) => Number(!!preferences.get(right.routing_model || right.name || '')?.pinned) - Number(!!preferences.get(left.routing_model || left.name || '')?.pinned))
+  }, [displayChannels, filterName, filterProtocol, filterProvider, filterType, collection, preferences])
+
+  const favoriteCount = displayChannels.filter(channel => preferences.get(channel.routing_model || channel.name || '')?.favorite).length
 
   function openDoc(channel: UserChannel) {
     setDocChannel(channel)
@@ -523,6 +530,23 @@ export function UserModelsPage() {
         </Alert>
       ) : null}
 
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <Tabs value={collection} onValueChange={setCollection}>
+          <TabsList aria-label="模型分类">
+            <TabsTrigger value="all">全部模型</TabsTrigger>
+            <TabsTrigger value="favorites"><Star data-icon="inline-start" />收藏{modelPreferences.loading ? '' : ` (${favoriteCount})`}</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <span className="text-xs text-muted-foreground">{modelPreferences.authenticated ? '置顶与收藏仅对你可见，随账号保存' : '登录后可置顶和收藏常用模型'}</span>
+      </div>
+      {modelPreferences.error ? (
+        <Alert className="mb-4" variant="destructive">
+          <AlertDescription className="flex flex-wrap items-center gap-2">
+            收藏和置顶加载失败：{modelPreferences.error}
+            <Button size="sm" variant="outline" onClick={modelPreferences.retry}>重试</Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
       <FilterBar
         filters={
           <div className="flex min-w-0 flex-1 flex-col gap-3">
@@ -600,7 +624,7 @@ export function UserModelsPage() {
         }
       />
 
-      {loading ? (
+      {loading || (collection === 'favorites' && modelPreferences.loading) ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 8 }).map((_, index) => (
             <Card key={index}>
@@ -615,18 +639,36 @@ export function UserModelsPage() {
       ) : filteredChannels.length === 0 ? (
         <EmptyState
           icon={<BlocksIcon className="size-6 text-muted-foreground" />}
-          title={t('models.emptyTitle')}
-          description={t('models.emptyDescription')}
+          title={collection === 'favorites' ? (modelPreferences.error ? '收藏暂不可用' : !modelPreferences.authenticated ? '登录后查看你的收藏' : favoriteCount ? '没有符合筛选条件的收藏' : '还没有收藏模型') : t('models.emptyTitle')}
+          description={collection === 'favorites' ? (modelPreferences.error ? '请重试加载收藏。' : !modelPreferences.authenticated ? '收藏会随账号保存，登录后即可使用。' : favoriteCount ? '试试调整类型、厂商或搜索条件。' : '点击模型卡片上的星标，把常用模型收藏到这里。') : t('models.emptyDescription')}
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filteredChannels.map((channel) => (
             <Card
               key={channel.routing_model || channel.name}
+              data-model={channel.routing_model || channel.name}
+              data-pinned={!!preferences.get(channel.routing_model || channel.name || '')?.pinned}
               className="group cursor-pointer overflow-hidden transition-colors hover:border-primary/50"
               onClick={() => openDoc(channel)}
             >
               <CardContent className="flex h-full flex-col gap-4 p-5">
+                <div className="flex items-center justify-between gap-2" onClick={event => event.stopPropagation()}>
+                  <Button size="sm" variant={preferences.get(channel.routing_model || channel.name || '')?.pinned ? 'secondary' : 'ghost'}
+                    aria-label={`${preferences.get(channel.routing_model || channel.name || '')?.pinned ? '取消置顶' : '置顶'} ${channel.name}`}
+                    aria-pressed={!!preferences.get(channel.routing_model || channel.name || '')?.pinned}
+                    disabled={modelPreferences.disabled(channel.routing_model || channel.name || '')}
+                    onClick={() => void modelPreferences.toggle(channel.routing_model || channel.name || '', 'pinned')}>
+                    <Pin data-icon="inline-start" />{preferences.get(channel.routing_model || channel.name || '')?.pinned ? '已置顶' : '置顶'}
+                  </Button>
+                  <Button size="sm" variant={preferences.get(channel.routing_model || channel.name || '')?.favorite ? 'secondary' : 'ghost'}
+                    aria-label={`${preferences.get(channel.routing_model || channel.name || '')?.favorite ? '取消收藏' : '收藏'} ${channel.name}`}
+                    aria-pressed={!!preferences.get(channel.routing_model || channel.name || '')?.favorite}
+                    disabled={modelPreferences.disabled(channel.routing_model || channel.name || '')}
+                    onClick={() => void modelPreferences.toggle(channel.routing_model || channel.name || '', 'favorite')}>
+                    <Star data-icon="inline-start" fill={preferences.get(channel.routing_model || channel.name || '')?.favorite ? 'currentColor' : 'none'} />{preferences.get(channel.routing_model || channel.name || '')?.favorite ? '已收藏' : '收藏'}
+                  </Button>
+                </div>
                 <div className="flex items-start gap-3">
                   <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border bg-muted/30 text-lg font-bold">
                     {channel.icon_url ? (
