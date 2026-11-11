@@ -91,7 +91,7 @@ test('favorites persist across reload and pinning respects filters on desktop an
   await expect.poll(() => order(page)).toEqual(['image-demo'])
   await page.getByText('全部', { exact: true }).click()
   await expect.poll(() => order(page)).toEqual(['gpt-5.6-sol', 'gpt-6-astra', 'image-demo'])
-  await page.getByText('Example', { exact: true }).first().click()
+  await page.locator('[data-slot="badge"].cursor-pointer').filter({ hasText: 'Example' }).click()
   await expect.poll(() => order(page)).toEqual(['image-demo'])
   await page.getByText('全部企业', { exact: true }).click()
   const search = page.getByPlaceholder(/搜索/)
