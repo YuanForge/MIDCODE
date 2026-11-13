@@ -1,0 +1,73 @@
+{
+  "release": "v1.0.92",
+  "source_commit": "6f61246ef8612975a98731c60263ab9105753f89",
+  "container": "midcode-captcha-v1092-api-1",
+  "image": "fanapi-api:captcha-v1.0.92",
+  "health": "healthy",
+  "restarts": 0,
+  "candidate-verified": {
+    "healthy": true,
+    "stats_seconds": 0.305,
+    "seven_days": true,
+    "model_and_trend_totals_match": true,
+    "sql_counts_match": true,
+    "exact_filter": true,
+    "auth_isolation": true,
+    "input_limits": true,
+    "account_reads": true,
+    "public_origin": false,
+    "admin_reads": true,
+    "new_frontend_modules": true,
+    "zero_adjustment_rejected": true,
+    "real_balance_mutations": false,
+    "login_send_code_reset_protected": true,
+    "real_challenge_generated": true,
+    "real_emails_sent": false,
+    "real_account_login": false
+  },
+  "live-verified": {
+    "healthy": true,
+    "stats_seconds": 0.176,
+    "seven_days": true,
+    "model_and_trend_totals_match": true,
+    "sql_counts_match": true,
+    "exact_filter": true,
+    "auth_isolation": true,
+    "input_limits": true,
+    "account_reads": true,
+    "public_origin": true,
+    "admin_reads": true,
+    "new_frontend_modules": true,
+    "zero_adjustment_rejected": true,
+    "real_balance_mutations": false,
+    "login_send_code_reset_protected": true,
+    "real_challenge_generated": true,
+    "real_emails_sent": false,
+    "real_account_login": false
+  },
+  "studios-verified": {
+    "passed": true,
+    "checks": [
+      "/api/user/channels auth/read",
+      "/api/user/model-preferences auth/read",
+      "billing statistics",
+      "8798 handoff/session",
+      "8183 handoff/session/tenant isolation",
+      "8198 handoff/session"
+    ],
+    "paid_generation": false,
+    "video_test_session_revoked": true
+  },
+  "continuity": {
+    "samples": 80,
+    "all_http_200": true,
+    "failures": []
+  },
+  "cleanup": {
+    "removed": [
+      "midcode-points-v1091-api-1"
+    ],
+    "volumes_deleted": false,
+    "rollback_image": "fanapi-api:captcha-v1092-baseline"
+  }
+}

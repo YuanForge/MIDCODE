@@ -1,0 +1,16 @@
+[
+  {
+    "page": "user",
+    "dialog_visible": true,
+    "real_challenge_image_loaded": true,
+    "console_errors": [],
+    "real_login": false
+  },
+  {
+    "page": "admin",
+    "dialog_visible": true,
+    "real_challenge_image_loaded": true,
+    "console_errors": [],
+    "real_login": false
+  }
+]

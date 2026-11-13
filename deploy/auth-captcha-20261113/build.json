@@ -1,0 +1,10 @@
+{
+  "release": "v1.0.92",
+  "commit": "6f61246ef8612975a98731c60263ab9105753f89",
+  "binary_sha256": "a27944b8729e4a71b82d57ce2cb1b4e8727f656af086f524b8bdaa03fc8a1b33",
+  "baseline_binary_sha256": "a27944b8729e4a71b82d57ce2cb1b4e8727f656af086f524b8bdaa03fc8a1b33",
+  "baseline_index_sha256": "7bf51d3755f1d2b90a606968d5834c89e816f570d512a23cdc444b2b6e1777e5",
+  "index_sha256": "18ebca703178a5940c558bc74d100d112be210770fab781e7fcd0e14132f488e",
+  "backend_provenance": "Inherited unchanged from v1.0.91; deploy/usage-dashboard-20261113/build.json",
+  "frontend_only": true
+}
