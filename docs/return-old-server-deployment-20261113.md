@@ -53,3 +53,5 @@ Monitor renewal account/state and the daily timer were moved to the destination;
 
 
 The destination monitor renewal service completed successfully (ExecMainStatus=0), and its daily timer is enabled. No certificate was due for issuance during this check.
+
+Migration implementation commit: c7d849252896a27433d303a9ebe96fc5a668eb33. The release tag additionally includes this completion record.
