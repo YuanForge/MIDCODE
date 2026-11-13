@@ -1,0 +1,22 @@
+{
+  "release": "v1.0.90",
+  "container": "midcode-usage-v1090-api-1",
+  "healthy": true,
+  "restart_count": 0,
+  "candidate_stats_seconds": 0.322,
+  "live_stats_seconds": 0.227,
+  "post_cleanup_stats_seconds": 0.187,
+  "model_and_trend_totals_match": true,
+  "independent_sql_request_counts_match": true,
+  "exact_model_filter": true,
+  "unauthenticated_rejected": true,
+  "range_and_bucket_limits": true,
+  "https_origin_samples": 80,
+  "https_origin_sample_failures": 0,
+  "old_and_new_html_observed": true,
+  "image_video_unified_handoffs": true,
+  "video_tenant_isolation": true,
+  "paid_generation_tested": false,
+  "removed_containers": ["midcode-refund-v1087-api-1"],
+  "data_volumes_deleted": false
+}

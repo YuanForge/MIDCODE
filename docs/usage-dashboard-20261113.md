@@ -83,5 +83,29 @@ removes the 8154 compatibility redirect and returns the studio alias after drain
 No balances or completed refunds are reversed. Verify services before removing
 any rolled-back candidate.
 
-Deployment completion, commits, remote tag verification and actual cleanup results
-will be recorded after rollout.
+## Completed rollout
+
+- Application implementation commit: `b3b44feac54f0ecf0bcb0eccdada49bff4950d3c`, pushed to `codex/return-old-server`.
+- Release: `v1.0.90`. The release tag includes the implementation, production
+  source/build manifest and this deployment record. The running image labels and
+  `/release.json` identify the application implementation commit.
+- Main binary SHA-256: `a27944b8729e4a71b82d57ce2cb1b4e8727f656af086f524b8bdaa03fc8a1b33`.
+- Frontend index SHA-256: `aa29d97fa4d21a752ba5ca1663a785422a69026314d2739333646732a94e835c`.
+- Candidate, live-origin and post-cleanup checks passed. Authenticated seven-day
+  query timings were 0.322s, 0.227s and 0.187s respectively (single samples, not a
+  load-test guarantee). Full-range model/point totals match and independently
+  queried database request/status counts match.
+- 80 HTTPS origin samples spanning old and new HTML versions returned HTTP 200;
+  no sampling failures were observed. This is bounded evidence, not proof of no
+  customer-visible failure outside the sampled interval.
+- Image, video and unified workbench handoff/session checks passed before and
+  after switching and again after cleanup. Video tenant isolation passed.
+  These checks did not submit paid generations or test payment delivery.
+- Public `https://midcode.cc/release.json` returns v1.0.90 and the expected source
+  commit/binary hash.
+- `midcode-usage-v1090-api-1` is healthy with zero restarts. Main Caddy targets,
+  the local 8154 compatibility route and `midcode-main` alias point to it.
+- Removed `midcode-refund-v1087-api-1` after active nginx/container/bound-file
+  references, channel URL references, alias ownership and ingress drain checks.
+  No data volumes or shared data were removed. Studio API and other unrelated
+  running services were retained. Rollback image/configuration snapshots remain.

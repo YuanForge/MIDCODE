@@ -114,13 +114,22 @@ def cleanup():
     assert '127.0.0.1:8154' not in CADDY.read_text()
     old=inspect(OLD);ips=[v['IPAddress'] for v in old['NetworkSettings']['Networks'].values() if v.get('IPAddress')]
     references=[]
+    nginx=run('docker','exec','1Panel-openresty-0oWm','nginx','-T')
+    assert not any(n in nginx for n in [OLD]+ips),'Active ingress still references predecessor'
     for item in api('GET','/containers/json'):
         if OLD in [n.lstrip('/') for n in item['Names']]:continue
         obj=inspect(item['Id'])
         check=json.dumps({'env':obj['Config'].get('Env'),'cmd':obj['Config'].get('Cmd'),'extra':obj['HostConfig'].get('ExtraHosts'),'links':obj['HostConfig'].get('Links')})
         if OLD in check or any(ip in check for ip in ips):references.append(item['Names'])
+        for mount in obj['Mounts']:
+            path=Path(mount['Source'])
+            if path.is_file() and path.stat().st_size<2000000:
+                content=path.read_text(errors='ignore')
+                if any(n in content for n in [OLD]+ips):references.append([obj['Name'],path.name])
     assert not references, 'Container dependencies require migration: '+str(references)
     assert 'midcode-main' not in (old['NetworkSettings']['Networks'][NETWORK].get('Aliases') or [])
+    rule=['iptables','-t','nat','-C','OUTPUT','-d','127.0.0.1/32','-p','tcp','--dport','8154','-m','comment','--comment','fanapi-usage-v1090','-j','REDIRECT','--to-ports','8155']
+    run(*rule)
     drain(OLD)
     run('systemctl','disable','--now','shared-app@'+OLD+'.service')
     assert not inspect(OLD)['State']['Running']
