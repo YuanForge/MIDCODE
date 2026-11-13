@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { CheckSquareIcon, FilterIcon, PlusIcon, SaveIcon, Trash2Icon, UsersIcon, XIcon } from 'lucide-react'
 
+import { DeductPointsDialog } from '@/components/shared/DeductPointsDialog'
+import { formatPoints, pointsToCredits, pointsPreview } from '@/lib/admin-points'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { FilterBar } from '@/components/shared/FilterBar'
 import { TableEmpty } from '@/components/shared/TableEmpty'
@@ -45,7 +47,7 @@ type DialogMode = 'recharge' | 'password' | 'group' | 'rebate' | 'model_credit' 
 function fmtBalance(user: AdminUser) {
   const raw = user.balance
   if (raw === undefined || raw === null) return '-'
-  return `¥${(Number(raw) / 1e6).toFixed(4)}`
+  return `${formatPoints(Number(raw))} 积分`
 }
 
 function fmtTime(value?: string) {
@@ -309,6 +311,10 @@ export function AdminUsersPage() {
   )
 
   const [mutError, setMutError] = useState('')
+  const [success, setSuccess] = useState('')
+  const [deductUser, setDeductUser] = useState<AdminUser | null>(null)
+  const [creditPending, setCreditPending] = useState(false)
+  const creditSubmitting = useRef(false)
   const [activeUser, setActiveUser] = useState<AdminUser | null>(null)
   const [dialogMode, setDialogMode] = useState<DialogMode>(null)
   const [value, setValue] = useState('')
@@ -383,9 +389,10 @@ export function AdminUsersPage() {
   }
 
   function openDialog(user: AdminUser, mode: Exclude<DialogMode, null>) {
+    setSuccess('')
     setActiveUser(user)
     setDialogMode(mode)
-    setValue(mode === 'group' ? (user.group ?? '') : mode === 'recharge' ? '1000000' : '')
+    setValue(mode === 'group' ? (user.group ?? '') : mode === 'recharge' ? '1' : '')
     setConfirmPwd('')
     setModelName('')
     setFreezeReason('')
@@ -463,10 +470,14 @@ export function AdminUsersPage() {
       }
       return
     }
+    if (creditSubmitting.current) return
+    const creditOperation = dialogMode === 'recharge' || dialogMode === 'model_credit'
+    if (creditOperation) { creditSubmitting.current = true; setCreditPending(true) }
     setMutError('')
     try {
       if (dialogMode === 'recharge') {
-        await adminApi.rechargeUser(activeUser.id, Number(value))
+        await adminApi.rechargeUser(activeUser.id, pointsToCredits(value))
+        setSuccess(`已为用户 #${activeUser.id} 充值 ${pointsPreview(value)} 积分`)
       } else if (dialogMode === 'password') {
         await adminApi.resetUserPassword(activeUser.id, value)
       } else if (dialogMode === 'group') {
@@ -475,7 +486,9 @@ export function AdminUsersPage() {
         const ratio = rebatePct === '' ? null : parseFloat(rebatePct) / 100
         await adminApi.setUserRebateRatio(activeUser.id, ratio)
       } else if (dialogMode === 'model_credit') {
-        await adminApi.grantModelCredit(activeUser.id, { model_name: modelName, credits: Number(value) })
+        if (!modelName.trim()) throw new Error('请填写模型名称')
+        await adminApi.grantModelCredit(activeUser.id, { model_name: modelName.trim(), credits: pointsToCredits(value) })
+        setSuccess(`已为用户 #${activeUser.id} 赠送 ${pointsPreview(value)} 积分（${modelName.trim()}）`)
       }
       setDialogMode(null)
       setActiveUser(null)
@@ -484,6 +497,9 @@ export function AdminUsersPage() {
     } catch (err) {
       const { getApiErrorMessage } = await import('@/lib/api/http')
       setMutError(getApiErrorMessage(err))
+    } finally {
+      creditSubmitting.current = false
+      setCreditPending(false)
     }
   }
 
@@ -533,6 +549,7 @@ export function AdminUsersPage() {
           </div>
         }
       />
+      {success && <Alert role="status"><AlertDescription>{success}</AlertDescription></Alert>}
       {error ? (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
@@ -669,6 +686,7 @@ export function AdminUsersPage() {
                         <Button size="sm" variant="outline" onClick={() => openDetail(row)}>
                           详情
                         </Button>
+                        <Button size="sm" variant="outline" onClick={() => { setSuccess(''); setDeductUser(row) }}>扣除积分</Button>
                         <Button
                           size="sm"
                           variant={(row.is_active ?? true) ? 'outline' : 'default'}
@@ -689,6 +707,10 @@ export function AdminUsersPage() {
         ) : null}
       </Card>
 
+      {deductUser && <DeductPointsDialog user={deductUser}
+        onClose={() => setDeductUser(null)}
+        onSuccess={(message) => { setSuccess(message); setDeductUser(null); setDialogMode(null); reload() }}
+      />}
       {/* 详情弹窗 */}
       <Dialog open={dialogMode === 'detail'} onOpenChange={() => setDialogMode(null)}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
@@ -744,6 +766,7 @@ export function AdminUsersPage() {
                   {activeUser.id ? <UserReferralsSection userId={activeUser.id} fallbackInviteCount={activeUser.invite_count} /> : null}
                   <div className="border-t pt-3 flex flex-wrap gap-2">
                     <Button size="sm" variant="outline" onClick={() => openDialog(activeUser, 'recharge')}>充值</Button>
+                    <Button size="sm" variant="outline" onClick={() => { setDialogMode(null); setSuccess(''); setDeductUser(activeUser) }}>扣除积分</Button>
                     <Button size="sm" variant="outline" onClick={() => openDialog(activeUser, 'model_credit')}>赠积分</Button>
                     <Button size="sm" variant="outline" onClick={() => openDialog(activeUser, 'password')}>改密</Button>
                     <Button size="sm" variant="outline" onClick={() => openDialog(activeUser, 'group')}>设置 VIP</Button>
@@ -776,7 +799,7 @@ export function AdminUsersPage() {
       </Dialog>
 
       {/* 操作弹窗 */}
-      <Dialog open={Boolean(dialogMode) && dialogMode !== 'detail' && dialogMode !== 'batch_freeze' && dialogMode !== 'batch_group'} onOpenChange={() => setDialogMode(null)}>
+      <Dialog open={Boolean(dialogMode) && dialogMode !== 'detail' && dialogMode !== 'batch_freeze' && dialogMode !== 'batch_group'} onOpenChange={() => { if (!creditSubmitting.current) setDialogMode(null) }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
@@ -807,7 +830,7 @@ export function AdminUsersPage() {
               <AlertDescription>{mutError}</AlertDescription>
             </Alert>
           ) : null}
-          <div className="flex flex-col gap-3">
+          <fieldset disabled={creditPending} className="flex min-w-0 flex-col gap-3">
             {dialogMode === 'create' ? (
               <>
                 <div className="space-y-1.5">
@@ -853,8 +876,9 @@ export function AdminUsersPage() {
             ) : dialogMode === 'model_credit' ? (
               <>
                 <div className="space-y-1.5">
-                  <Label>模型名称（routing key）</Label>
+                  <Label htmlFor="grant-model">模型名称</Label>
                   <Input
+                    id="grant-model"
                     value={modelName}
                     onChange={(e) => setModelName(e.target.value)}
                     placeholder="如：claude-opus-4-7"
@@ -862,23 +886,25 @@ export function AdminUsersPage() {
                   <p className="text-xs text-muted-foreground">填写用户请求时 model 字段的值（渠道展示名或模型名）</p>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>赠送积分数（credits）</Label>
+                  <Label htmlFor="grant-points">赠送积分数</Label>
                   <Input
+                    id="grant-points"
+                    inputMode="decimal"
                     value={value}
                     type="text"
                     onChange={(e) => setValue(e.target.value)}
-                    placeholder="如：1000000（= ¥1）"
+                    placeholder="如：1，最多 6 位小数"
                   />
                   {value ? (
                     <p className="text-xs text-muted-foreground">
-                      {Number(value).toLocaleString()} credits = ¥{(Number(value) / 1e6).toFixed(6)}
+                      {pointsPreview(value) ? `将为用户 #${activeUser?.id} 赠送 ${pointsPreview(value)} 积分` : '请输入有效的正数积分，最多 6 位小数'}
                     </p>
                   ) : null}
                 </div>
                 <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setValue('1000000')}>¥1</Button>
-                  <Button size="sm" variant="outline" onClick={() => setValue('10000000')}>¥10</Button>
-                  <Button size="sm" variant="outline" onClick={() => setValue('100000000')}>¥100</Button>
+                  <Button size="sm" variant="outline" onClick={() => setValue('1')}>1 积分</Button>
+                  <Button size="sm" variant="outline" onClick={() => setValue('10')}>10 积分</Button>
+                  <Button size="sm" variant="outline" onClick={() => setValue('100')}>100 积分</Button>
                 </div>
               </>
             ) : dialogMode === 'rebate' ? (
@@ -893,9 +919,9 @@ export function AdminUsersPage() {
               </div>
             ) : (
               <div className="space-y-1.5">
-                <Label>
+                <Label htmlFor="user-operation-value">
                   {dialogMode === 'recharge'
-                    ? '充值积分数（credits）'
+                    ? '充值积分数'
                     : dialogMode === 'password'
                       ? '新密码'
                       : 'VIP 等级'}
@@ -915,12 +941,13 @@ export function AdminUsersPage() {
                   </Select>
                 ) : (
                   <Input
+                    id="user-operation-value"
                     value={value}
                     type={dialogMode === 'password' ? 'password' : 'text'}
                     onChange={(event) => setValue(event.target.value)}
                     placeholder={
                       dialogMode === 'recharge'
-                        ? '如：1000000（= ¥1）'
+                        ? '如：1，最多 6 位小数'
                         : dialogMode === 'password'
                           ? '至少 8 位'
                           : ''
@@ -929,7 +956,7 @@ export function AdminUsersPage() {
                 )}
                 {dialogMode === 'recharge' && value ? (
                   <p className="text-xs text-muted-foreground">
-                    {Number(value).toLocaleString()} credits = ¥{(Number(value) / 1e6).toFixed(6)}
+                    {pointsPreview(value) ? `将为用户 #${activeUser?.id} 充值 ${pointsPreview(value)} 积分` : '请输入有效的正数积分，最多 6 位小数'}
                   </p>
                 ) : null}
                 {dialogMode === 'group' ? (
@@ -945,22 +972,23 @@ export function AdminUsersPage() {
             ) : null}
             {dialogMode === 'recharge' ? (
               <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => setValue('1000000')}>¥1</Button>
-                <Button size="sm" variant="outline" onClick={() => setValue('10000000')}>¥10</Button>
-                <Button size="sm" variant="outline" onClick={() => setValue('100000000')}>¥100</Button>
+                <Button size="sm" variant="outline" onClick={() => setValue('1')}>1 积分</Button>
+                <Button size="sm" variant="outline" onClick={() => setValue('10')}>10 积分</Button>
+                <Button size="sm" variant="outline" onClick={() => setValue('100')}>100 积分</Button>
               </div>
             ) : null}
-          </div>
+          </fieldset>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogMode(null)}>
+            <Button variant="outline" disabled={creditPending} onClick={() => setDialogMode(null)}>
               取消
             </Button>
             <Button
               variant={dialogMode === 'delete' ? 'destructive' : 'default'}
               onClick={submitDialog}
+              disabled={creditPending}
             >
               {dialogMode !== 'delete' ? <SaveIcon data-icon="inline-start" /> : <Trash2Icon data-icon="inline-start" />}
-              {dialogMode === 'delete' ? '确认删除' : dialogMode === 'freeze' ? '确认冻结' : '确认'}
+              {creditPending ? '提交中…' : dialogMode === 'delete' ? '确认删除' : dialogMode === 'freeze' ? '确认冻结' : dialogMode === 'recharge' ? '确认充值' : dialogMode === 'model_credit' ? '确认赠送' : '确认'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -10,9 +10,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DeductPointsDialog } from '@/components/shared/DeductPointsDialog'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -29,7 +28,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Textarea } from '@/components/ui/textarea'
 import { adminApi, type AdminTransaction, type AdminTransactionSummary } from '@/lib/api/admin'
 import { useAsync } from '@/hooks/use-async'
 
@@ -38,7 +36,7 @@ function toMoney(cny: number | undefined) {
 }
 
 function txTypeLabel(t: string | undefined) {
-  return ({ charge: '扣费', refund: '退款', recharge: '充值', hold: '预扣', settle: '结算' } as Record<string, string>)[t ?? ''] ?? (t ?? '-')
+  return ({ charge: '扣费', refund: '退款', recharge: '充值', hold: '预扣', settle: '结算', adjust: '手动扣除' } as Record<string, string>)[t ?? ''] ?? (t ?? '-')
 }
 
 function txTypeVariant(t: string | undefined): 'destructive' | 'secondary' | 'outline' {
@@ -68,9 +66,7 @@ export function AdminBillingPage() {
 
   // 手动调账 dialog
   const [adjustOpen, setAdjustOpen] = useState(false)
-  const [adjustForm, setAdjustForm] = useState({ user_id: '', type: 'recharge', credits: '', reason: '' })
-  const [adjustError, setAdjustError] = useState('')
-  const [adjusting, setAdjusting] = useState(false)
+  const [adjustSuccess, setAdjustSuccess] = useState('')
   // 按月导出
   const [exportMonth, setExportMonth] = useState(() => new Date().toISOString().slice(0, 7))
   const [exporting, setExporting] = useState(false)
@@ -117,35 +113,6 @@ export function AdminBillingPage() {
     return adminApi.getTransactionAggregate({ dim: aggDim })
   }, { rows: [] as { key: string; revenue: number; cost: number; profit: number; calls: number }[] }, [aggDim])
 
-  async function submitAdjust() {
-    if (!adjustForm.user_id || !adjustForm.credits || !adjustForm.reason) {
-      setAdjustError('请填写所有必填字段')
-      return
-    }
-    if (adjustForm.reason.length < 10) {
-      setAdjustError('调账原因至少 10 个字符')
-      return
-    }
-    setAdjustError('')
-    setAdjusting(true)
-    try {
-      await adminApi.adjustTransaction({
-        user_id: Number(adjustForm.user_id),
-        type: adjustForm.type,
-        credits: Number(adjustForm.credits),
-        reason: adjustForm.reason,
-      })
-      setAdjustOpen(false)
-      setAdjustForm({ user_id: '', type: 'recharge', credits: '', reason: '' })
-      reload()
-    } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      setAdjustError(getApiErrorMessage(err))
-    } finally {
-      setAdjusting(false)
-    }
-  }
-
   async function submitExport() {
     setExporting(true)
     try {
@@ -172,7 +139,8 @@ export function AdminBillingPage() {
         description="按时间范围查看平台收入、成本和利润，支持运营复盘与对账。"
         actions={
           <div className="flex items-center gap-2">
-            {error ? (
+            {adjustSuccess && <Alert role="status"><AlertDescription>{adjustSuccess}</AlertDescription></Alert>}
+      {error ? (
               <Button size="sm" variant="outline" onClick={reload}>
                 重试
               </Button>
@@ -186,8 +154,8 @@ export function AdminBillingPage() {
             <Button size="sm" variant="outline" onClick={submitExport} disabled={exporting}>
               {exporting ? '提交中…' : '导出对账单'}
             </Button>
-            <Button size="sm" onClick={() => { setAdjustForm({ user_id: '', type: 'recharge', credits: '', reason: '' }); setAdjustError(''); setAdjustOpen(true) }}>
-              手动调账
+            <Button size="sm" onClick={() => { setAdjustSuccess(''); setAdjustOpen(true) }}>
+              扣除积分
             </Button>
           </div>
         }
@@ -395,44 +363,10 @@ export function AdminBillingPage() {
         ))}
       </Tabs>
 
-      {/* 手动调账 Dialog */}
-      <Dialog open={adjustOpen} onOpenChange={setAdjustOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>手动调账</DialogTitle>
-          </DialogHeader>
-          {adjustError ? <Alert variant="destructive"><AlertDescription>{adjustError}</AlertDescription></Alert> : null}
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label>用户 ID</Label>
-              <Input value={adjustForm.user_id} onChange={(e) => setAdjustForm(f => ({ ...f, user_id: e.target.value }))} placeholder="精确用户 ID" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>操作类型</Label>
-              <Select value={adjustForm.type} onValueChange={(v) => setAdjustForm(f => ({ ...f, type: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="recharge">补单（增加余额）</SelectItem>
-                  <SelectItem value="adjust">冲销（减少余额）</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>金额（CNY，正数）</Label>
-              <Input type="number" min="0" step="0.01" value={adjustForm.credits} onChange={(e) => setAdjustForm(f => ({ ...f, credits: e.target.value }))} placeholder="0.00" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>调账原因（至少 10 字符）</Label>
-              <Textarea value={adjustForm.reason} onChange={(e) => setAdjustForm(f => ({ ...f, reason: e.target.value }))} placeholder="请详细填写调账原因，便于日后审计" rows={3} />
-              <p className="text-xs text-muted-foreground">{adjustForm.reason.length} / 10</p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAdjustOpen(false)}>取消</Button>
-            <Button onClick={submitAdjust} disabled={adjusting}>{adjusting ? '提交中…' : '确认调账'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {adjustOpen && <DeductPointsDialog
+        onClose={() => setAdjustOpen(false)}
+        onSuccess={(message) => { setAdjustSuccess(message); setAdjustOpen(false); reload() }}
+      />}
     </>
   )
 }
