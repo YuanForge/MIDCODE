@@ -28,6 +28,7 @@ func registerUserRoutes(authed *gin.RouterGroup, deps Dependencies) {
 		user.GET("/transactions", deps.Auth.GetTransactions)
 		user.GET("/stats", deps.Auth.GetUserStats)
 		user.GET("/stats/tokens", handler.GetUserTokenStats)
+		user.GET("/stats/usage", handler.GetUserUsageStats)
 		user.GET("/model-credits", deps.Auth.GetModelCredits)
 		user.GET("/channels", deps.Auth.ListModels)
 		user.GET("/model-preferences", deps.Auth.ListModelPreferences)

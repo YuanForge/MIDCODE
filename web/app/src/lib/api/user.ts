@@ -179,6 +179,25 @@ export type TokenStatsResponse = {
   end_at: string
 }
 
+export type UsageMetrics = Omit<TokenUsageRow, 'model'> & {
+  requests: number
+  success: number
+  failed: number
+  credits: number
+}
+export type UsageModel = UsageMetrics & { model: string }
+export type UsagePoint = UsageMetrics & { at: string }
+export type UsageStatsResponse = {
+  start_at: string
+  end_at: string
+  bucket: 'hour' | 'day'
+  summary: UsageMetrics
+  previous: UsageMetrics
+  points: UsagePoint[]
+  models: UsageModel[]
+  available_models: string[]
+}
+
 export type UserLog = {
   cache_hit_percent?: number | null
   id?: number
@@ -283,6 +302,8 @@ export const userApi = {
   getProfile: () => http.get<UserProfileResponse>('/user/profile'),
   getBalance: () => http.get<UserBalanceResponse>('/user/balance'),
   getStats: () => http.get<UserStatsResponse>('/user/stats'),
+  getUsageStats: (params: { start_at: string; end_at: string; bucket: 'hour' | 'day'; model?: string }) =>
+    http.get<UsageStatsResponse>('/user/stats/usage', { params }),
   getTokenStats: (params: { start_at: string; end_at: string; model?: string; page: number; page_size: number }) =>
     http.get<TokenStatsResponse>('/user/stats/tokens', { params }),
   getTransactions: (page = 1, size = 20, taskId?: string, corrId?: string, apiKeyId?: number) =>
