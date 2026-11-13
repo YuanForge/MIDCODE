@@ -1,0 +1,395 @@
+{
+ auto_https disable_certs
+ https_port 18443
+ http_port 18080
+ default_bind 127.0.0.1
+ admin 127.0.0.1:12019
+}
+
+(proxy_options) {
+ lb_try_duration 60s
+ flush_interval -1
+
+ header_up X-Real-IP {vars.client_ip}
+ header_up X-Forwarded-For {vars.client_ip}
+ header_up X-Forwarded-Proto {scheme}
+ header_up X-Forwarded-Port 443
+ header_up REMOTE-HOST {vars.client_ip}
+ transport http {
+  dial_timeout 3s
+  response_header_timeout 6000s
+ }
+}
+(identity) {
+ vars client_ip {remote_host}
+ @local remote_ip 127.0.0.1
+ vars @local client_ip {http.request.header.X-Real-IP}
+ @cloudflare {
+  remote_ip 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+  header CF-Connecting-IP *
+ }
+ vars @cloudflare client_ip {http.request.header.CF-Connecting-IP}
+}
+8880.hair {
+tls /root/fanapi-return-20261113/certs/8880.hair/fullchain.pem /root/fanapi-return-20261113/certs/8880.hair/privkey.pem
+route {
+import identity
+header Strict-Transport-Security max-age=31536000
+handle /.well-known/acme-challenge/* {
+root * /root/fanapi-return-20261113/edge
+file_server
+}
+reverse_proxy 127.0.0.1:8092 {
+ import proxy_options
+
+}
+}
+}
+
+ai.midaccs.com, www.midaccs.com, midcode.cc, www.midcode.cc, ai.midcode.cc, origin-hk.midcode.cc {
+tls /root/fanapi-return-20261113/certs/api.fanapi.cc/fullchain.pem /root/fanapi-return-20261113/certs/api.fanapi.cc/privkey.pem
+route {
+import identity
+header Strict-Transport-Security max-age=31536000
+handle /.well-known/acme-challenge/* {
+root * /root/fanapi-return-20261113/edge
+file_server
+}
+handle /studio-preview/entry {
+ header Cache-Control no-store
+ header Referrer-Policy no-referrer
+ header X-Content-Type-Options nosniff
+root * /root/fanapi-return-20261113/edge
+ rewrite * /entry.html
+ file_server
+}
+handle /studio-preview {
+ redir * /studio-preview/ 302
+}
+handle /studio-preview/_next/static/* {
+ encode gzip
+reverse_proxy 127.0.0.1:8198 {
+ import proxy_options
+header_up X-Midcode-Client-IP {vars.client_ip}
+header_up Accept-Encoding identity
+@ok status 200
+handle_response @ok {
+ header Cache-Control "private, max-age=31536000, immutable"
+ copy_response
+}
+}
+}
+handle /studio-preview/* {
+ request_body {
+  max_size 268435456
+ }
+reverse_proxy 127.0.0.1:8198 {
+ import proxy_options
+header_up X-Midcode-Client-IP {vars.client_ip}
+}
+}
+@video_session path /api/public/video-studio/session /api/public/video-studio/redeem
+handle @video_session {
+ @shared {
+  remote_ip 151.243.229.212
+  header X-Midcode-Client-IP *
+ }
+ vars @shared client_ip {http.request.header.X-Midcode-Client-IP}
+reverse_proxy 127.0.0.1:8154 {
+ import proxy_options
+
+}
+}
+handle_path /api-mart/* {
+ reverse_proxy https://upload.apimart.ai {
+  import proxy_options
+  header_up Host upload.apimart.ai
+ }
+}
+handle_path /pangyu/* {
+ reverse_proxy https://laowang.pangyu.asia {
+  import proxy_options
+  header_up Host laowang.pangyu.asia
+ }
+}
+handle {
+ request_body {
+  max_size 268435456
+ }
+reverse_proxy 127.0.0.1:8154 {
+ import proxy_options
+
+}
+}
+}
+}
+
+max.octoapi.xyz {
+tls /root/fanapi-return-20261113/certs/max.octoapi.xyz/fullchain.pem /root/fanapi-return-20261113/certs/max.octoapi.xyz/privkey.pem
+route {
+import identity
+header Strict-Transport-Security max-age=31536000
+handle /.well-known/acme-challenge/* {
+root * /root/fanapi-return-20261113/edge
+file_server
+}
+reverse_proxy 127.0.0.1:8092 {
+ import proxy_options
+
+}
+}
+}
+
+maxkim.octoapi.xyz {
+tls /root/fanapi-return-20261113/certs/maxkim.octoapi.xyz/fullchain.pem /root/fanapi-return-20261113/certs/maxkim.octoapi.xyz/privkey.pem
+route {
+import identity
+header Strict-Transport-Security max-age=31536000
+handle /.well-known/acme-challenge/* {
+root * /root/fanapi-return-20261113/edge
+file_server
+}
+reverse_proxy 127.0.0.1:8092 {
+ import proxy_options
+
+}
+}
+}
+
+http://model.compute-origin.com {
+route {
+import identity
+header Strict-Transport-Security max-age=31536000
+handle /.well-known/acme-challenge/* {
+root * /root/fanapi-return-20261113/edge
+file_server
+}
+reverse_proxy 127.0.0.1:8092 {
+ import proxy_options
+
+}
+}
+}
+
+model.lcgxlm.com {
+tls /root/fanapi-return-20261113/certs/model.lcgxlm.com/fullchain.pem /root/fanapi-return-20261113/certs/model.lcgxlm.com/privkey.pem
+route {
+import identity
+header Strict-Transport-Security max-age=31536000
+handle /.well-known/acme-challenge/* {
+root * /root/fanapi-return-20261113/edge
+file_server
+}
+reverse_proxy 127.0.0.1:8092 {
+ import proxy_options
+
+}
+}
+}
+
+o1.octoapi.xyz {
+tls /root/fanapi-return-20261113/certs/o1.octoapi.xyz/fullchain.pem /root/fanapi-return-20261113/certs/o1.octoapi.xyz/privkey.pem
+route {
+import identity
+header Strict-Transport-Security max-age=31536000
+handle /.well-known/acme-challenge/* {
+root * /root/fanapi-return-20261113/edge
+file_server
+}
+reverse_proxy 127.0.0.1:8092 {
+ import proxy_options
+
+}
+}
+}
+
+assets.octoapi.xyz {
+tls /root/fanapi-return-20261113/certs/octoapi-assets/fullchain.pem /root/fanapi-return-20261113/certs/octoapi-assets/privkey.pem
+route {
+import identity
+header Strict-Transport-Security max-age=31536000
+handle /.well-known/acme-challenge/* {
+root * /root/fanapi-return-20261113/edge
+file_server
+}
+root * /root/fanapi-return-20261113/edge/octo-assets
+file_server
+}
+}
+
+octoapi.xyz, www.octoapi.xyz {
+tls /root/fanapi-return-20261113/certs/octoapi-main/fullchain.pem /root/fanapi-return-20261113/certs/octoapi-main/privkey.pem
+route {
+import identity
+header Strict-Transport-Security max-age=31536000
+handle /.well-known/acme-challenge/* {
+root * /root/fanapi-return-20261113/edge
+file_server
+}
+reverse_proxy 127.0.0.1:8092 {
+ import proxy_options
+
+}
+}
+}
+
+platform.octoapi.xyz {
+tls /root/fanapi-return-20261113/certs/octoapi-platform/fullchain.pem /root/fanapi-return-20261113/certs/octoapi-platform/privkey.pem
+route {
+import identity
+header Strict-Transport-Security max-age=31536000
+handle /.well-known/acme-challenge/* {
+root * /root/fanapi-return-20261113/edge
+file_server
+}
+reverse_proxy 127.0.0.1:8092 {
+ import proxy_options
+
+}
+}
+}
+
+pipe-code.xyz {
+tls /root/fanapi-return-20261113/certs/pipe-code.xyz/fullchain.pem /root/fanapi-return-20261113/certs/pipe-code.xyz/privkey.pem
+route {
+import identity
+header Strict-Transport-Security max-age=31536000
+handle /.well-known/acme-challenge/* {
+root * /root/fanapi-return-20261113/edge
+file_server
+}
+reverse_proxy 127.0.0.1:8092 {
+ import proxy_options
+
+}
+}
+}
+
+qianyuan.octoapi.xyz {
+tls /root/fanapi-return-20261113/certs/qianyuan.octoapi.xyz/fullchain.pem /root/fanapi-return-20261113/certs/qianyuan.octoapi.xyz/privkey.pem
+route {
+import identity
+header Strict-Transport-Security max-age=31536000
+handle /.well-known/acme-challenge/* {
+root * /root/fanapi-return-20261113/edge
+file_server
+}
+reverse_proxy 127.0.0.1:8092 {
+ import proxy_options
+
+}
+}
+}
+
+testjeff.octoapi.xyz {
+tls /root/fanapi-return-20261113/certs/testjeff.octoapi.xyz/fullchain.pem /root/fanapi-return-20261113/certs/testjeff.octoapi.xyz/privkey.pem
+route {
+import identity
+header Strict-Transport-Security max-age=31536000
+handle /.well-known/acme-challenge/* {
+root * /root/fanapi-return-20261113/edge
+file_server
+}
+reverse_proxy 127.0.0.1:8092 {
+ import proxy_options
+
+}
+}
+}
+
+image.midcode.cc {
+tls /root/fanapi-return-20261113/certs/image.midcode.cc/fullchain.pem /root/fanapi-return-20261113/certs/image.midcode.cc/privkey.pem
+route {
+import identity
+header Strict-Transport-Security max-age=31536000
+handle /.well-known/acme-challenge/* {
+root * /root/fanapi-return-20261113/edge
+file_server
+}
+@home path / /index.html
+handle @home {
+ header Cache-Control no-store
+ redir "https://midcode.cc/studio-preview/entry#" 302
+}
+@switch path /studio-switch-20261101.js /studio-switch-20261104.js
+handle @switch {
+ header Cache-Control no-cache
+root * /root/fanapi-return-20261113/edge
+ rewrite * /studio-switch.js
+ file_server
+}
+handle /video {
+ redir * /video/ 302
+}
+handle /video/* {
+ request_body {
+  max_size 104857600
+ }
+ @tenant_page path_regexp ^/video/u/[1-9][0-9]*/
+ handle @tenant_page {
+reverse_proxy 127.0.0.1:8183 {
+ import proxy_options
+header_up X-Midcode-Client-IP {vars.client_ip}
+header_up -X-Forwarded-For
+header_up Accept-Encoding identity
+@html {
+ status 200
+ header Content-Type text/html*
+}
+handle_response @html {
+ header Cache-Control no-store
+root * /root/fanapi-return-20261113/edge
+ rewrite * /video.html
+ file_server
+}
+
+}
+}
+ handle {
+reverse_proxy 127.0.0.1:8183 {
+ import proxy_options
+header_up X-Midcode-Client-IP {vars.client_ip}
+header_up -X-Forwarded-For
+}
+}
+}
+handle {
+ request_body {
+  max_size 67108864
+ }
+reverse_proxy 127.0.0.1:8798 {
+ import proxy_options
+header_up Accept-Encoding identity
+@html {
+ status 200
+ header Content-Type text/html*
+}
+handle_response @html {
+ header Cache-Control no-store
+root * /root/fanapi-return-20261113/edge
+ rewrite * /image.html
+ file_server
+}
+
+}
+}
+}
+}
+
+http://monitor.fanapi.cc {
+ handle /.well-known/acme-challenge/* {
+  root * /opt/observability/acme
+  file_server
+ }
+ handle {
+  redir https://monitor.fanapi.cc{uri} permanent
+ }
+}
+monitor.fanapi.cc {
+ tls /root/fanapi-return-20261113/certs/monitor.fanapi.cc/fullchain.pem /root/fanapi-return-20261113/certs/monitor.fanapi.cc/privkey.pem
+ import identity
+ encode gzip
+ reverse_proxy 127.0.0.1:18090 {
+ import proxy_options
+ }
+}

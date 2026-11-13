@@ -1,0 +1,81 @@
+{
+  "release": "v1.0.88",
+  "baseline": "v1.0.87",
+  "application_binary_sha256": "772385f88783bac9848799e57a60161c684a2a1fa2bb06b9a4c3e668360ec8d4",
+  "services": [
+    {
+      "source_container": "midcode-refund-v1087-api-1",
+      "destination_container": "midcode-refund-v1087-api-1",
+      "rootfs_sha256": "8af184b8a9dc0ac852c3f2f8bddf38031e6d1e2a018c137805ebd797cef54bbb",
+      "destination_image": "sha256:3d682e7dbb8f34cec9e59487087b2aa595a8012094aa548679fac2c4e78bbc15",
+      "health": "healthy",
+      "restarts": 0
+    },
+    {
+      "source_container": "midcode-studio-refund-v1087-api-1",
+      "destination_container": "midcode-studio-refund-v1087-api-1",
+      "rootfs_sha256": "afad19c25dee531c3d5ac94bd9794151299ecba42589cde2045e9bcb3f1f757a",
+      "destination_image": "sha256:311f2e49c3ca0496ebacffb25163bf27acd849420418be2e56dd4a79561c7d69",
+      "health": "healthy",
+      "restarts": 0
+    },
+    {
+      "source_container": "midcode-image-s3-v1063",
+      "destination_container": "midcode-image-s3-v1063",
+      "rootfs_sha256": "6e7f92438b5088b12651a54c6c39c5c088d29b13927645de6bf74f7b5746055e",
+      "destination_image": "sha256:1e0ecac4bcc9f1c0bc8b8f40a7fd8e9ca69029a427f9dda12f658c4ff1326e1b",
+      "health": null,
+      "restarts": 0
+    },
+    {
+      "source_container": "midcode-video-s3-v1063",
+      "destination_container": "midcode-video-s3-v1063",
+      "rootfs_sha256": "08af8296958fdfd0a7a857cb4ef36c12edb964161a4d046cb6a1689474707696",
+      "destination_image": "sha256:8668542238181815c32bd0063c84807468a5bede3b7f8a0a1b2eb3622ddff381",
+      "health": null,
+      "restarts": 0
+    },
+    {
+      "source_container": "midcode-unified-preview-v1072-r3",
+      "destination_container": "midcode-return-preview-v1088",
+      "rootfs_sha256": "826a7a0f3c633d81d1d15e05dec11e2f6fbe0949be509de3b07a4637e9519e81",
+      "destination_image": "sha256:9020970db6226810bc0466966e27adeb54266a7fd25908bb38a02c46fd360fb6",
+      "health": null,
+      "restarts": 0
+    },
+    {
+      "source_container": "octoapi-independent-api-1",
+      "destination_container": "octoapi-return-v1088-api-1",
+      "rootfs_sha256": "e30b32940eab2154d42e5b7811c710b466012ee4b3db34b41d0c2dd65dbc75d2",
+      "destination_image": "sha256:822e004dc9f6009fa7c1a8b70741e18eb867f7f6c9e8ab1cb3bebe7a03db0e7e",
+      "health": "healthy",
+      "restarts": 0
+    },
+    {
+      "source_container": "octoapi-independent-worker-1",
+      "destination_container": "octoapi-return-v1088-worker-1",
+      "rootfs_sha256": "6e72f1c901cdedf13db3b012a5636ee1d98749122b04fd981dcdad8d24eb1b55",
+      "destination_image": "sha256:9f55b32ba4e8d92381b42c70ddb917e530f159fc6f26463ebd855c0ac6849932",
+      "health": null,
+      "restarts": 0
+    },
+    {
+      "source_container": "observability-api-1",
+      "destination_container": "observability-api-1",
+      "rootfs_sha256": "0a80b44f871e5578c54a1486ac97485efaef0cfd2ed5db81defb806f015415fc",
+      "destination_image": "sha256:d4da3d598e7e42c5e962452bea93bc02c1ccee6ddfa05c3d7d14a1f561f72354",
+      "health": "healthy",
+      "restarts": 0
+    },
+    {
+      "source_container": "observability-web-1",
+      "destination_container": "observability-web-1",
+      "rootfs_sha256": "8bad2e8eb435e3f61ac4a8f7a0d6971651897bdeeffdaac6093bd39d8f70285d",
+      "destination_image": "sha256:087ed145a057275c74092c8b306803a2832ff03929fa467ad169c4bc71c5f654",
+      "health": "healthy",
+      "restarts": 0
+    }
+  ],
+  "rootfs_match": true,
+  "all_running": true
+}
