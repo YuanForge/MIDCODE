@@ -196,6 +196,11 @@ func UpdateModelGroup(ctx context.Context, group *model.ModelGroup) error {
 	if _, err := session.ID(group.ID).Cols("code", "name", "model_provider_id", "model_provider", "description", "is_active").Update(group); err != nil {
 		return rollback(err)
 	}
+	if !group.IsActive {
+		if _, err := session.Where("group_id = ?", group.ID).Delete(new(model.APIKeyModelGroup)); err != nil {
+			return rollback(err)
+		}
+	}
 	return session.Commit()
 }
 
@@ -203,8 +208,22 @@ func ToggleModelGroup(ctx context.Context, id int64, active bool) error {
 	if id <= 0 {
 		return fmt.Errorf("model group id is required")
 	}
-	_, err := db.Engine.ID(id).Cols("is_active").Update(&model.ModelGroup{IsActive: active})
-	return err
+	session := db.Engine.NewSession()
+	defer session.Close()
+	if err := session.Begin(); err != nil {
+		return err
+	}
+	if _, err := session.ID(id).Cols("is_active").Update(&model.ModelGroup{IsActive: active}); err != nil {
+		_ = session.Rollback()
+		return err
+	}
+	if !active {
+		if _, err := session.Where("group_id = ?", id).Delete(new(model.APIKeyModelGroup)); err != nil {
+			_ = session.Rollback()
+			return err
+		}
+	}
+	return session.Commit()
 }
 
 func DeleteModelGroup(ctx context.Context, id int64) error {

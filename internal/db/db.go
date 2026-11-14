@@ -109,6 +109,10 @@ func Init(cfg *config.DBConfig, migrate bool) error {
 		return err
 	}
 
+	// Disabled groups must not retain access bindings, including historical rows.
+	if _, err := Engine.Exec("DELETE FROM api_key_model_groups WHERE group_id IN (SELECT id FROM model_groups WHERE is_active = false)"); err != nil {
+		return fmt.Errorf("remove disabled model group bindings: %w", err)
+	}
 	if err := seedAdmin(); err != nil {
 		return err
 	}

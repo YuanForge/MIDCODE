@@ -104,7 +104,7 @@ func ListAPIKeyModelGroups(ctx context.Context, userID, keyID int64) ([]APIKeyMo
 	selectedBindings := make([]model.APIKeyModelGroup, 0, len(bindings))
 	for _, binding := range bindings {
 		group, exists := groupMap[binding.GroupID]
-		if !exists {
+		if !exists || !group.IsActive {
 			continue
 		}
 		selectedGroups = append(selectedGroups, group)
@@ -160,6 +160,27 @@ func ReplaceAPIKeyModelGroups(ctx context.Context, userID, keyID int64, groupIDs
 	if err != nil {
 		return rollback(err)
 	}
+	// An editor opened before a group was disabled may still submit its ID.
+	// Drop it rather than making an unrelated active selection impossible.
+	activeRequested := requested[:0]
+	normalized = normalized[:0]
+	for _, state := range requested {
+		if state.GroupActive {
+			activeRequested = append(activeRequested, state)
+			normalized = append(normalized, model.APIKeyModelGroup{APIKeyID: keyID, GroupID: state.GroupID, Priority: len(normalized) + 1})
+		}
+	}
+	requested = activeRequested
+	if len(requested) == 0 {
+		return rollback(fmt.Errorf("所选分组已停用，请重新选择可用分组"))
+	}
+	activeCurrent := current[:0]
+	for _, state := range current {
+		if state.GroupActive {
+			activeCurrent = append(activeCurrent, state)
+		}
+	}
+	current = activeCurrent
 	if err := validateDisabledProviderBindings(current, requested); err != nil {
 		return rollback(err)
 	}
