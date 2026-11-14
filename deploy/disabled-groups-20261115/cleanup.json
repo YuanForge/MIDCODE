@@ -1,0 +1,7 @@
+{
+  "removed": [
+    "midcode-captcha-v1092-api-1"
+  ],
+  "volumes_deleted": false,
+  "rollback_image": "fanapi-api:groups-v1094-baseline"
+}

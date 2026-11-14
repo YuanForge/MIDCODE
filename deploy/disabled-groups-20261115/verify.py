@@ -95,3 +95,17 @@ assert not any(k in challenge for k in ['solution','answer','binding'])
 checks.update({'login_send_code_reset_protected':True,'real_challenge_generated':True,'real_emails_sent':False,'real_account_login':False})
 save('live-verified.json' if a.live else 'candidate-verified.json',checks)
 print(json.dumps(checks))
+
+# Group-state checks avoid printing API keys from the authenticated response.
+status,raw=req('/api/user/apikeys');assert status==200
+for key in json.loads(raw)['api_keys']:
+ groups=key.get('model_groups') or []
+ assert all(b['group']['is_active'] for b in groups)
+ assert key['needs_group_binding']==(len(groups)==0)
+conn=psycopg2.connect(host=db['host'],port=db['port'],user=db['user'],password=db['password'],dbname=db['dbname'],connect_timeout=10)
+try:
+ conn.set_session(readonly=True);cur=conn.cursor();cur.execute('SELECT count(*) FROM api_key_model_groups b JOIN model_groups g ON g.id=b.group_id WHERE g.is_active=false');assert cur.fetchone()[0]==0
+finally:conn.rollback();conn.close()
+checks.update({'disabled_bindings_remaining':0,'key_group_flags_consistent':True})
+save('live-verified.json' if a.live else 'candidate-verified.json',checks)
+print('GROUP_STATE_VERIFIED')

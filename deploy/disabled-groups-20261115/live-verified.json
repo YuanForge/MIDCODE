@@ -1,0 +1,22 @@
+{
+  "healthy": true,
+  "stats_seconds": 0.193,
+  "seven_days": true,
+  "model_and_trend_totals_match": true,
+  "sql_counts_match": true,
+  "exact_filter": true,
+  "auth_isolation": true,
+  "input_limits": true,
+  "account_reads": true,
+  "public_origin": true,
+  "admin_reads": true,
+  "new_frontend_modules": true,
+  "zero_adjustment_rejected": true,
+  "real_balance_mutations": false,
+  "login_send_code_reset_protected": true,
+  "real_challenge_generated": true,
+  "real_emails_sent": false,
+  "real_account_login": false,
+  "disabled_bindings_remaining": 0,
+  "key_group_flags_consistent": true
+}

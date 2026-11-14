@@ -9,3 +9,5 @@ Validation: go test ./internal/service ./internal/db and git diff --check passed
 Deployment: NOT performed. SSH authentication to the previously documented server was rejected; current proxy targets, containers and deployed version could not be verified. No production bindings or containers changed or removed. No new container created.
 
 Rollback: revert this source commit before deployment. Once deployed, removed bindings require a pre-deployment database backup to restore; reverting code alone does not recreate bindings. Capture a private binding backup before deployment. Keep existing release images/configuration. Complete candidate verification, smooth cutover, business checks and old-container dependency/drain checks before cleanup.
+
+Superseded on 2026-11-15: v1.0.93 was not deployed. Production source reconciliation and the corrected cleanup path were released as v1.0.94; see production-reconciliation-20261115.md.

@@ -11,3 +11,16 @@ Validation: full Go package suite; isolated PostgreSQL regression covers both di
 Deployment scripts use a parallel container at 8158, preserve the old image/config, back up historical bindings privately, then switch Caddy, the 8154 compatibility rule and studio network alias. Cleanup verifies dependencies and connection drain before deleting only the replaced container without volumes.
 
 Rollback: deploy.py rollback restores the predecessor and proxy/alias configuration. Deleted bindings do not return automatically: review and selectively restore the private disabled-bindings snapshot if required. Never commit that snapshot or credentials.
+
+## Completed release
+
+- Backend source commit: 133d69c (full hash in deploy/disabled-groups-20261115/build.json). Release tag v1.0.94 includes this commit and final verification records; v1.0.93 remains unchanged and was never deployed.
+- Running container: midcode-groups-v1094-api-1, image fanapi-api:groups-v1.0.94, healthy with zero restarts. Backend built directly from the reconciled repository; frontend hash unchanged from v1.0.92.
+- Caddy switched 8157 to 8158; stable compatibility port 8154 now redirects to 8158; midcode-main studio alias moved to the new container.
+- Backed up 114 historical disabled-group bindings privately before startup cleanup. Verified remaining disabled bindings = 0 and API-key group/needs-binding flags consistent.
+- All Go package tests passed. Isolated real PostgreSQL regression passed both disable paths, stale save, all-disabled rejection and non-restoration on re-enable. It uses a dedicated temporary schema, removed afterward.
+- Candidate, live and post-cleanup verification passed: real CAPTCHA issuance and required-proof rejection; account/admin reads; zero adjustment rejection without balance mutation; seven-day usage/model totals and SQL agreement; API authorization checks.
+- Image, video and unified workbench handoffs/sessions passed; video cross-user denial passed and its test session was revoked. No paid generation, real email delivery or real account login tested.
+- Removed only midcode-captcha-v1092-api-1 after proxy/container dependency checks and drain. No volumes deleted. Older unrelated containers were outside this replacement scope.
+- Rollback image fanapi-api:groups-v1094-baseline and private configuration/binding snapshots retained under /root/fanapi-groups-v1.0.94. Use deploy.py rollback and repeat verification; binding restoration is a separate reviewed data operation.
+- The bounded HTTP sample ran before cutover due to launcher waiting behavior; it does not establish continuous observation across the switch. Live and post-cleanup functional checks establish the verified post-switch state.

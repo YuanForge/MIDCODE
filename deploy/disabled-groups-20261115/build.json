@@ -1,0 +1,9 @@
+{
+  "release": "v1.0.94",
+  "commit": "133d69c67a4ad28d5631ee38d28b1c7b081a1eda",
+  "binary_sha256": "33f380359fabef1f1e68559cbfecb2edf61d2b0530289da1a1368597c7099904",
+  "baseline_binary_sha256": "a27944b8729e4a71b82d57ce2cb1b4e8727f656af086f524b8bdaa03fc8a1b33",
+  "baseline_index_sha256": "18ebca703178a5940c558bc74d100d112be210770fab781e7fcd0e14132f488e",
+  "index_sha256": "18ebca703178a5940c558bc74d100d112be210770fab781e7fcd0e14132f488e",
+  "build": "GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -buildvcs=false -trimpath ./cmd/server"
+}
