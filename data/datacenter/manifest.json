@@ -1,0 +1,19 @@
+{
+  "sha256": "e7df2f94d60b332f1f42d7ed4a04942d4e35ca47adc7c7e87a3c30e6ed9019ab",
+  "commit": "9b9d64cf6e552b2a64ecc1b8282515042e347d7e",
+  "repository": "https://github.com/hexydec/ip-ranges",
+  "upstream_date": "2026-10-31T03:30:47Z",
+  "fetched_at": "2026-11-01T02:16:22.6946625Z",
+  "license": "MIT",
+  "upstream_sha256": "e51bf50ccf781982e8f05c5550f01f2c06275de35b9ba1bac4fcab8ac6869f90",
+  "supplements": [
+    {
+      "method": "reviewed ARIN registrant VHL-60",
+      "cidrs": [
+        "149.248.20.0/23"
+      ],
+      "source": "https://rdap.arin.net/registry/ip/149.248.21.148",
+      "checked_at": "2026-11-01T10:41:05.031306+08:00"
+    }
+  ]
+}

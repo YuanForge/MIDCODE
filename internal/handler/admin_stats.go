@@ -5,7 +5,6 @@ import (
 	"fanapi/internal/model"
 	"github.com/gin-gonic/gin"
 	"net/http"
-	"strconv"
 	"time"
 )
 
@@ -88,18 +87,21 @@ func GetAdminStatsTrend(c *gin.Context) {
 	}
 
 	var rows []dayRow
+	todayStart, todayEnd := shanghaiDayRange(time.Now())
+	trendStart := todayStart.AddDate(0, 0, -(days - 1))
+	// created_at stores local wall time (timestamp without time zone), as in user statistics.
 	db.Engine.SQL(`
 SELECT
-  to_char(created_at AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM-DD') AS day,
+  to_char(created_at, 'YYYY-MM-DD') AS day,
   COALESCE(SUM(CASE WHEN type IN ('charge','settle','hold') THEN credits WHEN type='refund' THEN -credits ELSE 0 END),0) AS revenue,
   COALESCE(SUM(CASE WHEN type IN ('charge','settle','hold') THEN cost WHEN type='refund' THEN -cost ELSE 0 END),0) AS cost,
   COUNT(*) AS calls
 FROM billing_transactions
 WHERE type IN ('charge','settle','hold','refund')
-  AND created_at >= NOW() - INTERVAL '` + strconv.Itoa(days) + ` days'
+  AND created_at >= ? AND created_at < ?
 GROUP BY day
 ORDER BY day ASC
-`).Find(&rows)
+`, trendStart, todayEnd).Find(&rows)
 
 	type point struct {
 		Label string  `json:"label"`
@@ -107,7 +109,7 @@ ORDER BY day ASC
 	}
 
 	// 补全缺失的天（让曲线连续）
-	now := time.Now().In(time.FixedZone("CST", 8*3600))
+	now := todayStart
 	dayMap := map[string]dayRow{}
 	for _, r := range rows {
 		dayMap[r.Day] = r

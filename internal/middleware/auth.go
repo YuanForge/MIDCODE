@@ -110,17 +110,26 @@ func Auth(cfg *config.ServerConfig) gin.HandlerFunc {
 				return
 			}
 			userID := int64(sub)
+			if !CheckWebsiteNetwork(c) {
+				return
+			}
 			role, _ := claims["role"].(string)
 			group, _ := claims["group"].(string)
 			// 检查账户冻结状态（与 API Key 路径对称）
 			{
 				user := &model.User{}
-				if found, _ := db.Engine.ID(userID).Cols("group", "is_active").Get(user); found {
+				found, lookupErr := db.Engine.ID(userID).Cols("role", "group", "is_active").Get(user)
+				if lookupErr != nil || !found {
+					c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "账户不存在或暂时无法验证"})
+					return
+				}
+				if found {
 					if !user.IsActive {
 						c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "账户已被冻结，请联系管理员"})
 						return
 					}
 					group = user.Group
+					role = user.Role
 				}
 			}
 			c.Set("user_id", userID)

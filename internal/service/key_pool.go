@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	"fanapi/internal/cache"
 	"fanapi/internal/db"
@@ -45,18 +44,13 @@ func keyPoolDefaultChannelExclusionCondition(ids []int64, poolID int64) builder.
 }
 
 const (
-	// exhaustedTTL 是三方 Key 被标记为耗尽后的自动恢复时间。
-	// 超过此时间后该 Key 会重新参与分配轮转。
-	exhaustedTTL = time.Hour
-
 	assignKeyFmt    = "pool:assign:%d:%d" // Redis 键格式：pool:assign:{pool_id}:{entity_id}
-	exhaustedKeyFmt = "pool:exhausted:%d" // Redis 键格式：pool:exhausted:{pool_key_id}
+	exhaustedKeyFmt = "pool:exhausted:%d" // 仅用于清理旧版本遗留标记，不再写入或参与分配。
 )
 
 var (
-	ErrPoolNoAvailableKeys  = errors.New("pool has no available keys")
-	ErrPoolAllKeysExhausted = errors.New("pool keys exhausted")
-	ErrPoolAllKeysTried     = errors.New("pool keys tried")
+	ErrPoolNoAvailableKeys = errors.New("pool has no available keys")
+	ErrPoolAllKeysTried    = errors.New("pool keys tried")
 )
 
 type poolKeyStateError struct {
@@ -159,8 +153,10 @@ func ResetChannelPoolRuntimeState(ctx context.Context, channelID int64) error {
 //   - 异步任务场景：使用 user_id
 //
 // 分配策略：
-//  1. 若 entityID 已有分配且该 Key 未耗尽 → 直接复用（保证上下文延续 / 缓存命中）
-//  2. 若已分配但 Key 已耗尽，或尚未分配 → 按 priority ASC, id ASC 选择第一个可用 Key 并绑定
+//  1. 若 entityID 已有分配且该 Key 仍在本池中启用 → 直接复用（保证上下文延续 / 缓存命中）
+//  2. 否则按 priority ASC, id ASC 选择第一个启用的 Key 并绑定。
+//
+// 上游失败不改变 Key 可用状态，旧版本的耗尽标记也不再阻挡新请求。
 func GetOrAssignPoolKey(ctx context.Context, poolID, entityID int64) (*model.PoolKey, error) {
 	// 检查号池本身是否启用
 	pool := &model.KeyPool{}
@@ -183,38 +179,18 @@ func GetOrAssignPoolKey(ctx context.Context, poolID, entityID int64) (*model.Poo
 		var assignedID int64
 		fmt.Sscanf(assignedIDStr, "%d", &assignedID)
 
-		exhaustedKey := fmt.Sprintf(exhaustedKeyFmt, assignedID)
-		exhausted, _ := cache.Client.Exists(ctx, exhaustedKey).Result()
-		if exhausted == 0 {
-			// 已分配且未耗尽 → 直接复用
-			key := &model.PoolKey{}
-			found, dbErr := db.Engine.Where("id = ? AND is_active = true", assignedID).Get(key)
-			if dbErr == nil && found {
-				return key, nil
-			}
+		key := &model.PoolKey{}
+		found, dbErr := db.Engine.Where("id = ? AND pool_id = ? AND is_active = true", assignedID, poolID).Get(key)
+		if dbErr == nil && found {
+			return key, nil
 		}
 	}
 
-	// 2. 尚未分配 or 当前分配已耗尽 → 重新轮转
-	key, err := rotatePoolKey(ctx, poolID, entityID, assignKey, 0)
-	if err == nil {
-		return key, nil
-	}
-	return nil, err
+	return RotatePoolKeySkipping(ctx, poolID, entityID, nil)
 }
 
-// MarkExhaustedAndRotate 将 poolKeyID 标记为耗尽（带 TTL），同时为 entityID 轮转到下一可用 Key。
-// 用于检测到上游 429 / 配额不足时主动触发轮转。
-func MarkExhaustedAndRotate(ctx context.Context, poolID, poolKeyID, entityID int64) (*model.PoolKey, error) {
-	exhaustedKey := fmt.Sprintf(exhaustedKeyFmt, poolKeyID)
-	cache.Client.Set(ctx, exhaustedKey, 1, exhaustedTTL)
-
-	assignKey := fmt.Sprintf(assignKeyFmt, poolID, entityID)
-	return rotatePoolKey(ctx, poolID, entityID, assignKey, poolKeyID)
-}
-
-// RotatePoolKeySkipping 在当前请求内轮转到下一个可用 Key，不会把已试 Key 标记为耗尽。
-// 用于 521/504 这类上游网关错误：本次请求先试同池其它 Key，全部失败后再交给渠道级重试。
+// RotatePoolKeySkipping 只跳过当前请求已试过的 Key，不写入跨请求的失败/耗尽状态。
+// 认证、限流、网关错误均可在当前请求内换 Key；下一请求仍可使用启用的 Key。
 func RotatePoolKeySkipping(ctx context.Context, poolID, entityID int64, skipKeyIDs []int64) (*model.PoolKey, error) {
 	skip := make(map[int64]bool, len(skipKeyIDs))
 	for _, id := range skipKeyIDs {
@@ -238,41 +214,10 @@ func RotatePoolKeySkipping(ctx context.Context, poolID, entityID int64, skipKeyI
 		if skip[k.ID] {
 			continue
 		}
-		exhaustedKey := fmt.Sprintf(exhaustedKeyFmt, k.ID)
-		exists, _ := cache.Client.Exists(ctx, exhaustedKey).Result()
-		if exists == 0 {
-			cache.Client.Set(ctx, assignKey, fmt.Sprintf("%d", k.ID), 0)
-			return k, nil
-		}
+		cache.Client.Set(ctx, assignKey, fmt.Sprintf("%d", k.ID), 0)
+		return k, nil
 	}
 	return nil, newPoolKeyStateError(ErrPoolAllKeysTried, "号池 %d 的可用 Key 均已尝试", poolID)
-}
-
-// rotatePoolKey 从池中选择第一个未耗尽的可用 Key（跳过 skipKeyID），并写入分配记录。
-func rotatePoolKey(ctx context.Context, poolID, _ int64, assignKey string, skipKeyID int64) (*model.PoolKey, error) {
-	var keys []model.PoolKey
-	if err := db.Engine.Where("pool_id = ? AND is_active = true", poolID).
-		OrderBy("priority ASC, id ASC").Find(&keys); err != nil {
-		return nil, fmt.Errorf("key pool %d: db error: %w", poolID, err)
-	}
-	if len(keys) == 0 {
-		return nil, newPoolKeyStateError(ErrPoolNoAvailableKeys, "号池 %d 暂无可用 Key", poolID)
-	}
-
-	for i := range keys {
-		k := &keys[i]
-		if k.ID == skipKeyID {
-			continue
-		}
-		exhaustedKey := fmt.Sprintf(exhaustedKeyFmt, k.ID)
-		exists, _ := cache.Client.Exists(ctx, exhaustedKey).Result()
-		if exists == 0 {
-			// 绑定分配（无过期时间 = Sticky，永久持有直到主动轮转）
-			cache.Client.Set(ctx, assignKey, fmt.Sprintf("%d", k.ID), 0)
-			return k, nil
-		}
-	}
-	return nil, newPoolKeyStateError(ErrPoolAllKeysExhausted, "号池 %d 的所有 Key 已耗尽", poolID)
 }
 
 // ---- 管理接口 ----

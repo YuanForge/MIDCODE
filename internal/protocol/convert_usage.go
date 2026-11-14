@@ -58,6 +58,9 @@ func NormalizeUsage(resp map[string]interface{}, sourceProtocol string) map[stri
 					result["cache_read_tokens"] = int64(n)
 				}
 			}
+			if write := OpenAICacheWriteTokens(usg); write > 0 {
+				result["cache_creation_tokens"] = write
+			}
 			if serviceTier, _ := resp["service_tier"].(string); serviceTier != "" {
 				result["actual_service_tier"] = serviceTier
 			}
@@ -78,6 +81,9 @@ func NormalizeUsage(resp map[string]interface{}, sourceProtocol string) map[stri
 					result["cache_read_tokens"] = int64(n)
 				}
 			}
+			if write := OpenAICacheWriteTokens(usg); write > 0 {
+				result["cache_creation_tokens"] = write
+			}
 			if serviceTier, _ := resp["service_tier"].(string); serviceTier != "" {
 				result["actual_service_tier"] = serviceTier
 			}
@@ -85,4 +91,18 @@ func NormalizeUsage(resp map[string]interface{}, sourceProtocol string) map[stri
 		}
 	}
 	return nil
+}
+
+// OpenAICacheWriteTokens preserves explicit cache writes reported by an upstream.
+// Never infer cache writes from uncached input tokens.
+func OpenAICacheWriteTokens(usage map[string]interface{}) int64 {
+	for _, key := range []string{"cache_creation_tokens", "cache_creation_input_tokens"} {
+		switch n := usage[key].(type) {
+		case float64:
+			return int64(n)
+		case int64:
+			return n
+		}
+	}
+	return 0
 }

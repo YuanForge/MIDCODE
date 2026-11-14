@@ -37,13 +37,14 @@ func llmSettle(c *gin.Context, ch *model.Channel, reqData, usageData map[string]
 	requestedTier := billing.RequestedTier(reqData)
 	upstreamCostHold, _ := billing.CalcUpstreamCostWithTier(ch, reqData, requestedTier)
 
-	// Cancellation is not billable, even if partial output or exact usage arrived.
+	// Cancellation before a confirmed terminal frame is not billable, even with usage.
+	// A later disconnect must not undo an already completed native Claude response.
 	// Use the detached billing context so the canceled request cannot cancel its refund.
 	canceled := errors.Is(c.Request.Context().Err(), context.Canceled)
 	for _, err := range requestErrors {
 		canceled = canceled || errors.Is(err, context.Canceled)
 	}
-	if canceled {
+	if canceled && !c.GetBool(llmStreamCompletedKey) {
 		status, message := "refunded", context.Canceled.Error()
 		if totalHold > 0 {
 			refunded, mcRefunded := llmRefundCredits(c, userID, totalHold)
@@ -150,9 +151,23 @@ func llmSettle(c *gin.Context, ch *model.Channel, reqData, usageData map[string]
 	if !tierConfirmed {
 		usageData["tier_unconfirmed"] = true
 	}
+	if enabled, _ := ch.BillingConfig["gpt_context_pricing"].(bool); enabled {
+		if input, ok := billing.GPTUsageInputTokens(usageData); ok {
+			usageData["context_input_tokens"] = input
+			usageData["context_tier"] = "short"
+			if input > billing.ContextInputLimit(billing.ChannelContextConfig(ch)) {
+				usageData["context_tier"] = "long"
+			}
+		}
+	}
 	respData := map[string]interface{}{"usage": usageData}
 	actualCost, settleErr := billing.CalcActualCostForUserWithTier(ch, reqData, respData, userGroup, billingTier)
 	actualUpstreamCost, _ := billing.CalcActualUpstreamCostWithTier(ch, reqData, respData, actualTier)
+	if settleErr != nil {
+		log.Printf("[llm-billing] settlement failed corr_id=%s err=%v", corrID, settleErr)
+		enqueueLLMLogPatch(corrID, []string{"status", "usage", "error_msg"}, model.LLMLog{Status: "error", Usage: model.JSON(usageData), ErrorMsg: "billing settlement: " + settleErr.Error()})
+		return
+	}
 	if settleErr == nil {
 		inputFromResponse, _ := ch.BillingConfig["input_from_response"].(bool)
 		if !inputFromResponse {
@@ -242,7 +257,12 @@ func llmSettle(c *gin.Context, ch *model.Channel, reqData, usageData map[string]
 			}
 		}
 	}
-	inputPricePer1M, outputPricePer1M := resolveTokenPriceMetaValueForTier(ch, userGroup, billingTier)
+	cfg := billing.EffectivePricingConfigForTier(billing.ChannelContextConfig(ch), userGroup, billingTier)
+	if input, ok := billing.GPTUsageInputTokens(usageData); ok {
+		cfg = billing.ContextPricingConfig(cfg, input)
+	}
+	inputPricePer1M := configInt64Ptr(model.JSON(cfg), "input_price_per_1m_tokens")
+	outputPricePer1M := configInt64Ptr(model.JSON(cfg), "output_price_per_1m_tokens")
 	enqueueLLMLogPatch(corrID, []string{"status", "usage", "error_msg", "input_price_per_1m_tokens", "output_price_per_1m_tokens"}, model.LLMLog{
 		Status:                 "ok",
 		Usage:                  model.JSON(usageData),

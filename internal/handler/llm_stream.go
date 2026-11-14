@@ -6,6 +6,7 @@ import (
 
 	"fanapi/internal/billing"
 	"fanapi/internal/model"
+	"fanapi/internal/protocol"
 )
 
 // usageState 在 SSE 流中收集 token 用量，支持 OpenAI / Claude / Gemini 三种协议。
@@ -156,6 +157,7 @@ func (u *usageState) processLine(line string) {
 				if n, _ := usg["completion_tokens"].(float64); n > 0 {
 					u.completTokens = int64(n)
 				}
+				u.cacheCreationTokens = protocol.OpenAICacheWriteTokens(usg)
 				// OpenAI prompt caching: prompt_tokens_details.cached_tokens
 				if details, ok := usg["prompt_tokens_details"].(map[string]interface{}); ok {
 					if n, _ := details["cached_tokens"].(float64); n > 0 {
@@ -176,6 +178,7 @@ func (u *usageState) processLine(line string) {
 					if n, _ := usg["output_tokens"].(float64); n > 0 {
 						u.completTokens = int64(n)
 					}
+					u.cacheCreationTokens = protocol.OpenAICacheWriteTokens(usg)
 					if details, ok := usg["input_tokens_details"].(map[string]interface{}); ok {
 						if n, _ := details["cached_tokens"].(float64); n > 0 {
 							u.cacheReadTokens = int64(n)

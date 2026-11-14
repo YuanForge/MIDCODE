@@ -100,6 +100,17 @@ func GenerateCards(c *gin.Context) {
 // GET /admin/cards?status=unused&page=1&size=20
 func ListCards(c *gin.Context) {
 	status := c.Query("status") // "", "unused", "used"
+	usedBy := strings.TrimSpace(c.Query("used_by"))
+	var userID int64
+	if usedBy != "" {
+		var err error
+		userID, err = strconv.ParseInt(usedBy, 10, 64)
+		if err != nil || userID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "兑换用户 ID 必须为正整数"})
+			return
+		}
+	}
+	email := strings.TrimSpace(c.Query("used_email"))
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	size, _ := strconv.Atoi(c.DefaultQuery("size", "20"))
 	if page < 1 {
@@ -110,8 +121,15 @@ func ListCards(c *gin.Context) {
 	}
 
 	sess := db.Engine.NewSession().OrderBy("id DESC")
+	defer sess.Close()
 	if status != "" {
 		sess.Where("status = ?", status)
+	}
+	if userID > 0 {
+		sess.Where("used_by = ?", userID)
+	}
+	if email != "" {
+		sess.Where("used_by IN (SELECT id FROM users WHERE LOWER(email) = LOWER(?))", email)
 	}
 
 	var cards []model.Card
@@ -120,7 +138,38 @@ func ListCards(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败，请稍后重试"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"cards": cards, "total": total})
+	userIDs := make([]int64, 0, len(cards))
+	for _, card := range cards {
+		if card.UsedBy > 0 {
+			userIDs = append(userIDs, card.UsedBy)
+		}
+	}
+	users := make(map[int64]model.User)
+	if len(userIDs) > 0 {
+		var found []model.User
+		if err := db.Engine.In("id", userIDs).Cols("id", "username", "email").Find(&found); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询兑换用户失败，请稍后重试"})
+			return
+		}
+		for _, user := range found {
+			users[user.ID] = user
+		}
+	}
+	type cardWithUser struct {
+		model.Card
+		UsedUsername string  `json:"used_username"`
+		UsedEmail    *string `json:"used_email"`
+	}
+	result := make([]cardWithUser, 0, len(cards))
+	for _, card := range cards {
+		item := cardWithUser{Card: card}
+		if card.UsedBy > 0 {
+			user := users[card.UsedBy]
+			item.UsedUsername, item.UsedEmail = user.Username, user.Email
+		}
+		result = append(result, item)
+	}
+	c.JSON(http.StatusOK, gin.H{"cards": result, "total": total})
 }
 
 // DELETE /admin/cards/:id  — 删除未使用的卡密

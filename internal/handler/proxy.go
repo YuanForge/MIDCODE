@@ -14,6 +14,7 @@ import (
 	"fanapi/internal/db"
 	"fanapi/internal/model"
 	"fanapi/internal/mq"
+	"fanapi/internal/script"
 	"fanapi/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -267,6 +268,14 @@ func createTask(c *gin.Context, taskType string, reqData map[string]interface{})
 	if ch.Model != "" {
 		reqData["model"] = ch.Model
 	}
+	if normalize, _ := ch.BillingConfig["normalize_request"].(bool); normalize {
+		normalized, err := script.RunNormalizeRequest(ch.RequestScript, reqData)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		reqData = normalized
+	}
 
 	// 精确计费：图片/视频/音频在请求时参数已全部已知，无需两阶段结算
 	cost, _, calcErr := billing.CalcForUser(ch, reqData, userGroup)
@@ -480,6 +489,14 @@ func estimateTaskCost(c *gin.Context, taskType string, reqData map[string]interf
 
 	if ch.Model != "" {
 		reqData["model"] = ch.Model
+	}
+	if normalize, _ := ch.BillingConfig["normalize_request"].(bool); normalize {
+		normalized, err := script.RunNormalizeRequest(ch.RequestScript, reqData)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		reqData = normalized
 	}
 	cost, _, calcErr := billing.CalcForUser(ch, reqData, userGroup)
 	if calcErr != nil {

@@ -34,7 +34,7 @@ const (
 	protocolRealtime  = "realtime"
 
 	responsesOperationCompact = "compact"
-	maxPoolKeyExhaustRetries  = 8
+	maxPoolKeyAuthRetries     = 8
 	llmRouteContextKey        = "llm_route"
 )
 
@@ -451,7 +451,7 @@ func isPoolKeyRetryStatus(statusCode int) bool {
 	return statusCode >= http.StatusInternalServerError || statusCode == 521
 }
 
-func isPoolKeyExhaustStatus(statusCode int) bool {
+func isPoolKeyAuthRetryStatus(statusCode int) bool {
 	return statusCode == http.StatusUnauthorized ||
 		statusCode == http.StatusForbidden ||
 		statusCode == http.StatusTooManyRequests
@@ -675,14 +675,14 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 	persistLLMUpstreamHeaders(corrID, sentHeaders)
 
 	if err == nil && resp != nil {
-		// 401/403/429 视为当前号池 Key 失效或额度不可用：临时摘除该 Key，并在同池内换 Key 重试。
-		for err == nil && resp != nil && isPoolKeyExhaustStatus(resp.StatusCode) &&
-			ch.KeyPoolID > 0 && poolKey != nil && len(triedPoolKeyIDs) < maxPoolKeyExhaustRetries {
-			resp.Body.Close()
-			newKey, rotErr := service.MarkExhaustedAndRotate(c.Request.Context(), ch.KeyPoolID, poolKey.ID, entityID)
+		// 401/403/429 只在本次请求内换 Key，不把失败写为号池的全局耗尽状态。
+		for err == nil && resp != nil && isPoolKeyAuthRetryStatus(resp.StatusCode) &&
+			ch.KeyPoolID > 0 && poolKey != nil && len(triedPoolKeyIDs) < maxPoolKeyAuthRetries {
+			newKey, rotErr := service.RotatePoolKeySkipping(c.Request.Context(), ch.KeyPoolID, entityID, triedPoolKeyIDs)
 			if rotErr != nil || newKey == nil {
 				break
 			}
+			resp.Body.Close()
 			poolKey = newKey
 			triedPoolKeyIDs = appendPoolKeyID(triedPoolKeyIDs, newKey.ID)
 			attempt, prepErr = prepareLLMUpstreamAttempt(c, ch, poolKey, origReqData, clientProto, resolvedModel, isStream, responsesOperation)
@@ -784,7 +784,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 
 		// 5xx 总是尝试换渠道；4xx 仅在 error_script 命中时换。
 		// 号池 Key 级错误在同池重试后仍存在时，也交给渠道级重试。
-		poolKeyRetryExhausted := ch.KeyPoolID > 0 && poolKey != nil && isPoolKeyExhaustStatus(resp.StatusCode)
+		poolKeyRetryExhausted := ch.KeyPoolID > 0 && poolKey != nil && isPoolKeyAuthRetryStatus(resp.StatusCode)
 		shouldRetry := resp.StatusCode >= 500 || bizErr != "" || poolKeyRetryExhausted
 		if shouldRetry && len(triedIDs) < maxRetries {
 			if nextCh := selectNextChannel(c.Request.Context(), routingKey, triedIDs, stableChannels, isResponsesCompact); nextCh != nil {
@@ -1012,35 +1012,45 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 	scanner.Buffer(buf, 10*1024*1024)
 
 	var streamReadErr error
-	clientDisconnected := c.Stream(func(w io.Writer) bool {
-		if !scanner.Scan() {
-			streamReadErr = scanner.Err()
+	clientDisconnected := false
+	streamCompleted := false
+	if clientProto == protocolClaude && proto == protocolClaude {
+		streamReadErr, streamCompleted = streamNativeClaude(c, scanner, usage)
+	} else {
+		clientDisconnected = c.Stream(func(w io.Writer) bool {
+			if !scanner.Scan() {
+				streamReadErr = scanner.Err()
+				if sseConv != nil {
+					for _, l := range sseConv.Flush() {
+						fmt.Fprintf(w, "%s\n", l)
+					}
+				} else if responsesFilter != nil {
+					for _, l := range responsesFilter.Flush() {
+						fmt.Fprintf(w, "%s\n", l)
+					}
+				}
+				return false
+			}
+			line := scanner.Text()
+			usage.processLine(line) // 始终用上游格式解析，保证计费准确
 			if sseConv != nil {
-				for _, l := range sseConv.Flush() {
+				for _, l := range sseConv.Convert(line) {
 					fmt.Fprintf(w, "%s\n", l)
 				}
 			} else if responsesFilter != nil {
-				for _, l := range responsesFilter.Flush() {
+				for _, l := range responsesFilter.Convert(line) {
 					fmt.Fprintf(w, "%s\n", l)
 				}
+			} else {
+				fmt.Fprintf(w, "%s\n", line)
 			}
-			return false
-		}
-		line := scanner.Text()
-		usage.processLine(line) // 始终用上游格式解析，保证计费准确
-		if sseConv != nil {
-			for _, l := range sseConv.Convert(line) {
-				fmt.Fprintf(w, "%s\n", l)
-			}
-		} else if responsesFilter != nil {
-			for _, l := range responsesFilter.Convert(line) {
-				fmt.Fprintf(w, "%s\n", l)
-			}
-		} else {
-			fmt.Fprintf(w, "%s\n", line)
-		}
-		return true
-	})
+			return true
+		})
+
+	}
+	if streamCompleted && streamReadErr == nil {
+		c.Set(llmStreamCompletedKey, true)
+	}
 
 	enqueueLLMLogPatch(corrID, []string{"upstream_status"}, model.LLMLog{UpstreamStatus: http.StatusOK})
 
@@ -1055,5 +1065,8 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 	}
 	finalUsage := usage.normalized(origReqData)
 	performance.addUsage(finalUsage, time.Now())
+	if streamCompleted && finalUsage != nil {
+		finalUsage["stream_completed"] = true
+	}
 	llmSettle(c, ch, origReqData, finalUsage, totalHold, userID, channelID, apiKeyIDVal, poolKeyIDVal, corrID, userGroup, streamReadErr)
 }

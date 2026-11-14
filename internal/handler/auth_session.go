@@ -6,15 +6,22 @@ import (
 	"fanapi/internal/service"
 	"github.com/gin-gonic/gin"
 	"net/http"
+	"strconv"
+	"strings"
 )
 
 // POST /auth/send-code  — 公用：注册绑定邮箱 / 找回密码前发验证码
 func (h *AuthHandler) SendCode(c *gin.Context) {
 	var req struct {
-		Email string `json:"email" binding:"required,email"`
+		Email        string `json:"email" binding:"required,email"`
+		CaptchaToken string `json:"captcha_token"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": formatBindError(err)})
+		return
+	}
+	req.Email = strings.TrimSpace(req.Email)
+	if !h.requireCaptcha(c, "send_code", req.Email, req.CaptchaToken) {
 		return
 	}
 	if err := service.SendVerifyCode(c.Request.Context(), req.Email, h.mailer); err != nil {
@@ -70,9 +77,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 // 接受 {username, password} 或 {email, password}，兼容两种调用方
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req struct {
-		Username string `json:"username"`
-		Email    string `json:"email"`
-		Password string `json:"password" binding:"required"`
+		Username     string `json:"username"`
+		Email        string `json:"email"`
+		Password     string `json:"password" binding:"required"`
+		CaptchaToken string `json:"captcha_token"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -82,8 +90,17 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	if usernameOrEmail == "" {
 		usernameOrEmail = req.Email
 	}
+	c.Set("security_account", usernameOrEmail)
 	if usernameOrEmail == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入用户名或邮筱"})
+		return
+	}
+	familiar, checkErr := h.loginIsFamiliar(c, usernameOrEmail)
+	if checkErr != nil {
+		captchaError(c, checkErr)
+		return
+	}
+	if !familiar && !h.requireCaptcha(c, "login", usernameOrEmail, req.CaptchaToken) {
 		return
 	}
 	token, user, err := service.Login(c.Request.Context(), usernameOrEmail, req.Password, h.cfg)
@@ -91,7 +108,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
+	_ = h.captcha.Remember(c.Request.Context(), h.captchaIP(c), strconv.FormatInt(user.ID, 10), user.PasswordHash)
 	// 如果用户是被客服邀请的，返回该客服的微信二维码
+	c.Set("user_id", user.ID)
+	c.Set("role", user.Role)
+	c.Set("auth_type", "password")
 	var inviterQR string
 	if user.InviterID != nil {
 		inviter := &model.User{}
@@ -109,13 +130,19 @@ func (h *AuthHandler) Login(c *gin.Context) {
 // POST /auth/forgot-password — 向已绑定邮箱发送重置验证码（邮箱不存在时静默成功，防枚举）
 func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	var req struct {
-		Email string `json:"email" binding:"required,email"`
+		Email        string `json:"email" binding:"required,email"`
+		CaptchaToken string `json:"captcha_token"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	req.Email = strings.TrimSpace(req.Email)
+	if !h.requireCaptcha(c, "reset_email", req.Email, req.CaptchaToken) {
+		return
+	}
 	_ = service.SendPasswordResetCode(c.Request.Context(), req.Email, h.mailer)
+	c.Set("security_account", req.Email)
 	c.JSON(http.StatusOK, gin.H{"message": "如果该邮箱已绑定账号，重置验证码将发送至您的邮筱"})
 }
 
@@ -130,6 +157,7 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": formatBindError(err)})
 		return
 	}
+	c.Set("security_account", req.Email)
 	if err := service.ResetPasswordByEmail(c.Request.Context(), req.Email, req.Code, req.Password); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

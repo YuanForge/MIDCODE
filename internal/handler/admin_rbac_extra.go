@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fanapi/internal/db"
+	"fanapi/internal/middleware"
 	"fanapi/internal/model"
 	"github.com/gin-gonic/gin"
 	"net/http"
@@ -17,48 +18,12 @@ func GetAdminMe(c *gin.Context) {
 		return
 	}
 
-	// 查询该管理员是否有显式角色绑定
-	// 有绑定 → 使用绑定角色的权限集合（受限管理员）
-	// 无绑定 → 视为超级管理员，返回 ["*"]
-	var userRoles []model.AdminUserRole
-	db.Engine.Where("admin_id = ?", userID).Find(&userRoles)
-	if len(userRoles) == 0 {
-		// 未绑定任何角色 → 超级管理员
-		c.JSON(http.StatusOK, gin.H{
-			"user_id":     user.ID,
-			"username":    user.Username,
-			"email":       user.Email,
-			"role":        user.Role,
-			"permissions": []string{"*"},
-		})
+	permissions, err := middleware.AdminPermissions(user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "权限查询失败"})
 		return
 	}
-
-	roleIDs := make([]interface{}, 0, len(userRoles))
-	for _, ur := range userRoles {
-		roleIDs = append(roleIDs, ur.RoleID)
-	}
-
-	var roles []model.AdminRole
-	db.Engine.Table("admin_roles").In("id", roleIDs...).Cols("permissions").Find(&roles)
-
-	seen := map[string]bool{}
-	perms := []string{}
-	for _, r := range roles {
-		for _, p := range r.Permissions {
-			if !seen[p] {
-				seen[p] = true
-				perms = append(perms, p)
-			}
-		}
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"user_id":     user.ID,
-		"username":    user.Username,
-		"email":       user.Email,
-		"role":        user.Role,
-		"permissions": perms,
-	})
+	c.JSON(http.StatusOK, gin.H{"user_id": user.ID, "username": user.Username, "email": user.Email, "role": user.Role, "permissions": permissions})
 }
 
 // GET /admin/key-pools/:id/channels  获取引用该号池的所有渠道

@@ -803,7 +803,14 @@ func responsesUsageFromEvent(respObj map[string]interface{}) map[string]interfac
 		"completion_tokens": outputTokens,
 		"total_tokens":      totalTokens,
 	}
-	if details, ok := usageObj["input_token_details"].(map[string]interface{}); ok {
+	if write := protocol.OpenAICacheWriteTokens(usageObj); write > 0 {
+		usage["cache_creation_tokens"] = write
+	}
+	details, ok := usageObj["input_tokens_details"].(map[string]interface{})
+	if !ok {
+		details, ok = usageObj["input_token_details"].(map[string]interface{})
+	}
+	if ok {
 		if cached := int64FromAny(details["cached_tokens"]); cached > 0 {
 			usage["cache_read_tokens"] = cached
 		}

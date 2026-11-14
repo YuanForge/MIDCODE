@@ -26,24 +26,26 @@ func (h *AuthHandler) ListModels(c *gin.Context) {
 		PriceDisplay string `json:"price_display"`
 	}
 	type groupPriceInfo struct {
-		GroupID      int64          `json:"group_id"`
-		GroupCode    string         `json:"group_code"`
-		GroupName    string         `json:"group_name"`
-		PriceDisplay string         `json:"price_display"`
-		VIPPrices    []vipPriceInfo `json:"vip_prices"`
+		GroupID           int64          `json:"group_id"`
+		GroupCode         string         `json:"group_code"`
+		GroupName         string         `json:"group_name"`
+		PriceDisplay      string         `json:"price_display"`
+		VIPPrices         []vipPriceInfo `json:"vip_prices"`
+		GPTContextPricing bool           `json:"gpt_context_pricing"`
 	}
 	type channelInfo struct {
-		ID            int64            `json:"id"`
-		Name          string           `json:"name"`
-		RoutingModel  string           `json:"routing_model"`
-		ModelProvider string           `json:"model_provider"`
-		Type          string           `json:"type"`
-		Protocol      string           `json:"protocol"`
-		BillingType   string           `json:"billing_type"`
-		PriceDisplay  string           `json:"price_display"`
-		GroupPrices   []groupPriceInfo `json:"group_prices"`
-		IconURL       string           `json:"icon_url"`
-		Description   string           `json:"description"`
+		ID                int64            `json:"id"`
+		Name              string           `json:"name"`
+		RoutingModel      string           `json:"routing_model"`
+		ModelProvider     string           `json:"model_provider"`
+		Type              string           `json:"type"`
+		Protocol          string           `json:"protocol"`
+		BillingType       string           `json:"billing_type"`
+		PriceDisplay      string           `json:"price_display"`
+		GPTContextPricing bool             `json:"gpt_context_pricing"`
+		GroupPrices       []groupPriceInfo `json:"group_prices"`
+		IconURL           string           `json:"icon_url"`
+		Description       string           `json:"description"`
 	}
 
 	grouped, groupedErr := listGroupedModelChannels()
@@ -82,6 +84,8 @@ func (h *AuthHandler) ListModels(c *gin.Context) {
 		}
 		ch := item.Channel
 		basePrice := buildPriceDisplay(ch.BillingType, ch.BillingConfig)
+		contextPricing, _ := ch.BillingConfig["gpt_context_pricing"].(bool)
+		contextPricing = contextPricing && ch.BillingType == "token"
 		vipPrices := make([]vipPriceInfo, 0, len(vipGroups))
 		for _, vip := range vipGroups {
 			cfg := model.JSON(billingcalc.EffectivePricingConfig(map[string]interface{}(ch.BillingConfig), vip.Code))
@@ -89,11 +93,11 @@ func (h *AuthHandler) ListModels(c *gin.Context) {
 		}
 		itemInfo := byModel[modelName]
 		if itemInfo == nil {
-			itemInfo = &channelInfo{ID: ch.ID, Name: modelName, RoutingModel: modelName, ModelProvider: service.EffectiveModelProvider(ch), Type: ch.Type, Protocol: ch.Protocol, BillingType: ch.BillingType, PriceDisplay: basePrice, IconURL: ch.IconURL, Description: ch.Description}
+			itemInfo = &channelInfo{ID: ch.ID, Name: modelName, RoutingModel: modelName, ModelProvider: service.EffectiveModelProvider(ch), Type: ch.Type, Protocol: ch.Protocol, BillingType: ch.BillingType, PriceDisplay: basePrice, GPTContextPricing: contextPricing, IconURL: ch.IconURL, Description: ch.Description}
 			byModel[modelName] = itemInfo
 			modelOrder = append(modelOrder, modelName)
 		}
-		itemInfo.GroupPrices = append(itemInfo.GroupPrices, groupPriceInfo{GroupID: item.Group.ID, GroupCode: item.Group.Code, GroupName: item.Group.Name, PriceDisplay: basePrice, VIPPrices: vipPrices})
+		itemInfo.GroupPrices = append(itemInfo.GroupPrices, groupPriceInfo{GroupID: item.Group.ID, GroupCode: item.Group.Code, GroupName: item.Group.Name, PriceDisplay: basePrice, VIPPrices: vipPrices, GPTContextPricing: contextPricing})
 	}
 	result := make([]channelInfo, 0, len(modelOrder))
 	for _, modelName := range modelOrder {

@@ -108,6 +108,10 @@ func AdjustTransaction(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id 不能为空"})
 		return
 	}
+	if req.Credits >= 0 {
+		c.JSON(http.StatusForbidden, gin.H{"error": "禁止人工增加余额，请使用支付充值或卡密兑换"})
+		return
+	}
 	if len(req.Reason) < 5 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "reason 至少 5 个字符"})
 		return

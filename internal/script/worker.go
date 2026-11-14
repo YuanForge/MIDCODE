@@ -169,6 +169,12 @@ func execJob(ctx context.Context, job *model.TaskJob) *model.WorkerResult {
 		}
 		payload = mapped
 	}
+	// Some asynchronous providers cannot deduplicate a repeated submission.
+	// A network error or gateway timeout does not prove the task was rejected.
+	disableSubmitRetry, _ := payload["_disable_submit_retry"].(bool)
+	if disableSubmitRetry {
+		base.RetryChannelIDs = nil
+	}
 
 	// 记录上游请求（调试用），包含目标 URL 和请求头
 	upstreamReq := make(map[string]interface{})
@@ -176,7 +182,7 @@ func execJob(ctx context.Context, job *model.TaskJob) *model.WorkerResult {
 		upstreamReq[k] = v
 	}
 	// initialReq 只记录实际会进入请求体的字段（排除 _url/_method/_headers 等控制字段）
-	controlFields := map[string]bool{"_url": true, "_method": true, "_headers": true, "_body_type": true, "_form_fields": true, "_files": true}
+	controlFields := map[string]bool{"_url": true, "_method": true, "_headers": true, "_body_type": true, "_form_fields": true, "_files": true, "_disable_submit_retry": true}
 	initialReq := make(map[string]interface{})
 	for k, v := range payload {
 		if !controlFields[k] {
@@ -212,7 +218,13 @@ func execJob(ctx context.Context, job *model.TaskJob) *model.WorkerResult {
 	// 调用上游 HTTP
 	respData, statusCode, err := callUpstream(job, payload)
 	if err != nil {
+		if disableSubmitRetry {
+			return fail("upstream submission unconfirmed; do not automatically resubmit: " + err.Error())
+		}
 		return fail("upstream error: " + err.Error())
+	}
+	if disableSubmitRetry && (isPoolKeyExhaustStatus(statusCode) || isPoolKeyRetryStatus(statusCode)) {
+		return fail(fmt.Sprintf("upstream returned %d; automatic resubmission disabled", statusCode))
 	}
 
 	// 401/403/429: report rate_limited so server can rotate/sync the pool key and retry.
@@ -385,7 +397,7 @@ func callUpstream(job *model.TaskJob, payload map[string]interface{}) (map[strin
 	// 这些控制字段不会进入实际请求体。
 	bodyPayload := make(map[string]interface{}, len(payload))
 	for k, v := range payload {
-		if k == "_url" || k == "_method" || k == "_headers" || k == "_body_type" || k == "_form_fields" || k == "_files" {
+		if k == "_url" || k == "_method" || k == "_headers" || k == "_body_type" || k == "_form_fields" || k == "_files" || k == "_disable_submit_retry" {
 			continue
 		}
 		bodyPayload[k] = v
@@ -432,7 +444,11 @@ func callUpstream(job *model.TaskJob, payload map[string]interface{}) (map[strin
 	}
 
 	var lastErr error
-	for attempt := 1; attempt <= maxUpstreamNetworkAttempts; attempt++ {
+	maxAttempts := maxUpstreamNetworkAttempts
+	if disabled, _ := payload["_disable_submit_retry"].(bool); disabled {
+		maxAttempts = 1
+	}
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		req, err := http.NewRequest(method, targetURL, bytes.NewReader(body))
 		if err != nil {
 			return nil, 0, err
@@ -458,7 +474,7 @@ func callUpstream(job *model.TaskJob, payload map[string]interface{}) (map[strin
 		resp, err := client.Do(req)
 		if err != nil {
 			lastErr = err
-			if attempt < maxUpstreamNetworkAttempts && isRetryableUpstreamNetworkError(err) {
+			if attempt < maxAttempts && isRetryableUpstreamNetworkError(err) {
 				log.Printf("[worker] task %d: transient upstream network error on attempt %d/%d: %v", job.TaskID, attempt, maxUpstreamNetworkAttempts, err)
 				time.Sleep(time.Duration(attempt) * 350 * time.Millisecond)
 				continue

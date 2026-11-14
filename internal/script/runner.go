@@ -57,6 +57,12 @@ func RunMapRequest(scriptSrc string, input map[string]interface{}, poolKeyValue 
 	})
 }
 
+// RunNormalizeRequest validates and normalizes media parameters before billing.
+// Only channels explicitly opting in through billing_config use this hook.
+func RunNormalizeRequest(scriptSrc string, input map[string]interface{}) (map[string]interface{}, error) {
+	return runMapFn(scriptSrc, "normalizeRequest", input)
+}
+
 // RunMapResponse 执行 JS 脚本中的 mapResponse(input) 函数，将上游响应映射为平台标准格式。
 //
 // 脚本示例：

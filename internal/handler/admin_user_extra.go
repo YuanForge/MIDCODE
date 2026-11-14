@@ -122,7 +122,7 @@ func GetUserOperationLog(c *gin.Context) {
 
 	// 审计日志（操作人维度）
 	var audits []model.AdminAuditLog
-	engine.Where("resource_type='user' AND resource_id=?", id).
+	engine.Where("resource_type IN ('user', 'security') AND resource_id=?", id).
 		OrderBy("created_at DESC").Limit(50).Find(&audits)
 
 	c.JSON(http.StatusOK, gin.H{"transactions": ops, "audits": audits})

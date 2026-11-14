@@ -62,7 +62,7 @@ func CalcForUser(ch *model.Channel, req map[string]interface{}, userGroup string
 // CalcForUserWithTier calculates the pre-consume amount using the effective
 // user price for the requested service tier.
 func CalcForUserWithTier(ch *model.Channel, req map[string]interface{}, userGroup, tier string) (inputHold int64, outputHold int64, err error) {
-	cfg := EffectivePricingConfigForTier(map[string]interface{}(ch.BillingConfig), userGroup, tier)
+	cfg := EffectivePricingConfigForTier(ChannelContextConfig(ch), userGroup, tier)
 	data := map[string]map[string]interface{}{"request": req}
 
 	switch ch.BillingType {
@@ -414,7 +414,10 @@ func CalcActualCostForUserWithTier(ch *model.Channel, req, resp map[string]inter
 	if ch.BillingType != "token" {
 		return 0, nil
 	}
-	cfg := EffectivePricingConfigForTier(map[string]interface{}(ch.BillingConfig), userGroup, tier)
+	cfg := EffectivePricingConfigForTier(ChannelContextConfig(ch), userGroup, tier)
+	if getBool(cfg, "gpt_context_pricing") {
+		return calcGPTContextCost(cfg, resp, false)
+	}
 	data := map[string]map[string]interface{}{"request": req, "response": resp}
 
 	outputPricePer1m := getInt64Val(cfg, "output_price_per_1m_tokens")
@@ -519,6 +522,7 @@ func calcToken(cfg map[string]interface{}, data map[string]map[string]interface{
 		// 输入费延迟到响应结算，预扣时用消息内容长度估算，避免余额不足风险
 		// 输出费不预扣，结算时根据实际 token 数计算
 		inputEst := estimateTokensFromMessages(data["request"])
+		inputPricePer1m = getInt64Val(ContextPricingConfig(cfg, inputEst), "input_price_per_1m_tokens")
 		inputHold := int64(math.Ceil(float64(inputEst) * float64(inputPricePer1m) / 1000000))
 		return inputHold, 0, nil
 	}
@@ -530,6 +534,7 @@ func calcToken(cfg map[string]interface{}, data map[string]map[string]interface{
 		// 路径不存在时降级为消息估算
 		inputTokens = estimateTokensFromMessages(data["request"])
 	}
+	inputPricePer1m = getInt64Val(ContextPricingConfig(cfg, inputTokens), "input_price_per_1m_tokens")
 	inputCost := int64(math.Ceil(float64(inputTokens) * float64(inputPricePer1m) / 1000000))
 	return inputCost, 0, nil
 }
@@ -801,7 +806,7 @@ func CalcUpstreamCost(ch *model.Channel, req map[string]interface{}) (int64, err
 }
 
 func CalcUpstreamCostWithTier(ch *model.Channel, req map[string]interface{}, tier string) (int64, error) {
-	cfg := map[string]interface{}(ch.BillingConfig)
+	cfg := ChannelContextConfig(ch)
 	if NormalizeTier(tier) == TierFast {
 		cfg = applyFastRatio(cfg, costRatioKeys)
 	}
@@ -836,9 +841,12 @@ func CalcActualUpstreamCostWithTier(ch *model.Channel, req, resp map[string]inte
 	if ch.BillingType != "token" {
 		return 0, nil
 	}
-	cfg := map[string]interface{}(ch.BillingConfig)
+	cfg := ChannelContextConfig(ch)
 	if NormalizeTier(tier) == TierFast {
 		cfg = applyFastRatio(cfg, costRatioKeys)
+	}
+	if getBool(cfg, "gpt_context_pricing") {
+		return calcGPTContextCost(cfg, resp, true)
 	}
 	data := map[string]map[string]interface{}{"request": req, "response": resp}
 
@@ -907,6 +915,7 @@ func calcUpstreamToken(cfg map[string]interface{}, data map[string]map[string]in
 	// 输出进价也不预扣，与 calcToken 保持一致
 	if getBool(cfg, "input_from_response") {
 		inputEst := estimateTokensFromMessages(data["request"])
+		inputCostPer1m = getInt64Val(ContextPricingConfig(cfg, inputEst), "input_cost_per_1m_tokens")
 		inputHold := int64(math.Ceil(float64(inputEst) * float64(inputCostPer1m) / 1000000))
 		return inputHold, 0, nil
 	}
@@ -916,6 +925,7 @@ func calcUpstreamToken(cfg map[string]interface{}, data map[string]map[string]in
 	if err != nil {
 		inputTokens = estimateTokensFromMessages(data["request"])
 	}
+	inputCostPer1m = getInt64Val(ContextPricingConfig(cfg, inputTokens), "input_cost_per_1m_tokens")
 	inputCost := int64(math.Ceil(float64(inputTokens) * float64(inputCostPer1m) / 1000000))
 	return inputCost, 0, nil
 }

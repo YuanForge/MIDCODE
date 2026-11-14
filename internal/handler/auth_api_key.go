@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // POST /user/apikeys  (requires auth)
@@ -168,6 +169,7 @@ type apiKeySpendStats struct {
 }
 
 func loadAPIKeySpendStats(userID int64) (map[int64]apiKeySpendStats, error) {
+	todayStart, todayEnd := shanghaiDayRange(time.Now())
 	rows, err := db.Engine.QueryString(`
 		WITH corr_keys AS (
 			SELECT corr_id, MAX(api_key_id) AS api_key_id
@@ -191,7 +193,7 @@ func loadAPIKeySpendStats(userID int64) (map[int64]apiKeySpendStats, error) {
 				WHEN type = 'refund' THEN -credits
 				ELSE 0 END), 0) AS total_consumed,
 			COALESCE(SUM(CASE
-				WHEN created_at >= CURRENT_DATE THEN
+				WHEN created_at >= ? AND created_at < ? THEN
 					CASE
 						WHEN type IN (`+consumptionTransactionTypes+`) THEN credits
 						WHEN type = 'refund' THEN -credits
@@ -200,7 +202,7 @@ func loadAPIKeySpendStats(userID int64) (map[int64]apiKeySpendStats, error) {
 				ELSE 0 END), 0) AS today_consumed
 		FROM attributed
 		WHERE stats_api_key_id > 0
-		GROUP BY stats_api_key_id`, userID, userID)
+		GROUP BY stats_api_key_id`, userID, userID, todayStart, todayEnd)
 	if err != nil {
 		return nil, err
 	}

@@ -216,10 +216,16 @@ func loadAPIKeyGroupProviderStates(session *xorm.Session, keyID int64) ([]apiKey
 
 func loadRequestedGroupProviderStates(session *xorm.Session, groupIDs []int64) ([]apiKeyGroupProviderState, error) {
 	var rows []apiKeyGroupProviderState
-	if err := session.Table("model_groups").Alias("mg").
-		Select("mg.id AS group_id, mg.model_provider_id AS provider_id, mp.is_active AS provider_active, mg.is_active AS group_active").
-		Join("INNER", "model_providers mp", "mp.id = mg.model_provider_id").
-		In("mg.id", groupIDs).Find(&rows); err != nil {
+	if len(groupIDs) == 0 {
+		return rows, nil
+	}
+	args := make([]interface{}, len(groupIDs))
+	for i, id := range groupIDs {
+		args[i] = id
+	}
+	// Explicit PostgreSQL locking: xorm's ForUpdate helper only supports MySQL.
+	query := "SELECT mg.id AS group_id, mg.model_provider_id AS provider_id, mp.is_active AS provider_active, mg.is_active AS group_active FROM model_groups mg INNER JOIN model_providers mp ON mp.id = mg.model_provider_id WHERE mg.id IN (" + strings.TrimSuffix(strings.Repeat("?,", len(groupIDs)), ",") + ") ORDER BY mg.id FOR UPDATE OF mg"
+	if err := session.SQL(query, args...).Find(&rows); err != nil {
 		return nil, err
 	}
 	if len(rows) != len(groupIDs) {

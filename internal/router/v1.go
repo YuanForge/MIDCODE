@@ -24,6 +24,7 @@ func registerV1Routes(authed *gin.RouterGroup, deps Dependencies) {
 		v1.GET("/models", handler.OpenAIModels)
 		v1.POST("/chat/completions", handler.LLMProxy)
 		v1.POST("/messages", handler.ClaudeProxy)
+		v1.POST("/messages/count_tokens", handler.ClaudeCountTokens)
 		v1.POST("/responses", handler.ResponsesProxy)
 		v1.POST("/responses/compact", handler.ResponsesCompactProxy)
 		v1.GET("/responses", handler.ResponsesWSProxy)

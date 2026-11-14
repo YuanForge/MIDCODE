@@ -24,6 +24,7 @@ func registerUserRoutes(authed *gin.RouterGroup, deps Dependencies) {
 		user.POST("/credits/transfer", deps.Auth.TransferCredits)
 		user.GET("/credits/transfer-balance", deps.Auth.GetTransferBalance)
 		user.POST("/image-studio/handoff", deps.Auth.CreateImageStudioHandoff)
+		user.POST("/video-studio/handoff", deps.Auth.CreateVideoStudioHandoff)
 		user.GET("/balance", deps.Auth.GetBalance)
 		user.GET("/transactions", deps.Auth.GetTransactions)
 		user.GET("/stats", deps.Auth.GetUserStats)

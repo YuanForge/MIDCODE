@@ -38,6 +38,12 @@ func NewSSEConverter(sourceProto, clientProto string) SSEConverter {
 		return nil
 	}
 	switch {
+	case sourceProto == ProtocolOpenAI && clientProto == ProtocolGemini:
+		return &openAIToGeminiSSE{}
+	case sourceProto == ProtocolClaude && clientProto == ProtocolGemini:
+		return &chainedSSEConverter{first: &claudeToOpenAISSE{}, second: &openAIToGeminiSSE{}}
+	case sourceProto == ProtocolResponses && clientProto == ProtocolGemini:
+		return &chainedSSEConverter{first: &responsesToOpenAISSE{}, second: &openAIToGeminiSSE{}}
 	case sourceProto == ProtocolClaude && clientProto == ProtocolOpenAI:
 		return &claudeToOpenAISSE{}
 	case sourceProto == ProtocolGemini && clientProto == ProtocolOpenAI:

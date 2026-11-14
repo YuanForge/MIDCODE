@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 
 	_ "fanapi/docs"
 	"fanapi/internal/cache"
@@ -12,6 +14,7 @@ import (
 	"fanapi/internal/handler"
 	"fanapi/internal/middleware"
 	"fanapi/internal/mq"
+	"fanapi/internal/networkpolicy"
 	"fanapi/internal/router"
 	"fanapi/pkg/mailer"
 
@@ -37,8 +40,13 @@ func New() (*App, error) {
 		return nil, fmt.Errorf("config: %w", err)
 	}
 
-	if err := db.Init(&cfg.DB, true); err != nil {
+	// Rolling code-only deployments can reuse an already migrated schema.
+	// Sync2 may otherwise rebuild custom indexes while the old API is serving.
+	if err := db.Init(&cfg.DB, os.Getenv("FANAPI_SKIP_MIGRATIONS") != "1"); err != nil {
 		return nil, fmt.Errorf("db: %w", err)
+	}
+	if _, err := db.Engine.Exec("DELETE FROM api_key_model_groups WHERE group_id IN (SELECT id FROM model_groups WHERE is_active = false)"); err != nil {
+		return nil, fmt.Errorf("remove disabled model group bindings: %w", err)
 	}
 	log.Println("db connected")
 
@@ -77,6 +85,11 @@ func New() (*App, error) {
 	}
 
 	r := gin.New()
+	// Exact deployment proxy/CDN hops; never trust arbitrary forwarded headers.
+	if proxies := os.Getenv("FANAPI_CAPTCHA_TRUSTED_PROXIES"); proxies != "" {
+		cfg.Server.TrustedProxies = strings.Split(proxies, ",")
+	}
+	r.RemoteIPHeaders = []string{"X-Forwarded-For"}
 	if len(cfg.Server.TrustedProxies) > 0 {
 		if err := r.SetTrustedProxies(cfg.Server.TrustedProxies); err != nil {
 			return nil, fmt.Errorf("invalid trusted proxies: %w", err)
@@ -85,8 +98,21 @@ func New() (*App, error) {
 		return nil, fmt.Errorf("disable trusted proxies failed: %w", err)
 	}
 	r.Use(gin.Logger())
+	r.Use(middleware.SecurityAudit())
 	r.Use(gin.Recovery())
 	r.Use(middleware.RateLimit())
+	networkPolicy, err := networkpolicy.FromEnv()
+	if err != nil {
+		return nil, fmt.Errorf("website network policy: %w", err)
+	}
+	networkGuard, err := middleware.WebsiteNetwork(networkPolicy, cfg.Server.TrustedProxies)
+	if err != nil {
+		return nil, fmt.Errorf("website proxy configuration: %w", err)
+	}
+	r.Use(networkGuard)
+	if networkPolicy != nil {
+		log.Printf("website datacenter policy enabled: %d ranges, %d exceptions", networkPolicy.Deny.Count(), networkPolicy.Allow.Count())
+	}
 	r.Use(func(c *gin.Context) {
 		c.Set("app_config", cfg)
 		c.Next()

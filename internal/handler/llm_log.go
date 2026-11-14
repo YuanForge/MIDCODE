@@ -63,7 +63,7 @@ func resolveTokenPriceMetaForTier(ch *model.Channel, userGroup, tier string) tok
 		return tokenPriceMeta{}
 	}
 
-	cfg := model.JSON(billingcalc.EffectivePricingConfigForTier(map[string]interface{}(ch.BillingConfig), userGroup, tier))
+	cfg := model.JSON(billingcalc.EffectivePricingConfigForTier(billingcalc.ChannelContextConfig(ch), userGroup, tier))
 
 	return tokenPriceMeta{
 		InputPricePer1MTokens:  configInt64Ptr(cfg, "input_price_per_1m_tokens"),
@@ -110,7 +110,7 @@ func resolveLegacyGroupTokenPriceMeta(ch *model.Channel, userGroup string) token
 	if ch == nil || ch.BillingType != "token" || ch.BillingConfig == nil {
 		return tokenPriceMeta{}
 	}
-	cfg := model.JSON(applyGroupPricingMap(map[string]interface{}(ch.BillingConfig), userGroup))
+	cfg := model.JSON(applyGroupPricingMap(billingcalc.ChannelContextConfig(ch), userGroup))
 	return tokenPriceMeta{
 		InputPricePer1MTokens:  configInt64Ptr(cfg, "input_price_per_1m_tokens"),
 		OutputPricePer1MTokens: configInt64Ptr(cfg, "output_price_per_1m_tokens"),

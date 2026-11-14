@@ -61,13 +61,13 @@ func AdminPreviewCleanup(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"target":         target,
-		"target_label":   cfg.Label,
-		"retention_days": retentionDays,
+		"target":             target,
+		"target_label":       cfg.Label,
+		"retention_days":     retentionDays,
 		"min_retention_days": cfg.MinRetentionDays,
-		"cutoff":         cutoff.Format(time.RFC3339),
-		"count":          total,
-		"statuses":       cfg.Statuses,
+		"cutoff":             cutoff.Format(time.RFC3339),
+		"count":              total,
+		"statuses":           cfg.Statuses,
 	})
 }
 
@@ -116,17 +116,17 @@ func AdminRunCleanup(c *gin.Context) {
 
 	writeCleanupAudit(c, target, cfg, retentionDays, cutoff, before, deleted, remaining)
 	c.JSON(http.StatusOK, gin.H{
-		"ok":             true,
-		"target":         target,
-		"target_label":   cfg.Label,
-		"retention_days": retentionDays,
+		"ok":                 true,
+		"target":             target,
+		"target_label":       cfg.Label,
+		"retention_days":     retentionDays,
 		"min_retention_days": cfg.MinRetentionDays,
-		"cutoff":         cutoff.Format(time.RFC3339),
-		"matched":        before,
-		"deleted":        deleted,
-		"remaining":      remaining,
-		"has_more":       hasMore,
-		"statuses":       cfg.Statuses,
+		"cutoff":             cutoff.Format(time.RFC3339),
+		"matched":            before,
+		"deleted":            deleted,
+		"remaining":          remaining,
+		"has_more":           hasMore,
+		"statuses":           cfg.Statuses,
 	})
 }
 
@@ -234,7 +234,7 @@ func requireAdminPermission(c *gin.Context, permission string) bool {
 		return false
 	}
 	if len(userRoles) == 0 {
-		return true
+		return adminID == 1
 	}
 	roleIDs := make([]interface{}, 0, len(userRoles))
 	for _, ur := range userRoles {
@@ -271,15 +271,15 @@ func writeCleanupAudit(c *gin.Context, target string, cfg cleanupTargetConfig, r
 		ResourceType: target,
 		Summary:      fmt.Sprintf("清理%s：删除 %d 条，保留最近 %d 天", cfg.Label, deleted, retentionDays),
 		Detail: model.JSON{
-			"target":         target,
-			"target_label":   cfg.Label,
-			"statuses":       cfg.Statuses,
-			"retention_days": retentionDays,
+			"target":             target,
+			"target_label":       cfg.Label,
+			"statuses":           cfg.Statuses,
+			"retention_days":     retentionDays,
 			"min_retention_days": cfg.MinRetentionDays,
-			"cutoff":         cutoff.Format(time.RFC3339),
-			"matched":        matched,
-			"deleted":        deleted,
-			"remaining":      remaining,
+			"cutoff":             cutoff.Format(time.RFC3339),
+			"matched":            matched,
+			"deleted":            deleted,
+			"remaining":          remaining,
 		},
 		IP: c.ClientIP(),
 		UA: c.Request.UserAgent(),

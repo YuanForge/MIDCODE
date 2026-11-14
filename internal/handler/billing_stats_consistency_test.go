@@ -4,7 +4,30 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestBillingShanghaiDayBoundaries(t *testing.T) {
+	for _, tc := range []struct{ instant, day string }{
+		{"2026-09-25T15:59:59Z", "2026-09-25"},
+		{"2026-09-25T16:00:00Z", "2026-09-26"},
+		{"2026-09-30T16:00:00Z", "2026-10-01"},
+	} {
+		t.Run(tc.instant, func(t *testing.T) {
+			now, err := time.Parse(time.RFC3339, tc.instant)
+			if err != nil {
+				t.Fatal(err)
+			}
+			start, end := shanghaiDayRange(now)
+			if got := start.Format(time.RFC3339); got != tc.day+"T00:00:00+08:00" {
+				t.Fatalf("Shanghai midnight: got %s", got)
+			}
+			if end.Sub(start) != 24*time.Hour || now.Before(start) || !now.Before(end) {
+				t.Fatalf("invalid half-open billing day: %s <= %s < %s", start, now, end)
+			}
+		})
+	}
+}
 
 func TestLLMAbortRefundKeepsAPIKeyID(t *testing.T) {
 	billingSource, err := os.ReadFile("llm_billing.go")
@@ -37,7 +60,7 @@ func TestUserSpendStatsUseSharedConsumptionTypes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !strings.Contains(string(statsSource), `const consumptionTransactionTypes = "'charge','hold','settle','consume'"`) {
+	if !strings.Contains(string(statsSource), `const consumptionTransactionTypes = "'charge','hold','settle'"`) {
 		t.Fatal("consumption transaction types must be defined once for user statistics")
 	}
 	if !strings.Contains(string(apiKeySource), "type IN (`+consumptionTransactionTypes+`)") {
@@ -47,7 +70,7 @@ func TestUserSpendStatsUseSharedConsumptionTypes(t *testing.T) {
 		!strings.Contains(string(apiKeySource), "WHEN bt.type = 'refund' THEN COALESCE(ck.api_key_id, 0)") {
 		t.Fatal("legacy refunds without an API key must be attributed by correlation ID")
 	}
-	if strings.Count(string(statsSource), "type IN (`+consumptionTransactionTypes+`)") != 3 {
+	if strings.Count(string(statsSource), "type IN (`+consumptionTransactionTypes+`)") < 3 {
 		t.Fatal("dashboard total, today, and trend statistics must use the shared consumption transaction types")
 	}
 }

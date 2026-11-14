@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"sync"
+	"time"
 
 	"fanapi/internal/db"
 	"fanapi/internal/model"
@@ -93,24 +95,43 @@ func applyInviteFunds(row *model.InviteRebate, available int64, kind string, cre
 // a timer. Refund jobs must finish first. Failed/pending requests cannot pay out.
 const inviteRebateReadySQL = `r.pending = TRUE AND (
  r.paid_credits > 0 OR r.eligible_credits = 0 OR
- EXISTS (SELECT 1 FROM llm_logs l WHERE l.corr_id = r.corr_id AND l.user_id = r.user_id AND l.status = 'ok') OR
+ EXISTS (SELECT 1 FROM llm_logs l WHERE l.corr_id <> '' AND l.corr_id = r.corr_id AND l.user_id = r.user_id AND l.status = 'ok') OR
  EXISTS (SELECT 1 FROM tasks t WHERE t.corr_id = r.corr_id AND t.user_id = r.user_id AND t.status = 'done')
 ) AND NOT EXISTS (
  SELECT 1 FROM billing_refund_jobs f WHERE f.corr_id = r.corr_id AND f.user_id = r.user_id AND f.status <> 'done'
 )`
 
+// The cursor rotates past unfinished requests so they cannot starve later
+// completed requests. Both fields are protected by the non-blocking mutex.
+var inviteRebateWorker struct {
+	sync.Mutex
+	afterID int64
+}
+
 func ProcessInviteRebates(ctx context.Context, limit int) error {
-	if limit <= 0 {
+	if !inviteRebateWorker.TryLock() {
+		return nil
+	}
+	defer inviteRebateWorker.Unlock()
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if limit <= 0 || limit > 100 {
 		limit = 100
 	}
 	var rows []model.InviteRebate
-	if err := db.Engine.Context(ctx).SQL("SELECT r.* FROM invite_rebates r WHERE "+inviteRebateReadySQL+" ORDER BY r.id LIMIT ?", limit).Find(&rows); err != nil {
+	// Limit candidates BEFORE checking completion. Each readiness check below
+	// uses a single ledger ID and indexed request lookups, never a global join.
+	if err := db.Engine.Context(ctx).SQL("SELECT r.* FROM invite_rebates r WHERE r.pending = TRUE AND r.id > ? ORDER BY r.id LIMIT ?", inviteRebateWorker.afterID, limit).Find(&rows); err != nil {
 		return err
 	}
 	for _, row := range rows {
 		if err := settleInviteRebate(ctx, row.ID); err != nil {
 			return err
 		}
+		inviteRebateWorker.afterID = row.ID
+	}
+	if len(rows) < limit {
+		inviteRebateWorker.afterID = 0
 	}
 	return nil
 }

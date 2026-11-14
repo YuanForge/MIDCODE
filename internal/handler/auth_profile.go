@@ -61,6 +61,10 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
 		return
 	}
-	db.Engine.ID(userID).Cols("password_hash").Update(&model.User{PasswordHash: string(hash)})
+	affected, err := db.Engine.ID(userID).Cols("password_hash").Update(&model.User{PasswordHash: string(hash)})
+	if err != nil || affected != 1 {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码修改失败，请重试"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "密码修改成功"})
 }

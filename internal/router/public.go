@@ -23,6 +23,8 @@ func registerPublicRoutes(r *gin.Engine, deps Dependencies) {
 	r.GET("/public/channels", deps.Auth.ListModels)
 	r.GET("/public/settings", handler.GetPublicSettings)
 	r.POST("/public/image-studio/redeem", deps.Auth.RedeemImageStudioHandoff)
+	r.POST("/public/video-studio/redeem", deps.Auth.RedeemVideoStudioHandoff)
+	r.POST("/public/video-studio/session", deps.Auth.ValidateVideoStudioSession)
 
 	r.GET("/pay/epay/callback", handler.EpayCallback)
 	r.POST("/pay/epay/callback", handler.EpayCallback)

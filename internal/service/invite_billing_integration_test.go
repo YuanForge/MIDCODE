@@ -174,4 +174,68 @@ CREATE TABLE billing_refund_jobs (user_id BIGINT, corr_id TEXT, status TEXT);`)
 	exec("INSERT INTO llm_logs VALUES (2,'parallel-a','error'), (2,'parallel-b','pending')")
 	process()
 	checkUser(1, 0, 0, 0)
+
+	// Match production's partial index and a user with substantial log history.
+	// Readiness must use the request index, not scan that user's entire history.
+	exec("CREATE INDEX idx_llm_logs_corr_id_lookup ON llm_logs(corr_id) WHERE corr_id <> ''")
+	exec("CREATE INDEX idx_test_logs_user ON llm_logs(user_id)")
+	exec("INSERT INTO llm_logs SELECT 2, 'history-' || n, 'ok' FROM generate_series(1, 50000) n")
+	track(2, "indexed-ready", "charge", 1000)
+	exec("INSERT INTO llm_logs VALUES (2,'indexed-ready','ok')")
+	exec("ANALYZE llm_logs")
+	var ready model.InviteRebate
+	if _, err := engine.Where("corr_id = ?", "indexed-ready").Get(&ready); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := engine.QueryString("EXPLAIN SELECT r.* FROM invite_rebates r WHERE r.id = ? AND "+inviteRebateReadySQL+" FOR UPDATE OF r", ready.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fmt.Sprint(plan), "idx_llm_logs_corr_id_lookup") {
+		t.Fatalf("readiness does not use the partial request index: %v", plan)
+	}
+	// Small batches must advance past older unfinished requests and wrap around.
+	for i := 0; i < 10; i++ {
+		if err := ProcessInviteRebates(context.Background(), 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	checkUser(1, 50, 0, 0)
+	exec("UPDATE llm_logs SET status='ok' WHERE corr_id='parallel-a'")
+	for i := 0; i < 10; i++ {
+		if err := ProcessInviteRebates(context.Background(), 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var earlier model.InviteRebate
+	if _, err := engine.Where("corr_id = ?", "parallel-a").Get(&earlier); err != nil || earlier.Pending {
+		t.Fatalf("cursor did not revisit earlier completed request: pending=%v err=%v", earlier.Pending, err)
+	}
+
+	// A locked ledger must not pin the worker/connection indefinitely, and its
+	// reward must remain retryable after the lock is released.
+	track(2, "locked-ready", "charge", 1000)
+	exec("INSERT INTO llm_logs VALUES (2,'locked-ready','ok')")
+	locker := engine.NewSession()
+	defer locker.Close()
+	if err := locker.Begin(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := locker.Exec("UPDATE invite_rebates SET pending=TRUE WHERE corr_id='locked-ready'"); err != nil {
+		t.Fatal(err)
+	}
+	inviteRebateWorker.afterID = 0
+	started := time.Now()
+	err = ProcessInviteRebates(context.Background(), 100)
+	if err == nil || time.Since(started) > 5*time.Second {
+		t.Fatalf("locked batch did not time out promptly: elapsed=%s err=%v", time.Since(started), err)
+	}
+	if err := locker.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	process()
+	var locked model.InviteRebate
+	if _, err := engine.Where("corr_id = ?", "locked-ready").Get(&locked); err != nil || locked.Pending || locked.PaidCredits != 50 {
+		t.Fatalf("timed-out rebate not retried exactly once: %+v err=%v", locked, err)
+	}
 }

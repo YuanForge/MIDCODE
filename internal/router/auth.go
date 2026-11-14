@@ -5,6 +5,8 @@ import "github.com/gin-gonic/gin"
 func registerAuthRoutes(r *gin.Engine, deps Dependencies) {
 	auth := r.Group("/auth")
 	{
+		auth.POST("/captcha/new", deps.Auth.CaptchaNew)
+		auth.POST("/captcha/verify", deps.Auth.CaptchaVerify)
 		auth.POST("/send-code", deps.Auth.SendCode)
 		auth.POST("/register", deps.Auth.Register)
 		auth.POST("/login", deps.Auth.Login)

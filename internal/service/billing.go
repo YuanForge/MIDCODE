@@ -294,8 +294,8 @@ func WriteTx(ctx context.Context, userID, channelID, apiKeyID, poolKeyID int64, 
 		}
 	}
 
-	// Durable post-billing jobs are drained by the periodic worker.
-
+	// Durable post-billing jobs are drained by the periodic worker. Starting a
+	// global scan for every transaction creates unbounded concurrent DB work.
 	return nil
 }
 
@@ -767,7 +767,7 @@ func refundTxExists(sess interface {
 		return false, nil
 	}
 	rows, err := sess.QueryString(
-		"SELECT id FROM billing_transactions WHERE type = 'refund' AND metrics->>'refund_dedupe_key' = $1 LIMIT 1",
+		"SELECT id FROM billing_transactions WHERE type = 'refund' AND COALESCE(metrics->>'refund_dedupe_key', '') <> '' AND metrics->>'refund_dedupe_key' = $1 LIMIT 1",
 		dedupeKey,
 	)
 	if err != nil {
@@ -783,7 +783,7 @@ func billingTxExistsByDedupeKey(sess interface {
 		return false, nil
 	}
 	rows, err := sess.QueryString(
-		"SELECT id FROM billing_transactions WHERE type IN ('charge','hold','settle','recharge') AND metrics->>'billing_dedupe_key' = $1 LIMIT 1",
+		"SELECT id FROM billing_transactions WHERE type IN ('charge','hold','settle','recharge') AND COALESCE(metrics->>'billing_dedupe_key', '') <> '' AND metrics->>'billing_dedupe_key' = $1 LIMIT 1",
 		dedupeKey,
 	)
 	if err != nil {
@@ -1194,7 +1194,7 @@ func releaseBillingRefundJob(ctx context.Context, jobID int64, cause error) erro
 func processBillingRefundJob(ctx context.Context, job model.BillingRefundJob) error {
 	if job.DedupeKey != "" {
 		rows, err := db.Engine.Context(ctx).QueryString(
-			"SELECT id FROM billing_transactions WHERE type = 'refund' AND metrics->>'refund_dedupe_key' = $1 LIMIT 1",
+			"SELECT id FROM billing_transactions WHERE type = 'refund' AND COALESCE(metrics->>'refund_dedupe_key', '') <> '' AND metrics->>'refund_dedupe_key' = $1 LIMIT 1",
 			job.DedupeKey,
 		)
 		if err != nil {

@@ -16,7 +16,7 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
-const maxPoolKeyExhaustRetries = 8
+const maxPoolKeyAuthRetries = 8
 
 // StartResultProcessor 订阅当前 NATS namespace 的结果流。
 // 只应在 API 服务器进程中调用。
@@ -79,14 +79,14 @@ func handleResult(msg *nats.Msg) {
 		retryErrMsg := ""
 		if res.PoolKeyID <= 0 {
 			retryErrMsg = "pool key retry unavailable"
-		} else if len(triedKeyIDs) >= maxPoolKeyExhaustRetries {
-			retryErrMsg = "pool key exhausted after retry"
+		} else if len(triedKeyIDs) >= maxPoolKeyAuthRetries {
+			retryErrMsg = "pool key retry limit reached"
 		} else {
 			ch, err := service.GetChannel(ctx, res.ChannelID)
 			if err != nil {
 				retryErrMsg = "rate limited + channel load failed: " + err.Error()
 			} else {
-				newKey, err := service.MarkExhaustedAndRotate(ctx, ch.KeyPoolID, res.PoolKeyID, res.UserID)
+				newKey, err := service.RotatePoolKeySkipping(ctx, ch.KeyPoolID, res.UserID, triedKeyIDs)
 				if err == nil && newKey != nil {
 					job := &model.TaskJob{
 						TaskID:          res.TaskID,

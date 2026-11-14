@@ -109,10 +109,6 @@ func Init(cfg *config.DBConfig, migrate bool) error {
 		return err
 	}
 
-	// Disabled groups must not retain access bindings, including historical rows.
-	if _, err := Engine.Exec("DELETE FROM api_key_model_groups WHERE group_id IN (SELECT id FROM model_groups WHERE is_active = false)"); err != nil {
-		return fmt.Errorf("remove disabled model group bindings: %w", err)
-	}
 	if err := seedAdmin(); err != nil {
 		return err
 	}
@@ -341,6 +337,12 @@ func ensureIndexes() error {
 			`CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_billing_transactions_recharge_dedupe
 			ON billing_transactions ((metrics->>'billing_dedupe_key'))
 			WHERE type = 'recharge' AND COALESCE(metrics->>'billing_dedupe_key', '') != ''`,
+		},
+		{
+			"idx_billing_transactions_dedupe_lookup",
+			`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_billing_transactions_dedupe_lookup
+			ON billing_transactions ((metrics->>'billing_dedupe_key'))
+			WHERE type IN ('charge','hold','settle','recharge') AND COALESCE(metrics->>'billing_dedupe_key', '') != ''`,
 		},
 		{
 			"idx_llm_logs_user_id_desc",
