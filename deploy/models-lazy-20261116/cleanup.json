@@ -1,0 +1,7 @@
+{
+  "removed": [
+    "midcode-perf-v1095-api-1"
+  ],
+  "volumes_deleted": false,
+  "rollback_image": "fanapi-api:lazy-v1096-baseline"
+}
