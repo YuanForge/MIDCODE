@@ -18,6 +18,7 @@ The earlier blocked state above is superseded. Reconnected using the Windows cre
 - New container midcode-lazy-v1096-api-1 / fanapi-api:lazy-v1.0.96 at 8160, healthy with zero restarts. Binary and frontend index hashes match build.json. Public /models returned the new index-WUwg8Ra6.js entry.
 - Candidate and live scoped statistics tests passed: only requested model returned, invisible model 404, missing authentication 401. Live scoped test including denial/auth checks took 0.371 seconds; not a universal model latency guarantee.
 - Candidate/live/post-cleanup checks passed account/admin APIs, usage SQL agreement, CAPTCHA enforcement/issuance and disabled-group consistency. Image/video/unified studio handoffs and sessions passed; video cross-user access denied and test session revoked. No paid generation, real login or email delivery exercised.
-- Switched Caddy, compatibility 8154 forwarding and midcode-main alias. Continuity sampling launched before switch; recorded result is stored alongside deployment evidence.
+- Switched Caddy, compatibility 8154 forwarding and midcode-main alias. Continuity sampling launched before switch, but its result was not available at retrieval time and SSH later disconnected again; no complete continuity-sample claim is made. Live and post-cleanup functional checks passed before disconnection.
 - Removed only midcode-perf-v1095-api-1 after proxy, container and mounted-configuration dependency checks and connection drain; supervisor disabled. No data volumes deleted.
 - Rollback retained: fanapi-api:lazy-v1096-baseline, private predecessor configuration, Caddy and compatibility snapshots under /root/fanapi-lazy-v1.0.96. Run python3 /root/fanapi-lazy-v1.0.96/deploy.py rollback and repeat service verification.
+
