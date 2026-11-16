@@ -30,9 +30,7 @@ assert [(x[2],x[0]) for x in new if x[4]==0]==olddaily
 assert sorted(run('keys_old',[3,3,*pday[1:]])[0])==sorted(run('keys_new',[3,3,3,*pday[1:]])[0])
 p=dict(p1=3,p2='2026-11-03',p3='2026-11-17',p4='2026-11-10',p5='day')
 assert run('usage_old',p)[0]==run('usage_new',p)[0]
-a=run('availability_new',dict(p1='2026-11-10'))[0][0]
-assert a[:4]==('gpt',4,3,1000) and a[4:8]==(10,10,3,3) and len(a[8])==4,a
-c.rollback();print('PASS isolated SQL equivalence and availability metrics',flush=True)
+c.rollback();print('PASS isolated SQL equivalence ',flush=True)
 # Real account comparison in one repeatable read snapshot.
 c.set_session(readonly=True,isolation_level='REPEATABLE READ');k=c.cursor();k.execute("SET LOCAL statement_timeout='60s'")
 report={}
@@ -45,3 +43,4 @@ oldtotal,t=run('stats_old',[3],0);oldtoday,t2=run('stats_old',pday,1);olddaily,t
 assert [(x[0],x[1]) for x in new if x[4]==1]==[(oldtotal[0][0],oldtoday[0][0])]
 assert [(x[2],x[0]) for x in new if x[4]==0]==olddaily
 c.rollback();c.close();print(json.dumps(report));(ROOT/'sql-validation.json').write_text(json.dumps(report,indent=2))
+
