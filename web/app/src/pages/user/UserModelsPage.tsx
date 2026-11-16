@@ -111,6 +111,16 @@ function availabilityState(item: ModelAvailability | undefined, unavailable: boo
   return { label: '异常', tone: 'text-destructive' }
 }
 
+// This component mounts only inside an opened model detail sheet.
+function LazyModelAvailability({ model }: { model: string }) {
+  const { data, loading, error, reload } = useAsync(
+    () => userApi.getModelAvailability(model), { models: [] as ModelAvailability[] }, [model],
+  )
+  if (loading) return <div role="status" className="rounded-lg border p-4 text-sm text-muted-foreground">正在加载模型统计…</div>
+  if (error) return <div role="alert" className="rounded-lg border p-4 text-sm">统计暂不可用 <Button variant="outline" size="sm" onClick={reload}>重试统计</Button></div>
+  return <ModelAvailabilityPanel item={data.models.find(item => item.routing_model === model)} unavailable={false} />
+}
+
 function ModelAvailabilityPanel({ item, unavailable }: { item?: ModelAvailability; unavailable: boolean }) {
   const state = availabilityState(item, unavailable)
   const recent = item?.recent ?? []
@@ -404,21 +414,11 @@ export function UserModelsPage() {
   const { preferences } = modelPreferences
   const [collection, setCollection] = useState('all')
   const { data, loading, error, reload } = useAsync(async () => {
-    const [response, availability] = await Promise.all([
-      userApi.listChannels(),
-      userApi.getModelAvailability().catch(() => null),
-    ])
-    return {
-      channels: Array.isArray(response) ? response : response.channels ?? [],
-      availability: availability?.models ?? null,
-    }
-  }, { channels: [] as UserChannel[], availability: null as ModelAvailability[] | null })
+    const response = await userApi.listChannels()
+    return { channels: Array.isArray(response) ? response : response.channels ?? [] }
+  }, { channels: [] as UserChannel[] })
   const channels = data.channels
   const displayChannels = useMemo(() => channels.map(channelWithSortedPrices), [channels])
-  const availabilityByModel = useMemo(
-    () => new Map((data.availability ?? []).map((item) => [item.routing_model, item])),
-    [data.availability],
-  )
 
   const [filterType, setFilterType] = useState('')
   const [filterName, setFilterName] = useState('')
@@ -710,10 +710,6 @@ export function UserModelsPage() {
                 <p className="min-h-10 text-xs leading-5 text-muted-foreground line-clamp-2">
                   {channel.description || t('models.fallbackDescription')}
                 </p>
-                <ModelAvailabilityPanel
-                  item={availabilityByModel.get(channel.routing_model || channel.model || channel.name || '')}
-                  unavailable={data.availability === null}
-                />
                 <div className="mt-auto flex items-center justify-between gap-3 border-t pt-3 text-xs font-medium">
                   <div className="rounded bg-muted/40 px-2 py-1 font-mono text-muted-foreground">
                     {channel.routing_model || channel.model || channel.name}
@@ -734,6 +730,9 @@ export function UserModelsPage() {
             </SheetTitle>
           </SheetHeader>
           <div className="flex-1 space-y-6 bg-muted/10 p-6">
+            {docVisible && docMode === 'channel' && docChannel ? (
+              <LazyModelAvailability key={docChannel.routing_model || docChannel.name} model={docChannel.routing_model || docChannel.model || docChannel.name || ''} />
+            ) : null}
             {docMode === 'balance' ? (
               <div className="space-y-6">
                 <div className="flex items-center gap-4">

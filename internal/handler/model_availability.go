@@ -148,6 +148,14 @@ func GetModelAvailability(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if requested, supplied := c.GetQuery("model"); supplied {
+		requested = strings.TrimSpace(requested)
+		if _, ok := visible[requested]; !ok {
+			c.JSON(404, gin.H{"error": "模型不可用"})
+			return
+		}
+		visible = map[string]struct{}{requested: {}}
+	}
 	if len(visible) == 0 {
 		c.JSON(http.StatusOK, gin.H{"models": []modelAvailabilitySummary{}})
 		return

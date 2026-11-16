@@ -324,8 +324,8 @@ export const userApi = {
     http.delete<Record<string, unknown>>(`/user/apikeys/${id}`),
   listChannels: () =>
     http.get<{ channels?: UserChannel[] } | UserChannel[]>('/user/channels'),
-  getModelAvailability: () =>
-    http.get<{ models: ModelAvailability[] }>('/user/model-availability'),
+  getModelAvailability: (model?: string) =>
+    http.get<{ models: ModelAvailability[] }>('/user/model-availability', { params: model ? { model } : undefined }),
   redeemCard: (code: string) =>
     http.post<{ credits?: number; message?: string }>('/user/cards/redeem', { code }),
   getRedeemHistory: (page = 1, size = 20) =>
