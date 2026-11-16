@@ -16,7 +16,7 @@ import (
 // refunds (including later refunds), attributed to the original request time.
 // The same correlation ID's charge is counted once even if it has multiple logs.
 const usageStatsQuery = `WITH scoped AS MATERIALIZED (
- SELECT ll.id, ll.model, ll.corr_id, ll.status, ll.created_at, ll.usage,
+ SELECT ll.id, ll.model, ll.corr_id, ll.status, ll.created_at, jsonb_build_object('prompt_tokens',ll.usage->'prompt_tokens','cache_read_tokens',ll.usage->'cache_read_tokens','cache_creation_tokens',ll.usage->'cache_creation_tokens','completion_tokens',ll.usage->'completion_tokens') AS usage,
  COALESCE(c.protocol, 'openai') AS protocol,
  ROW_NUMBER() OVER (PARTITION BY NULLIF(ll.corr_id, '') ORDER BY ll.id DESC) AS corr_rank
  FROM llm_logs ll LEFT JOIN channels c ON c.id = ll.channel_id

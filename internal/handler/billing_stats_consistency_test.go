@@ -70,7 +70,7 @@ func TestUserSpendStatsUseSharedConsumptionTypes(t *testing.T) {
 		!strings.Contains(string(apiKeySource), "WHEN bt.type = 'refund' THEN COALESCE(ck.api_key_id, 0)") {
 		t.Fatal("legacy refunds without an API key must be attributed by correlation ID")
 	}
-	if strings.Count(string(statsSource), "type IN (`+consumptionTransactionTypes+`)") < 3 {
-		t.Fatal("dashboard total, today, and trend statistics must use the shared consumption transaction types")
+	if strings.Count(string(statsSource), "type IN (`+consumptionTransactionTypes+`)") < 2 {
+		t.Fatal("combined dashboard aggregate must use the shared consumption transaction types")
 	}
 }

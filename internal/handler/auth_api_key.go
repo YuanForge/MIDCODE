@@ -176,6 +176,7 @@ func loadAPIKeySpendStats(userID int64) (map[int64]apiKeySpendStats, error) {
 			FROM billing_transactions
 			WHERE user_id = ? AND api_key_id > 0 AND corr_id <> ''
 				AND type IN (`+consumptionTransactionTypes+`)
+            AND corr_id IN (SELECT corr_id FROM billing_transactions WHERE user_id = ? AND (api_key_id IS NULL OR api_key_id <= 0) AND type = 'refund' AND corr_id <> '')
 			GROUP BY corr_id
 		), attributed AS (
 			SELECT CASE
@@ -202,7 +203,7 @@ func loadAPIKeySpendStats(userID int64) (map[int64]apiKeySpendStats, error) {
 				ELSE 0 END), 0) AS today_consumed
 		FROM attributed
 		WHERE stats_api_key_id > 0
-		GROUP BY stats_api_key_id`, userID, userID, todayStart, todayEnd)
+		GROUP BY stats_api_key_id`, userID, userID, userID, todayStart, todayEnd)
 	if err != nil {
 		return nil, err
 	}

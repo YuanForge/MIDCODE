@@ -103,10 +103,18 @@ func aggregateModelAvailability(logs []modelAvailabilityLog, visible map[string]
 }
 
 func visibleModelNames(ctx *gin.Context) (map[string]struct{}, error) {
-	grouped, err := listGroupedModelChannels()
+	var grouped []struct {
+		GroupID      int64
+		RoutingModel string
+	}
+	err := db.Engine.SQL(`SELECT gm.group_id, gm.routing_model FROM model_group_models gm
+ JOIN model_groups g ON g.id=gm.group_id AND g.is_active=true
+ JOIN channels c ON c.id=gm.channel_id AND c.is_active=true
+ JOIN model_providers p ON p.id=c.model_provider_id AND p.is_active=true`).Find(&grouped)
 	if err != nil {
 		return nil, err
 	}
+
 	allowedGroups := map[int64]struct{}(nil)
 	if apiKeyID := ctx.GetInt64("api_key_id"); apiKeyID > 0 {
 		bindings, bindingErr := service.LoadAPIKeyModelGroupBindings(ctx.Request.Context(), apiKeyID)
@@ -121,7 +129,7 @@ func visibleModelNames(ctx *gin.Context) (map[string]struct{}, error) {
 	visible := make(map[string]struct{})
 	for _, item := range grouped {
 		if allowedGroups != nil {
-			if _, ok := allowedGroups[item.Group.ID]; !ok {
+			if _, ok := allowedGroups[item.GroupID]; !ok {
 				continue
 			}
 		}
@@ -154,41 +162,50 @@ func GetModelAvailability(c *gin.Context) {
 		placeholders = append(placeholders, "$"+strconv.Itoa(i+2))
 		args = append(args, name)
 	}
-	rows, err := db.Engine.DB().QueryContext(c.Request.Context(), `SELECT model,status,created_at,updated_at,jsonb_build_object('ttft',usage->'performance_ttft_ms','tps',usage->'performance_tps') FROM llm_logs WHERE created_at >= $1 AND model IN (`+strings.Join(placeholders, ",")+`) AND status <> 'pending' ORDER BY created_at ASC`, args...)
+	query := `WITH samples AS (
+ SELECT model,status,GREATEST(TRUNC(EXTRACT(EPOCH FROM (updated_at-created_at))*1000),0)::bigint AS latency,
+ CASE WHEN jsonb_typeof(usage->'performance_ttft_ms')='number' THEN (usage->>'performance_ttft_ms')::double precision END AS ttft,
+ CASE WHEN jsonb_typeof(usage->'performance_tps')='number' THEN (usage->>'performance_tps')::double precision END AS tps
+ FROM llm_logs WHERE created_at >= $1 AND model IN (` + strings.Join(placeholders, ",") + `) AND status <> 'pending'
+ ), summary AS (
+ SELECT model,COUNT(*) AS total,COUNT(*) FILTER(WHERE status='ok') AS success,
+ COALESCE(percentile_disc(0.5) WITHIN GROUP(ORDER BY latency) FILTER(WHERE status='ok'),0) AS latency,
+ percentile_cont(0.5) WITHIN GROUP(ORDER BY ttft) FILTER(WHERE status='ok' AND ttft>=0) AS ttft,
+ percentile_cont(0.5) WITHIN GROUP(ORDER BY tps) FILTER(WHERE status='ok' AND tps>0) AS tps,
+ COUNT(*) FILTER(WHERE status='ok' AND ttft>=0) AS ttft_samples,
+ COUNT(*) FILTER(WHERE status='ok' AND tps>0) AS tps_samples
+ FROM samples GROUP BY model
+ ) SELECT s.model,s.total,s.success,s.latency,s.ttft,s.tps,s.ttft_samples,s.tps_samples,
+ (SELECT jsonb_agg(jsonb_build_object('status',r.status,'latency_ms',r.latency,'created_at',r.created_at AT TIME ZONE 'UTC') ORDER BY r.created_at,r.id)
+ FROM (SELECT id,status,created_at,GREATEST(TRUNC(EXTRACT(EPOCH FROM (updated_at-created_at))*1000),0)::bigint AS latency
+ FROM llm_logs WHERE model=s.model AND created_at >= $1 AND status <> 'pending' ORDER BY created_at DESC,id DESC LIMIT 60) r)
+ FROM summary s ORDER BY s.model`
+	rows, err := db.Engine.DB().QueryContext(c.Request.Context(), query, args...)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(500, gin.H{"error": "模型统计暂时不可用"})
 		return
 	}
 	defer rows.Close()
-	logs := make([]modelAvailabilityLog, 0)
+	result := make([]modelAvailabilitySummary, 0)
 	for rows.Next() {
-		var log modelAvailabilityLog
-		var metrics []byte
-		if err := rows.Scan(&log.Model, &log.Status, &log.CreatedAt, &log.UpdatedAt, &metrics); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		var item modelAvailabilitySummary
+		var recent []byte
+		if err := rows.Scan(&item.RoutingModel, &item.Total, &item.Success, &item.P50LatencyMS, &item.TTFTMS, &item.TPS, &item.TTFTSamples, &item.TPSSamples, &recent); err != nil {
+			c.JSON(500, gin.H{"error": "模型统计读取失败"})
 			return
 		}
-		var performance struct {
-			TTFT *float64 `json:"ttft"`
-			TPS  *float64 `json:"tps"`
+		if err := json.Unmarshal(recent, &item.Recent); err != nil {
+			c.JSON(500, gin.H{"error": "模型统计读取失败"})
+			return
 		}
-		if json.Unmarshal(metrics, &performance) == nil {
-			log.TTFTMS = performance.TTFT
-			log.TPS = performance.TPS
-		}
-		logs = append(logs, log)
+		item.Availability = float64(item.Success) * 100 / float64(item.Total)
+		result = append(result, item)
 	}
-	if err := rows.Err(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if rows.Err() != nil {
+		c.JSON(500, gin.H{"error": "模型统计读取失败"})
 		return
 	}
-	aggregates := aggregateModelAvailability(logs, visible)
-	result := make([]modelAvailabilitySummary, 0, len(aggregates))
-	for _, name := range names {
-		if item, ok := aggregates[name]; ok {
-			result = append(result, item)
-		}
-	}
+
 	c.JSON(http.StatusOK, gin.H{"models": result})
 }
 
