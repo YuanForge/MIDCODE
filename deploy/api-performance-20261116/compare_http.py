@@ -22,4 +22,3 @@ for path in paths:
    else:assert obj==old,'Fixed-range usage response changed'
   report.append(dict(path=path.split('?')[0],port=port,seconds=elapsed,bytes=len(body)))
 print(json.dumps(report));(ROOT/'http-comparison.json').write_text(json.dumps(report,indent=2))
-

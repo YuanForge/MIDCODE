@@ -109,4 +109,3 @@ finally:conn.rollback();conn.close()
 checks.update({'disabled_bindings_remaining':0,'key_group_flags_consistent':True})
 save('live-verified.json' if a.live else 'candidate-verified.json',checks)
 print('GROUP_STATE_VERIFIED')
-

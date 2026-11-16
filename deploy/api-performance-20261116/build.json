@@ -1,8 +1,8 @@
 {
   "baseline_index_sha256": "18ebca703178a5940c558bc74d100d112be210770fab781e7fcd0e14132f488e",
-  "binary_sha256": "c5c1692237cd61281ab73c88dab207d235d7a23ab4ee03f17207865b29258057",
+  "binary_sha256": "147c6cb8445a40e7e7d71a2f0d5fa7eba9c7b79b2213f7911b4d92148d6227fe",
   "index_sha256": "18ebca703178a5940c558bc74d100d112be210770fab781e7fcd0e14132f488e",
-  "commit": "c903efe6ffc63d8ac194a9deeb476c727acfbe84",
+  "commit": "fc1764737803f7b4826c73e623bcc9ac6d443421",
   "build": "GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -buildvcs=false -trimpath ./cmd/server",
   "baseline_binary_sha256": "33f380359fabef1f1e68559cbfecb2edf61d2b0530289da1a1368597c7099904",
   "release": "v1.0.95"

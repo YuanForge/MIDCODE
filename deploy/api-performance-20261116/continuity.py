@@ -11,4 +11,3 @@ for _ in range(160):
     except Exception as e:rows.append({'error':type(e).__name__})
     time.sleep(0.5)
 Path('/root/fanapi-perf-v1.0.95/continuity.json').write_text(json.dumps(rows,indent=2))
-

@@ -57,4 +57,3 @@ for kind,port,data,path in items:
 report={'passed':True,'checks':checks,'paid_generation':False,'video_test_session_revoked':True}
 pathlib.Path('/root/fanapi-captcha-v1.0.92/studios-verified.json').write_text(json.dumps(report))
 print(json.dumps(report))
-

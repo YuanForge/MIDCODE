@@ -43,4 +43,3 @@ oldtotal,t=run('stats_old',[3],0);oldtoday,t2=run('stats_old',pday,1);olddaily,t
 assert [(x[0],x[1]) for x in new if x[4]==1]==[(oldtotal[0][0],oldtoday[0][0])]
 assert [(x[2],x[0]) for x in new if x[4]==0]==olddaily
 c.rollback();c.close();print(json.dumps(report));(ROOT/'sql-validation.json').write_text(json.dumps(report,indent=2))
-
