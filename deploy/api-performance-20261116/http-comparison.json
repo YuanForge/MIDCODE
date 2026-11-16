@@ -1,0 +1,56 @@
+[
+  {
+    "path": "/api/user/stats",
+    "port": 8158,
+    "seconds": 1.713,
+    "bytes": 161
+  },
+  {
+    "path": "/api/user/stats",
+    "port": 8159,
+    "seconds": 0.877,
+    "bytes": 161
+  },
+  {
+    "path": "/api/user/model-availability",
+    "port": 8158,
+    "seconds": 3.758,
+    "bytes": 74978
+  },
+  {
+    "path": "/api/user/model-availability",
+    "port": 8159,
+    "seconds": 3.585,
+    "bytes": 74977
+  },
+  {
+    "path": "/api/user/model-availability",
+    "port": 8159,
+    "seconds": 0.063,
+    "bytes": 74977
+  },
+  {
+    "path": "/api/user/stats/usage",
+    "port": 8158,
+    "seconds": 0.106,
+    "bytes": 3058
+  },
+  {
+    "path": "/api/user/stats/usage",
+    "port": 8159,
+    "seconds": 0.063,
+    "bytes": 3058
+  },
+  {
+    "path": "/api/user/apikeys",
+    "port": 8158,
+    "seconds": 0.948,
+    "bytes": 4813
+  },
+  {
+    "path": "/api/user/apikeys",
+    "port": 8159,
+    "seconds": 0.386,
+    "bytes": 4813
+  }
+]

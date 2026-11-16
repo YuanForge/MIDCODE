@@ -1,0 +1,7 @@
+{
+  "removed": [
+    "midcode-groups-v1094-api-1"
+  ],
+  "volumes_deleted": false,
+  "rollback_image": "fanapi-api:perf-v1095-baseline"
+}

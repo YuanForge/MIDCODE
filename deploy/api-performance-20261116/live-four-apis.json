@@ -1,0 +1,26 @@
+[
+  {
+    "path": "/api/user/stats",
+    "port": 443,
+    "seconds": 0.802,
+    "bytes": 161
+  },
+  {
+    "path": "/api/user/model-availability",
+    "port": 443,
+    "seconds": 3.58,
+    "bytes": 75032
+  },
+  {
+    "path": "/api/user/stats/usage",
+    "port": 443,
+    "seconds": 0.065,
+    "bytes": 3058
+  },
+  {
+    "path": "/api/user/apikeys",
+    "port": 443,
+    "seconds": 0.321,
+    "bytes": 4813
+  }
+]
