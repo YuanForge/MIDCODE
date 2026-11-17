@@ -57,6 +57,7 @@ const AdminExportsPage = lazy(() => import('@/pages/admin/AdminExportsPage').the
 const AdminAuditPage = lazy(() => import('@/pages/admin/AdminAuditPage').then((m) => ({ default: m.AdminAuditPage })))
 const AdminAlertsPage = lazy(() => import('@/pages/admin/AdminAlertsPage').then((m) => ({ default: m.AdminAlertsPage })))
 const AdminNotificationsPage = lazy(() => import('@/pages/admin/AdminNotificationsPage').then((m) => ({ default: m.AdminNotificationsPage })))
+const AdminBotKeysPage = lazy(() => import('@/pages/admin/AdminBotKeysPage').then((m) => ({ default: m.AdminBotKeysPage })))
 const AdminApiKeysPage = lazy(() => import('@/pages/admin/AdminApiKeysPage').then((m) => ({ default: m.AdminApiKeysPage })))
 const AdminRolesPage = lazy(() => import('@/pages/admin/AdminRolesPage').then((m) => ({ default: m.AdminRolesPage })))
 const AdminCouponsPage = lazy(() => import('@/pages/admin/AdminCouponsPage').then((m) => ({ default: m.AdminCouponsPage })))
@@ -221,6 +222,7 @@ export const router = createBrowserRouter([
           { path: 'audit', element: renderLazy(<AdminAuditPage />) },
           { path: 'alerts', element: renderLazy(<AdminAlertsPage />) },
           { path: 'notifications', element: renderLazy(<AdminNotificationsPage />) },
+          { path: 'bot-keys', element: renderLazy(<AdminBotKeysPage />) },
           { path: 'api-keys', element: renderLazy(<AdminApiKeysPage />) },
           { path: 'roles', element: renderLazy(<AdminRolesPage />) },
           { path: 'coupons', element: renderLazy(<AdminCouponsPage />) },

@@ -427,6 +427,7 @@ export const adminNavItems: NavItem[] = [
   { label: '渠道管理', href: '/admin/channels', icon: NetworkIcon },
   { label: '号池管理', href: '/admin/key-pools', icon: KeySquareIcon },
   { label: '用户管理', href: '/admin/users', icon: UsersIcon },
+  { label: '机器人密钥', href: '/admin/bot-keys', icon: KeySquareIcon },
   { label: 'API Key', href: '/admin/api-keys', icon: KeySquareIcon },
   { label: '账单流水', href: '/admin/billing', icon: WalletCardsIcon },
   { label: '充值订单', href: '/admin/payments', icon: CreditCardIcon },

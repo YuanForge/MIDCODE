@@ -13,6 +13,7 @@ const PERMISSION_REQUIRED: Record<string, string> = {
   '/admin/resellers':     'settings:vendor',
   // 用户
   '/admin/users':         'users:read',
+  '/admin/bot-keys': '*',
   '/admin/api-keys':      'users:read',
   // 账单 / 卡密 / 优惠券
   '/admin/billing':       'billing:read',
