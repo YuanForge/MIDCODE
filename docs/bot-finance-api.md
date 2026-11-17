@@ -38,3 +38,6 @@ Validation completed locally: Go application suite, date/money boundary tests in
 - Caddy, 8154 compatibility forwarding and midcode-main alias switched from 8160 to 8161. Removed only midcode-lazy-v1096-api-1 after no proxy/dependency references and connection drain; supervisor disabled, no data volumes deleted.
 - Baseline image fanapi-api:bot-v1097-baseline and private config snapshots retained under /root/fanapi-bot-v1.0.97. Rollback restores v1.0.96; retain additive key table, which old release does not expose.
 - Page continuity sampler launched before cutover; no full continuity assertion is made without collecting its completed result. Live and post-cleanup functional checks completed successfully.
+
+
+每日消费前十接口见 [机器人每日消费排行榜](bot-daily-leaderboard-api.md)，沿用同一专用密钥。

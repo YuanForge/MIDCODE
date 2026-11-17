@@ -1,0 +1,7 @@
+{
+  "removed": [
+    "midcode-frontend-v10101-api-1"
+  ],
+  "volumes_deleted": false,
+  "rollback_image": "fanapi-api:leaderboard-v10102-baseline"
+}

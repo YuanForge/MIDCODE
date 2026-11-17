@@ -1,0 +1,9 @@
+{
+  "auth_rejected": true,
+  "date_validation": true,
+  "empty_day": true,
+  "top10_python_ledger_crosscheck": true,
+  "verified_qq_only": true,
+  "today_query_seconds": 0.133,
+  "live": false
+}

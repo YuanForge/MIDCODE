@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "isolated_temporary_tables": true,
+  "top10_ties": true,
+  "day_boundaries": true,
+  "net_refunds": true,
+  "non_consumption_excluded": true,
+  "zero_negative_excluded": true,
+  "deleted_users_excluded": true,
+  "verified_qq_only": true
+}
