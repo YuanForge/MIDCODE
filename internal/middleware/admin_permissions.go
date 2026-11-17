@@ -59,6 +59,8 @@ func adminRoutePermission(method, path string) string {
 		return resource + ":write"
 	}
 	switch strings.Split(p, "/")[0] {
+	case "bot-keys":
+		return "root"
 	case "channels", "upstream-platforms":
 		return rw("channels")
 	case "key-pools", "pool-keys":

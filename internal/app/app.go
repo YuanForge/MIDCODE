@@ -48,6 +48,9 @@ func New() (*App, error) {
 	if _, err := db.Engine.Exec("DELETE FROM api_key_model_groups WHERE group_id IN (SELECT id FROM model_groups WHERE is_active = false)"); err != nil {
 		return nil, fmt.Errorf("remove disabled model group bindings: %w", err)
 	}
+	if err := db.EnsureBotKeyTable(); err != nil {
+		return nil, fmt.Errorf("bot key schema: %w", err)
+	}
 	log.Println("db connected")
 
 	if err := cache.Init(&cfg.Redis); err != nil {

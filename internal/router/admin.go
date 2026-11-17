@@ -11,6 +11,9 @@ func registerAdminRoutes(authed *gin.RouterGroup, deps Dependencies) {
 	admin := authed.Group("/admin")
 	admin.Use(middleware.Admin())
 	{
+		admin.POST("/bot-keys", handler.CreateBotKey)
+		admin.GET("/bot-keys", handler.ListBotKeys)
+		admin.DELETE("/bot-keys/:id", handler.RevokeBotKey)
 		admin.POST("/channels", handler.CreateChannel)
 		admin.GET("/channels", handler.ListChannels)
 		admin.GET("/channels/:id/token-stats", handler.GetAdminChannelTokenStats)

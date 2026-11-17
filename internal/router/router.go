@@ -16,6 +16,7 @@ type Dependencies struct {
 }
 
 func Register(r *gin.Engine, deps Dependencies) {
+	r.GET("/v1/bot/users/:id/financial-summary", handler.BotUserFinancialSummary)
 	registerPublicRoutes(r, deps)
 	registerAuthRoutes(r, deps)
 	registerVendorRoutes(r, deps)

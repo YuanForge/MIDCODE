@@ -1,0 +1,171 @@
+package handler
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"fanapi/internal/db"
+	"fanapi/internal/service"
+	"fmt"
+	"github.com/gin-gonic/gin"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// Raw bot keys are returned once; only SHA-256 digests are persisted.
+func botKeyHash(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
+func botKeyAdmin(c *gin.Context) bool {
+	if c.GetString("auth_type") != "jwt" || c.GetInt64("user_id") != 1 {
+		c.JSON(403, gin.H{"error": "仅主管理员登录会话可管理机器人密钥"})
+		return false
+	}
+	return true
+}
+func CreateBotKey(c *gin.Context) {
+	if !botKeyAdmin(c) {
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	var req struct {
+		Name string `json:"name" binding:"required,max=64"`
+	}
+	if c.ShouldBindJSON(&req) != nil || strings.TrimSpace(req.Name) == "" {
+		c.JSON(400, gin.H{"error": "请提供密钥名称（最多64字符）"})
+		return
+	}
+	secret := make([]byte, 32)
+	if _, err := rand.Read(secret); err != nil {
+		c.JSON(500, gin.H{"error": "密钥创建失败"})
+		return
+	}
+	raw := "bot_" + hex.EncodeToString(secret)
+	var id int64
+	err := db.Engine.DB().QueryRowContext(c.Request.Context(), `INSERT INTO bot_api_keys(name,key_hash,created_by) VALUES($1,$2,$3) RETURNING id`, strings.TrimSpace(req.Name), botKeyHash(raw), c.GetInt64("user_id")).Scan(&id)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "密钥创建失败"})
+		return
+	}
+	c.JSON(201, gin.H{"id": id, "name": strings.TrimSpace(req.Name), "key": raw, "scope": "users:financial-summary:read", "note": "密钥仅显示一次，请妥善保存"})
+}
+func ListBotKeys(c *gin.Context) {
+	if !botKeyAdmin(c) {
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	rows, err := db.Engine.QueryString(`SELECT id,name,is_active,created_by,created_at FROM bot_api_keys ORDER BY id DESC`)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "密钥列表读取失败"})
+		return
+	}
+	c.JSON(200, gin.H{"keys": rows})
+}
+func RevokeBotKey(c *gin.Context) {
+	if !botKeyAdmin(c) {
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		c.JSON(400, gin.H{"error": "无效密钥ID"})
+		return
+	}
+	res, err := db.Engine.DB().ExecContext(c.Request.Context(), `UPDATE bot_api_keys SET is_active=false WHERE id=$1`, id)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "撤销失败"})
+		return
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		c.JSON(404, gin.H{"error": "密钥不存在"})
+		return
+	}
+	c.Status(204)
+}
+func botDateRange(now time.Time) (time.Time, time.Time, time.Time) {
+	loc := time.FixedZone("Asia/Shanghai", 8*3600)
+	n := now.In(loc)
+	end := time.Date(n.Year(), n.Month(), n.Day(), 0, 0, 0, 0, loc)
+	return end.AddDate(0, 0, -7), end.AddDate(0, 0, -1), end
+}
+func botCNY(n int64) string {
+	sign := ""
+	if n < 0 {
+		sign = "-"
+	}
+	whole := n / 1000000
+	part := n % 1000000
+	if whole < 0 {
+		whole = -whole
+	}
+	if part < 0 {
+		part = -part
+	}
+	return fmt.Sprintf("%s%d.%06d", sign, whole, part)
+}
+
+const botSpendQuery = `WITH grouped AS (
+ SELECT COALESCE(corr_id,'tx:'||id::text) AS request_key,
+ COALESCE(MIN(created_at) FILTER(WHERE type IN ('charge','hold','settle')),MIN(created_at)) AS usage_at,
+ SUM(CASE WHEN type IN ('charge','hold','settle') THEN credits WHEN type='refund' THEN -credits ELSE 0 END) AS credits
+ FROM billing_transactions WHERE user_id=$1 GROUP BY COALESCE(corr_id,'tx:'||id::text)
+) SELECT COALESCE(SUM(credits) FILTER(WHERE usage_at >= $2 AND usage_at < $4),0),
+ COALESCE(SUM(credits) FILTER(WHERE usage_at >= $3 AND usage_at < $4),0) FROM grouped`
+
+func BotUserFinancialSummary(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	raw := strings.TrimSpace(c.GetHeader("X-API-Key"))
+	if raw == "" {
+		raw = strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
+	}
+	if !strings.HasPrefix(raw, "bot_") || len(raw) != 68 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "需要有效的机器人专用密钥"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+	var allowed bool
+	err := db.Engine.DB().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM bot_api_keys k JOIN users u ON u.id=k.created_by WHERE k.key_hash=$1 AND k.is_active AND u.is_active AND u.role='admin')`, botKeyHash(raw)).Scan(&allowed)
+	if err != nil {
+		c.JSON(503, gin.H{"error": "认证服务暂不可用"})
+		return
+	}
+	if !allowed {
+		c.JSON(401, gin.H{"error": "机器人密钥无效或已撤销"})
+		return
+	}
+	userID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || userID <= 0 {
+		c.JSON(400, gin.H{"error": "用户ID必须为正整数"})
+		return
+	}
+	var exists bool
+	err = db.Engine.DB().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)`, userID).Scan(&exists)
+	if err != nil {
+		c.JSON(503, gin.H{"error": "查询暂不可用"})
+		return
+	}
+	if !exists {
+		c.JSON(404, gin.H{"error": "用户不存在"})
+		return
+	}
+	now := time.Now()
+	start, yesterday, end := botDateRange(now)
+	wall := func(t time.Time) string { return t.Format("2006-01-02 15:04:05") }
+	var week, day int64
+	err = db.Engine.DB().QueryRowContext(ctx, botSpendQuery, userID, wall(start), wall(yesterday), wall(end)).Scan(&week, &day)
+	if err != nil {
+		c.JSON(503, gin.H{"error": "消费统计暂不可用，请稍后重试"})
+		return
+	}
+	balance, err := service.GetBalance(ctx, userID)
+	if err != nil {
+		c.JSON(503, gin.H{"error": "余额读取失败"})
+		return
+	}
+	c.JSON(200, gin.H{"user_id": userID, "currency": "CNY", "timezone": "Asia/Shanghai", "balance_cny": botCNY(balance), "yesterday": gin.H{"start_at": yesterday, "end_at": end, "consumed_cny": botCNY(day)}, "last_7_days": gin.H{"start_at": start, "end_at": end, "consumed_cny": botCNY(week)}, "as_of": now.UTC()})
+}
