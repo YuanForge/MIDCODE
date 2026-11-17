@@ -17,3 +17,14 @@ Root administrator login session only:
 The server creates additive bot_api_keys schema at startup, including deployments that skip unrelated migrations. No existing table/data changes. No frontend key-management page is added in this release; creation/revocation uses the authenticated admin API. Do not store the returned raw key in logs or source control.
 
 Release v1.0.97. Build and deployment evidence in deploy/bot-finance-20261117. Candidate port 8161; v1.0.96 predecessor port 8160. Rollback via /root/fanapi-bot-v1.0.97/deploy.py rollback; preserve the additive key table and baseline image/private config. Final deployment results appended after checks.
+
+## Robot call example
+
+```sh
+curl 'https://midcode.cc/api/v1/bot/users/123/financial-summary' \
+  -H "Authorization: Bearer $MIDCODE_BOT_KEY"
+```
+
+To create a key, root admin sends POST /api/admin/bot-keys with its login bearer token and JSON {"name":"balance-robot"}; save the returned key securely. The robot uses that bot key, never the administrator login token. Key revocation does not affect ordinary inference keys.
+
+Validation completed locally: Go application suite, date/money boundary tests including minimum int64, rejecting ordinary API keys/JWT before querying data, and rejecting non-login sessions for key administration. Real-server verify_bot.py creates a verification-only key, compares statistics against independent Python aggregation, and revokes it in finally; must pass before cutover. No long-lived robot key is automatically issued.
