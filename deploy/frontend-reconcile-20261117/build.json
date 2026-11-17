@@ -1,0 +1,10 @@
+{
+  "release": "v1.0.101",
+  "commit": "ab351fe76f80098609b27f93f8d8a69b98a1447c",
+  "binary_source_commit": "4b5fd8f2b262bf313789631a8cbb5d5445e6330d",
+  "binary_sha256": "7ffd912fb95faf584c08c417ed36192f079bf1a98e369f2302fe5824ed8f7145",
+  "baseline_binary_sha256": "7ffd912fb95faf584c08c417ed36192f079bf1a98e369f2302fe5824ed8f7145",
+  "baseline_index_sha256": "c80ab062adaa986c77e95c440750d1b595288a9505cdc33f950764d50bcf8448",
+  "index_sha256": "ef49fe7662247b95a7b3d881e1807efb07d488bae402f88a93cd815716a5053a",
+  "frontend_only": true
+}
