@@ -51,6 +51,9 @@ func New() (*App, error) {
 	if err := db.EnsureBotKeyTable(); err != nil {
 		return nil, fmt.Errorf("bot key schema: %w", err)
 	}
+	if err := db.EnsureQQBindingTable(); err != nil {
+		return nil, fmt.Errorf("QQ binding schema: %w", err)
+	}
 	log.Println("db connected")
 
 	if err := cache.Init(&cfg.Redis); err != nil {

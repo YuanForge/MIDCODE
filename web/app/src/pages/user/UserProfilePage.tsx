@@ -1,3 +1,4 @@
+import { QQBindingCard } from './QQBindingCard'
 import { CreditTransferCard } from './CreditTransferCard'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
@@ -231,6 +232,7 @@ export function UserProfilePage() {
           </div>
       </PageSection>
 
+      <QQBindingCard />
       <CreditTransferCard userId={profile?.id} onSuccess={reloadBalance} />
       <PageSection title="邀请关系" description="注册七天内且尚未绑定上级时，可以补填邀请码。">
         <div className="space-y-4">
@@ -347,4 +349,5 @@ export function UserProfilePage() {
     </>
   )
 }
+
 

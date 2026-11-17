@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fanapi/internal/db"
 	"fanapi/internal/service"
 	"fmt"
@@ -138,11 +140,29 @@ func BotUserFinancialSummary(c *gin.Context) {
 		c.JSON(401, gin.H{"error": "机器人密钥无效或已撤销"})
 		return
 	}
-	userID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil || userID <= 0 {
-		c.JSON(400, gin.H{"error": "用户ID必须为正整数"})
-		return
+	var userID int64
+	if qq := c.Param("qq"); qq != "" {
+		if !validQQ(qq) {
+			c.JSON(400, gin.H{"error": "QQ号码格式错误"})
+			return
+		}
+		err = db.Engine.DB().QueryRowContext(ctx, `SELECT user_id FROM user_qq_bindings WHERE qq=$1`, qq).Scan(&userID)
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(404, gin.H{"error": "该QQ尚未绑定账号"})
+			return
+		}
+		if err != nil {
+			c.JSON(503, gin.H{"error": "QQ查询暂不可用"})
+			return
+		}
+	} else {
+		userID, err = strconv.ParseInt(c.Param("id"), 10, 64)
+		if err != nil || userID <= 0 {
+			c.JSON(400, gin.H{"error": "用户ID必须为正整数"})
+			return
+		}
 	}
+
 	var exists bool
 	err = db.Engine.DB().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)`, userID).Scan(&exists)
 	if err != nil {
