@@ -1,0 +1,8 @@
+{
+  "index_sha256": "d591a22638d7a1005213ba2ddbb7a1361384ce16e8b18ce07783cdb621e897c3",
+  "baseline_binary_sha256": "b23e5a7de354bd28d4e769147362b7734d044beb9dde6b829513ff15769a0974",
+  "baseline_index_sha256": "876ba11098c2a486d8a544632ef4b2d691efbd7ca62684905b690035b85b08b0",
+  "commit": "0fe06fa27cd282168ac0ff247fb5c4bb18a16ba8",
+  "release": "v1.0.99",
+  "binary_sha256": "928b6c7dfaed6af71a79c1b169097396da9a71446c98e56c109353cada481a8b"
+}

@@ -11,3 +11,9 @@ Additive table user_qq_bindings(user_id primary key, qq unique, updated_at), for
 Validation: Go application suite and QQ validation/API-key denial tests pass; frontend TypeScript/Vite build passes. Playwright on installed Edge (Browser plugin unavailable) tests bind, modify, duplicate conflict, cancel/confirm unbind and mobile screenshot without page runtime errors. Real candidate/live script uses two synthetic accounts, verifies database uniqueness and robot mapping, deletes only those accounts/bindings in finally and revokes verification key. No real user's binding changed.
 
 Deployment tooling: /root/fanapi-qq-v1.0.99/deploy.py, candidate 8163, predecessor 8162. Build hashes and final evidence under deploy/qq-binding-20261117. Rollback retains baseline image/config without deleting volumes.
+
+## Release status
+
+Source commit 0fe06fa; build manifest records exact backend/frontend hashes. Local tests/build/browser verification completed. Code and v1.0.99 tag are published with this record.
+
+Deployment NOT performed: preflight SSH and subsequent retries failed before authentication (Error reading SSH protocol banner). No successful remote upload/candidate creation/switch/schema migration/production QQ test or old-container cleanup in this task. Last verified running version from preceding task is v1.0.98; current running state not re-established. Real database uniqueness and bot lookup verification remains pending and must pass before switch. No real QQ binding or customer data changed. Rollback script is prepared but was not needed.
