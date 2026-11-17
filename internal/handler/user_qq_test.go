@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestQQValidation(t *testing.T) {
@@ -25,6 +26,34 @@ func TestQQRejectsAPIKeys(t *testing.T) {
 		c.Set("auth_type", "apikey")
 		handler(c)
 		if w.Code != 403 {
+			t.Fatal(w.Code)
+		}
+	}
+}
+
+func TestQQBindingStates(t *testing.T) {
+	now := time.Now()
+	for _, tc := range []struct {
+		qq       string
+		verified bool
+		expires  time.Time
+		want     string
+	}{
+		{"", false, time.Time{}, "unbound"}, {"12345", false, now.Add(time.Minute), "pending"}, {"12345", false, now, "expired"}, {"12345", true, time.Time{}, "bound"},
+	} {
+		if got := qqBindingStatus(tc.qq, tc.verified, tc.expires, now); got != tc.want {
+			t.Fatal(got, tc.want)
+		}
+	}
+}
+func TestQQConfirmRejectsOrdinaryCredentials(t *testing.T) {
+	for _, key := range []string{"", "sk-ordinary", "jwt-token"} {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("POST", "/v1/bot/qq/confirm-binding", nil)
+		c.Request.Header.Set("Authorization", "Bearer "+key)
+		ConfirmQQBinding(c)
+		if w.Code != 401 {
 			t.Fatal(w.Code)
 		}
 	}

@@ -6,4 +6,10 @@ const qqBindingSchema = `CREATE TABLE IF NOT EXISTS user_qq_bindings (
  updated_at timestamptz NOT NULL DEFAULT now()
 )`
 
-func EnsureQQBindingTable() error { _, err := Engine.Exec(qqBindingSchema); return err }
+func EnsureQQBindingTable() error {
+	if _, err := Engine.Exec(qqBindingSchema); err != nil {
+		return err
+	}
+	_, err := Engine.Exec(`ALTER TABLE user_qq_bindings ADD COLUMN IF NOT EXISTS verified_at timestamptz, ADD COLUMN IF NOT EXISTS verified_group_id varchar(20)`)
+	return err
+}

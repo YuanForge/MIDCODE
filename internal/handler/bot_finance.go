@@ -118,7 +118,7 @@ const botSpendQuery = `WITH grouped AS (
 ) SELECT COALESCE(SUM(credits) FILTER(WHERE usage_at >= $2 AND usage_at < $4),0),
  COALESCE(SUM(credits) FILTER(WHERE usage_at >= $3 AND usage_at < $4),0) FROM grouped`
 
-func BotUserFinancialSummary(c *gin.Context) {
+func authorizeBot(c *gin.Context, ctx context.Context) bool {
 	c.Header("Cache-Control", "no-store")
 	raw := strings.TrimSpace(c.GetHeader("X-API-Key"))
 	if raw == "" {
@@ -126,27 +126,35 @@ func BotUserFinancialSummary(c *gin.Context) {
 	}
 	if !strings.HasPrefix(raw, "bot_") || len(raw) != 68 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "需要有效的机器人专用密钥"})
-		return
+		return false
 	}
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
-	defer cancel()
 	var allowed bool
 	err := db.Engine.DB().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM bot_api_keys k JOIN users u ON u.id=k.created_by WHERE k.key_hash=$1 AND k.is_active AND u.is_active AND u.role='admin')`, botKeyHash(raw)).Scan(&allowed)
 	if err != nil {
 		c.JSON(503, gin.H{"error": "认证服务暂不可用"})
-		return
+		return false
 	}
 	if !allowed {
 		c.JSON(401, gin.H{"error": "机器人密钥无效或已撤销"})
+		return false
+	}
+	return true
+}
+
+func BotUserFinancialSummary(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+	if !authorizeBot(c, ctx) {
 		return
 	}
+	var err error
 	var userID int64
 	if qq := c.Param("qq"); qq != "" {
 		if !validQQ(qq) {
 			c.JSON(400, gin.H{"error": "QQ号码格式错误"})
 			return
 		}
-		err = db.Engine.DB().QueryRowContext(ctx, `SELECT user_id FROM user_qq_bindings WHERE qq=$1`, qq).Scan(&userID)
+		err = db.Engine.DB().QueryRowContext(ctx, `SELECT user_id FROM user_qq_bindings WHERE qq=$1 AND verified_at IS NOT NULL AND verified_group_id='767281836'`, qq).Scan(&userID)
 		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(404, gin.H{"error": "该QQ尚未绑定账号"})
 			return
