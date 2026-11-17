@@ -206,3 +206,22 @@
 | `web/app/src/pages/user/cc-switch-button.css` | 相同：纳入统一基线 | `171705bfa4400a1d9b7b8fd0d54d25c30cd19b8c148dd5ac6bf88ecfd8b03a35` |
 | `web/app/tests/unit/billing-adjustment.test.mjs` | 未采用：仓库外归档 | `df1bcf1fafdc898b887afe0f1496b72a3db8ca0629d7de4ebcfcd2febd5b3556` |
 | `web/app/tests/unit/playground-pricing.test.mjs` | 未采用：仓库外归档 | `e0e5d0b2fa57e2af8d5338e3aa32e6af81d203b3338d3ff4fde2fb2a4461cb54` |
+
+
+## 发布完成（2026-11-17 17:13，北京时间）
+
+- 应用源码提交 `ab351fe76f80098609b27f93f8d8a69b98a1447c`。已推送不可变标签 `v1.0.101`，指向含构建清单的 `dd8efc763ad0b71a4c4c14bd134e000f197fe184`。main 与发布分支均已推送；本记录为发布后的文档提交，不移动标签。
+- 在干净且已推送的源码上构建前端，`scripts/release_preflight.py --verify-remote` 通过；标签推送后 `--verify-remote --tag v1.0.101` 通过。脏工作区拒绝路径也已实际验证。
+- 前端 TypeScript/Vite 构建及修改文件 ESLint 通过。Browser plugin not available，使用已有 Playwright + Edge。首轮 13 项（恢复功能、QQ、机器人密钥、模型懒加载、积分操作）通过；补充 17 项（恢复功能及验证码/登录交互）通过，其中 4 项重复恢复检查。对公网真实静态资源再执行 4 项恢复功能测试通过，业务 API 使用隔离模拟数据，不是实际用户登录/调账。
+- 新容器 `midcode-frontend-v10101-api-1`，镜像 `fanapi-api:frontend-v1.0.101`，端口 8164。健康，重启次数 0。保留 v1.0.100 后端二进制（SHA256 7ffd912fb95faf584c08c417ed36192f079bf1a98e369f2302fe5824ed8f7145）；前端及公网 /keys 的 index SHA256 均为 ef49fe7662247b95a7b3d881e1807efb07d488bae402f88a93cd815716a5053a。
+- 候选、线上真实接口验证：QQ 待确认/确认/改绑/解绑、机器人密钥生命周期与权限隔离、账单日期及消费汇总核对、主站统计、账号/管理读取、验证码检查均通过。临时用户与绑定清除，测试机器人密钥撤销。
+- 图片 8798、视频 8183、预览 8198 交接与会话验证通过，视频跨用户隔离通过；旧容器删除后重复验证 QQ 与工作台通过。未执行付费生成、真实邮箱发信、真实 QQ 群命令或桌面 CC Switch 导入确认。
+- Caddy、8154 兼容入口及 midcode-main 网络别名均切到新容器。160 次 HTTPS HTTP 状态采样全部 200；仅代表该采样窗口，不能代表所有用户请求。
+- 删除旧容器 `midcode-qq-v10100-api-1` 前重新检查代理、容器配置/挂载依赖和排空连接；未删除数据卷。保留回退镜像 `fanapi-api:frontend-v10101-baseline` 及 `/root/fanapi-frontend-v1.0.101` 配置快照。回退：`python3 /root/fanapi-frontend-v1.0.101/deploy.py rollback`，随后验证主站和工作台。
+- Windows Git 原先自动换行导致恢复 HEAD 后仍显示假修改；本仓库设置 core.autocrlf=false，以提交中的字节为准。主目录已从旧 main 快进到统一发布基线；历史差异全部有仓库外校验备份，没有直接删除未审查源码。
+
+安全验证 JSON 位于 `deploy/frontend-reconcile-20261117/results/`；私有服务器快照与凭据不进入 Git。
+
+![密钥分组固定单行与手机视图](images/reconciliation-keys-mobile.png)
+
+![CC Switch 导入弹窗](images/reconciliation-cc-switch.png)

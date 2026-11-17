@@ -1,0 +1,1 @@
+{"passed": true, "checks": ["/api/user/channels auth/read", "/api/user/model-preferences auth/read", "billing statistics", "8798 handoff/session", "8183 handoff/session/tenant isolation", "8198 handoff/session"], "paid_generation": false, "video_test_session_revoked": true}

@@ -1,0 +1,10 @@
+{
+  "build": true,
+  "changed_source_eslint": true,
+  "initial_regression_tests": 13,
+  "auth_and_restoration_tests": 17,
+  "public_asset_mocked_api_tests": 4,
+  "real_desktop_cc_switch_import": false,
+  "browser": "Microsoft Edge via Playwright",
+  "browser_plugin": "not available"
+}

@@ -1,0 +1,7 @@
+{
+  "bind_modify_unbind": true,
+  "unique_conflict_preserves_binding": true,
+  "bot_lookup_and_auth": true,
+  "reuse_after_unbind": true,
+  "live": true
+}

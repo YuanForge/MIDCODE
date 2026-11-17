@@ -1,0 +1,7 @@
+{
+  "removed": [
+    "midcode-qq-v10100-api-1"
+  ],
+  "volumes_deleted": false,
+  "rollback_image": "fanapi-api:frontend-v10101-baseline"
+}
