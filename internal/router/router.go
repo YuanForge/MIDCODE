@@ -19,6 +19,7 @@ func Register(r *gin.Engine, deps Dependencies) {
 	r.GET("/v1/bot/users/:id/financial-summary", handler.BotUserFinancialSummary)
 	r.GET("/v1/bot/qq/:qq/financial-summary", handler.BotUserFinancialSummary)
 	r.POST("/v1/bot/qq/confirm-binding", handler.ConfirmQQBinding)
+	r.GET("/v1/bot/leaderboard/daily", handler.BotDailyLeaderboard)
 	registerPublicRoutes(r, deps)
 	registerAuthRoutes(r, deps)
 	registerVendorRoutes(r, deps)
