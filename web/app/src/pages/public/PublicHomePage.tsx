@@ -179,8 +179,8 @@ function PublicHeader({ siteName, logoUrl, signedIn }: { siteName: string; logoU
                 <Link to="/login">{t('common.login')}</Link>
               </Button>
               <Button asChild>
-                <Link to="/register">
-                  {t('common.startUsing')}
+                <Link to="/dashboard">
+                  {t('common.dashboard')}
                   <ArrowRightIcon data-icon="inline-end" />
                 </Link>
               </Button>
@@ -283,7 +283,7 @@ export function PublicHomePage() {
               </p>
               <div className="mt-8 flex flex-wrap items-center gap-3">
                 <Button asChild size="lg" className="h-11 px-5">
-                  <Link to={signedIn ? '/dashboard' : '/register'}>
+                  <Link to={'/dashboard'}>
                     {signedIn ? t('home.primaryCtaSignedIn') : t('home.primaryCtaGuest')}
                     <ArrowRightIcon data-icon="inline-end" />
                   </Link>

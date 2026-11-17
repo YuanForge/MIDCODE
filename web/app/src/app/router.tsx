@@ -1,9 +1,10 @@
+import { useRoleToken } from '@/hooks/use-role-token'
 import { lazy, Suspense, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom'
 
 import { i18n, supportedLanguages, type AppLanguage } from '@/i18n'
-import { getRoleToken } from '@/lib/auth/storage'
+
 
 const AuthLayout = lazy(() => import('@/layouts/AuthLayout').then((m) => ({ default: m.AuthLayout })))
 const UserLayout = lazy(() => import('@/layouts/UserLayout').then((m) => ({ default: m.UserLayout })))
@@ -22,7 +23,8 @@ const UserDashboardPage = lazy(() => import('@/pages/user/UserDashboardPage').th
 const UserModelsPage = lazy(() => import('@/pages/user/UserModelsPage').then((m) => ({ default: m.UserModelsPage })))
 const UserKeysPage = lazy(() => import('@/pages/user/UserKeysPage').then((m) => ({ default: m.UserKeysPage })))
 const UserPlaygroundPage = lazy(() => import('@/pages/user/UserPlaygroundPage').then((m) => ({ default: m.UserPlaygroundPage })))
-const UserCreationPage = lazy(() => import('@/pages/user/UserCreationPage').then((m) => ({ default: m.UserCreationPage })))
+const ImageStudioLaunch = lazy(() => import('@/components/shared/ImageStudioLaunch').then((m) => ({ default: m.ImageStudioLaunch })))
+const VideoStudioLaunch = lazy(() => import('@/components/shared/VideoStudioLaunch').then((m) => ({ default: m.VideoStudioLaunch })))
 const UserImageGenPage = lazy(() => import('@/pages/user/UserImageGenPage').then((m) => ({ default: m.UserImageGenPage })))
 const UserVideoGenPage = lazy(() => import('@/pages/user/UserVideoGenPage').then((m) => ({ default: m.UserVideoGenPage })))
 const UserMusicGenPage = lazy(() => import('@/pages/user/UserMusicGenPage').then((m) => ({ default: m.UserMusicGenPage })))
@@ -106,8 +108,9 @@ function RequireRole({
   role: 'user' | 'admin' | 'vendor' | 'reseller'
   redirectTo: string
 }) {
-  const token = getRoleToken(role)
+  const token = useRoleToken(role)
   if (!token) {
+    if (role === 'user') return renderLazy(<UserLayout guestPrompt />)
     return <Navigate replace to={redirectTo} />
   }
 
@@ -121,7 +124,7 @@ function PublicOnly({
   role: 'user' | 'admin' | 'vendor' | 'reseller'
   redirectTo: string
 }) {
-  const token = getRoleToken(role)
+  const token = useRoleToken(role)
   if (token) {
     return <Navigate replace to={redirectTo} />
   }
@@ -166,7 +169,8 @@ export const router = createBrowserRouter([
         element: renderLazy(<UserLayout />),
         children: [
           { path: '/playground', element: renderLazy(<UserPlaygroundPage />) },
-          { path: '/creation', element: renderLazy(<UserCreationPage />) },
+          { path: '/creation', element: renderLazy(<ImageStudioLaunch />) },
+          { path: '/video-studio', element: renderLazy(<VideoStudioLaunch />) },
           { path: '/image-gen', element: renderLazy(<UserImageGenPage />) },
           { path: '/video-gen', element: renderLazy(<UserVideoGenPage />) },
           { path: '/music-gen', element: renderLazy(<UserMusicGenPage />) },

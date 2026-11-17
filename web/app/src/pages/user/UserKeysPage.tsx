@@ -1,4 +1,6 @@
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useMemo, useState } from 'react'
+import { CCSwitchImport } from './CCSwitchImport'
 import { KeyRoundIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 
 import { FilterBar } from '@/components/shared/FilterBar'
@@ -76,6 +78,7 @@ export function UserKeysPage() {
     return [...merged.values()]
   }, [availableGroups, bindingKey])
 
+  const importKeys = keys.map(item => ({ id: String(item.id), name: item.name || '未命名密钥', key: item.viewable ? (item.raw_key ?? item.key ?? '') : '', unavailable: item.is_active === false || item.needs_group_binding === true || !item.viewable || !(item.raw_key || item.key) }))
   const error = loadError || mutError
 
   async function handleCreate() {
@@ -148,7 +151,7 @@ export function UserKeysPage() {
       <PageHeader
         eyebrow="Security"
         title="API 密钥"
-        description="管理用于 API 调用鉴权的密钥，创建后的完整密钥只会展示一次。"
+        description="管理 API 调用密钥、模型分组，并一键导入 CC Switch。"
         actions={
           <Button onClick={() => setCreateOpen(true)}>
             <PlusIcon data-icon="inline-start" />
@@ -198,7 +201,7 @@ export function UserKeysPage() {
                 cols={7}
                 Icon={KeyRoundIcon}
                 title="还没有 API 密钥"
-                description="点击右上角「新建密钥」即可创建，生成后的完整密钥只会展示一次。"
+                description="点击右上角「新建密钥」即可创建并导入 CC Switch。"
               />
             </TableBody>
           </Table>
@@ -229,14 +232,7 @@ export function UserKeysPage() {
                         : (item.masked_key ?? '***')}
                   </TableCell>
                   <TableCell>
-                    <div className="flex max-w-72 flex-wrap gap-1">
-                      {(item.model_groups ?? []).map((binding) => (
-                        <Badge key={binding.group_id} variant="outline">
-                          {binding.group?.model_provider ? `${binding.group.model_provider} · ` : ''}{binding.group?.name || binding.group?.code || binding.group_id}
-                        </Badge>
-                      ))}
-                      {item.needs_group_binding ? <Badge variant="destructive">需要配置分组</Badge> : null}
-                    </div>
+                    <KeyGroupSummary item={item} />
                   </TableCell>
                   <TableCell className="text-right font-mono text-sm">
                     <span
@@ -266,7 +262,8 @@ export function UserKeysPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
+                    <div className="flex items-center justify-end gap-2">
+                      <CCSwitchImport keys={importKeys} selectedId={String(item.id)} />
                       {item.viewable && (item.raw_key || item.key) ? (
                         <Button
                           variant="outline"
@@ -305,7 +302,7 @@ export function UserKeysPage() {
           <DialogHeader>
             <DialogTitle>创建 API 密钥</DialogTitle>
             <DialogDescription>
-              创建后会返回一次性明文，关闭后只能看到遮罩形式。
+              创建后请妥善保管密钥，也可直接导入 CC Switch。
             </DialogDescription>
           </DialogHeader>
           <div className="flex min-w-0 flex-col gap-4 overflow-y-auto">
@@ -351,7 +348,7 @@ export function UserKeysPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>密钥已创建</DialogTitle>
-            <DialogDescription>请立即复制保存，这个明文值后续不会再次展示。</DialogDescription>
+            <DialogDescription>请妥善保存密钥，或直接导入 CC Switch 使用。</DialogDescription>
           </DialogHeader>
           <div className="rounded-xl border border-border/70 bg-muted/25 p-4 font-mono text-xs break-all">
             {createdKey}
@@ -361,6 +358,7 @@ export function UserKeysPage() {
               关闭
             </Button>
             <Button onClick={() => copyText(createdKey)}>复制密钥</Button>
+            <CCSwitchImport keys={[{ id: "new", name: "刚创建的密钥", key: createdKey }]} selectedId="new" />
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -387,3 +385,24 @@ export function UserKeysPage() {
 }
 
 
+
+function KeyGroupSummary({ item }: { item: ApiKeyRecord }) {
+  const [open, setOpen] = useState(false)
+  const ordered = [...(item.model_groups ?? [])].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))
+  const labels = ordered.map(binding => [binding.group?.model_provider, binding.group?.name || binding.group?.code || binding.group_id].filter(Boolean).join(' · '))
+  if (!ordered.length) return item.needs_group_binding ? <Badge variant="destructive">需要配置分组</Badge> : <span className="text-muted-foreground">—</span>
+  return <TooltipProvider delayDuration={150}><Tooltip open={open} onOpenChange={setOpen}>
+    <TooltipTrigger asChild>
+      <button type="button" className="flex h-7 w-52 max-w-52 items-center gap-1.5 rounded-md text-left outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring" aria-label={'查看全部 ' + ordered.length + ' 个模型分组及优先顺序'} onClick={event => { event.preventDefault(); setOpen(value => !value) }}>
+        <Badge variant="outline" className="min-w-0 max-w-full"><span className="truncate">{labels[0]}</span></Badge>
+        {ordered.length > 1 ? <span className="shrink-0 text-xs font-medium text-primary">+{ordered.length - 1}</span> : null}
+      </button>
+    </TooltipTrigger>
+    <TooltipContent side="top" align="start" sideOffset={8} className="max-w-[min(24rem,calc(100vw-2rem))] flex-col items-start gap-2 p-3">
+      <p className="font-semibold">模型分组（{ordered.length} 个）· 优先顺序</p>
+      <ol className="flex max-h-64 w-full flex-col gap-1.5 overflow-y-auto whitespace-normal">
+        {labels.map((label, index) => <li key={index} className="flex items-start gap-2"><span className="shrink-0 font-mono">{index + 1}.</span><span className="min-w-0 [overflow-wrap:anywhere]">{label}</span></li>)}
+      </ol>
+    </TooltipContent>
+  </Tooltip></TooltipProvider>
+}

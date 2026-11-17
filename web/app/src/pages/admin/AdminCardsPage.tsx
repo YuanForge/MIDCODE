@@ -54,6 +54,9 @@ type TabView = 'batches' | 'cards' | 'uses'
 export function AdminCardsPage() {
   const [tab, setTab] = useState<TabView>('batches')
   const [statusFilter, setStatusFilter] = useState('')
+  const [usedBy, setUsedBy] = useState('')
+  const [usedEmail, setUsedEmail] = useState('')
+  const [useQuery, setUseQuery] = useState<Record<string, unknown>>({ page: 1, size: 50 })
   const [cardPage, setCardPage] = useState(1)
   const cardPageSize = 50
   const [queryParams, setQueryParams] = useState<Record<string, unknown>>({ page: 1, size: cardPageSize })
@@ -70,10 +73,12 @@ export function AdminCardsPage() {
 
   const rows = cardData.cards
   const cardTotal = cardData.total
-  const { data: usedRows, loading: usedLoading, error: usedError } = useAsync(async () => {
-    const response = await adminApi.listCards({ status: 'used', page: 1, size: 500 })
-    return response.cards ?? []
-  }, [] as AdminCard[], [tab === 'uses' ? 1 : 0])
+  const { data: usedData, loading: usedLoading, error: usedError } = useAsync(async () => {
+    if (tab !== 'uses') return { cards: [] as AdminCard[], total: 0 }
+    const response = await adminApi.listCards({ ...useQuery, status: 'used' })
+    return { cards: response.cards ?? [], total: response.total ?? 0 }
+  }, { cards: [] as AdminCard[], total: 0 }, [tab, useQuery])
+  const usedRows = usedData.cards
 
   const [mutError, setMutError] = useState('')
   const [exportingUnused, setExportingUnused] = useState(false)
@@ -386,6 +391,22 @@ export function AdminCardsPage() {
         </TabsContent>
 
         <TabsContent value="uses" className="mt-4">
+        <form className="mb-4 flex flex-wrap items-end gap-3" onSubmit={(event) => {
+          event.preventDefault()
+          setUseQuery({ page: 1, size: 50, used_by: usedBy.trim() || undefined, used_email: usedEmail.trim() || undefined })
+        }}>
+          <div className="space-y-1.5">
+            <Label htmlFor="card-used-by">兑换用户 ID</Label>
+            <Input id="card-used-by" type="number" min="1" step="1" value={usedBy} onChange={(event) => setUsedBy(event.target.value)} placeholder="例如 123" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="card-used-email">兑换用户邮箱</Label>
+            <Input id="card-used-email" type="email" value={usedEmail} onChange={(event) => setUsedEmail(event.target.value)} placeholder="完整邮箱（不区分大小写）" className="w-72 max-w-full" />
+          </div>
+          <Button type="submit">查询</Button>
+          <Button type="button" variant="outline" onClick={() => { setUsedBy(''); setUsedEmail(''); setUseQuery({ page: 1, size: 50 }) }}>重置</Button>
+          <span className="text-sm text-muted-foreground">共 {usedData.total} 条兑换记录</span>
+        </form>
         {
         usedError ? (
           <Alert variant="destructive"><AlertDescription>{usedError}</AlertDescription></Alert>
@@ -396,7 +417,7 @@ export function AdminCardsPage() {
               <TableRow>
                 <TableHead>兑换码</TableHead>
                 <TableHead className="text-right">面值</TableHead>
-                <TableHead>兑换用户 ID</TableHead>
+                <TableHead>兑换用户</TableHead>
                 <TableHead>兑换时间</TableHead>
                 <TableHead>备注</TableHead>
               </TableRow>
@@ -409,7 +430,10 @@ export function AdminCardsPage() {
                   <TableRow key={row.id}>
                     <TableCell className="font-mono text-xs">{row.code ?? '-'}</TableCell>
                     <TableCell className="text-right font-mono tabular-nums">¥{((row.credits ?? 0) / 1_000_000).toFixed(4)}</TableCell>
-                    <TableCell className="text-muted-foreground">{row.used_by ? `#${row.used_by}` : '-'}</TableCell>
+                    <TableCell>
+                      <div>{row.used_by ? `#${row.used_by}` : '-'} {row.used_username}</div>
+                      <div className="text-xs text-muted-foreground">{row.used_email || '无邮箱或用户已删除'}</div>
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {row.used_at ? new Date(row.used_at).toLocaleString('zh-CN') : '-'}
                     </TableCell>
@@ -419,6 +443,7 @@ export function AdminCardsPage() {
               </TableBody>
             )}
           </Table>
+          {usedData.total > 0 && <TablePagination current={Number(useQuery.page)} total={usedData.total} pageSize={50} onChange={(page) => setUseQuery((previous) => ({ ...previous, page }))} />}
           </Card>
         )}
         </TabsContent>

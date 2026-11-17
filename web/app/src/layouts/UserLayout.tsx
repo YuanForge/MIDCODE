@@ -28,12 +28,13 @@ function withTutorialNav(groups: NavGroup[]) {
 
 const userNavGroupsWithTutorial = withTutorialNav(userNavGroups)
 
-export function UserLayout() {
+export function UserLayout({ guestPrompt = false }: { guestPrompt?: boolean }) {
   return (
     <>
     <GiftArrival />
     <ConsoleLayout
       role="user"
+      guestPrompt={guestPrompt}
       groups={userNavGroupsWithTutorial}
     />
     </>

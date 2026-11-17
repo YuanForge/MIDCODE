@@ -1,81 +1,54 @@
-import type { FormEvent } from 'react'
-import { useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { getApiErrorMessage } from '@/lib/api/http'
 import { authApi } from '@/lib/api/public'
-
-export function ForgotPasswordPage() {
-  const [email, setEmail] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [message, setMessage] = useState('')
-  const [error, setError] = useState('')
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setSubmitting(true)
-    setMessage('')
-    setError('')
-
-    try {
-      await authApi.forgotPassword(email)
-      setMessage('如果邮箱已绑定账号，重置指引将发送到该邮箱。')
-    } catch (err) {
-      setError(getApiErrorMessage(err))
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <Card className="w-full max-w-[440px] shadow-lg">
-      <CardHeader className="gap-2 px-6 pt-6 sm:px-8 sm:pt-8">
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-          Password recovery
-        </p>
-        <CardTitle>
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">找回密码</h1>
-        </CardTitle>
-        <CardDescription>输入账号绑定邮箱以获取密码重置指引。</CardDescription>
-      </CardHeader>
-      <CardContent className="px-6 sm:px-8">
-        <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="forgot-password-email">邮箱</Label>
-            <Input
-              id="forgot-password-email"
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="请输入账号绑定邮箱"
-              autoComplete="email"
-            />
-          </div>
-          {message ? (
-            <Alert>
-              <AlertDescription>{message}</AlertDescription>
-            </Alert>
-          ) : null}
-          {error ? (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          ) : null}
-          <Button className="w-full" type="submit" disabled={submitting}>
-            {submitting ? '提交中...' : '发送重置指引'}
-          </Button>
-        </form>
-      </CardContent>
-      <CardFooter className="justify-center px-6 py-4 text-sm text-muted-foreground sm:px-8">
-        <Link className="hover:text-foreground" to="/login">
-          返回登录
-        </Link>
-      </CardFooter>
-    </Card>
-  )
+import { useAuthCopy } from '@/i18n/auth-copy'
+import { getApiErrorMessage } from '@/lib/api/http'
+export function ForgotPasswordPage({ onBack, embedded = false }: { onBack?: () => void; embedded?: boolean }) {
+ const a = useAuthCopy()
+ const [email,setEmail] = useState('')
+ const [code,setCode] = useState('')
+ const [password,setPassword] = useState('')
+ const [confirm,setConfirm] = useState('')
+ const [busy,setBusy] = useState(false)
+ const [sent,setSent] = useState(false)
+ const [done,setDone] = useState(false)
+ const [error,setError] = useState('')
+ const [remaining,setRemaining] = useState(0)
+ useEffect(() => { if (!remaining) return; const timer=setTimeout(()=>setRemaining(value=>Math.max(0,value-1)),1000); return ()=>clearTimeout(timer) },[remaining])
+ async function sendCode(event: FormEvent<HTMLFormElement>) {
+  event.preventDefault(); setBusy(true);setError('')
+  try {await authApi.forgotPassword(email.trim());setSent(true);setRemaining(60)} catch {setError(a.failed)} finally {setBusy(false)}
+ }
+ async function reset(event: FormEvent<HTMLFormElement>) {
+  event.preventDefault();setError('')
+  if(password.length<8 || password.length>128){setError(a.length);return}
+  if(password!==confirm){setError(a.mismatch);return}
+  setBusy(true)
+  try {await authApi.resetPassword({email:email.trim(),code:code.trim(),password});setDone(true);setCode('');setPassword('');setConfirm('')} catch (err) {setError(getApiErrorMessage(err).includes('验证码') ? a.invalidCode : a.failed)} finally {setBusy(false)}
+ }
+ return <Card className={embedded ? 'w-full border-0 shadow-none' : 'w-full max-w-[440px] shadow-lg'}>
+  <CardHeader><CardTitle>{a.recover}</CardTitle><CardDescription>{a.recoverDesc}</CardDescription></CardHeader>
+  <CardContent className="flex flex-col gap-4">
+   {done ? <Alert><AlertDescription>{a.done}</AlertDescription></Alert> : <>
+    <form className="flex flex-col gap-3" onSubmit={sendCode}>
+     <Label htmlFor="recovery-email">{a.email}</Label><Input id="recovery-email" type="email" required autoComplete="email" value={email} disabled={busy} onChange={event=>{setEmail(event.target.value);setSent(false);setCode('');setError('')}} />
+     <Button type="submit" variant="outline" disabled={busy || remaining>0}>{busy ? a.busy : remaining>0 ? a.resend+' ('+remaining+'s)' : sent ? a.resend : a.send}</Button>
+    </form>
+    {sent ? <Alert><AlertDescription>{a.sent}</AlertDescription></Alert> : null}
+    <form className="flex flex-col gap-3" onSubmit={reset}>
+     <Label htmlFor="recovery-code">{a.code}</Label><Input id="recovery-code" required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={event=>setCode(event.target.value)} />
+     <Label htmlFor="recovery-password">{a.newPassword}</Label><Input id="recovery-password" type="password" required minLength={8} maxLength={128} autoComplete="new-password" value={password} onChange={event=>setPassword(event.target.value)} />
+     <Label htmlFor="recovery-confirm">{a.confirm}</Label><Input id="recovery-confirm" type="password" required minLength={8} maxLength={128} autoComplete="new-password" value={confirm} onChange={event=>setConfirm(event.target.value)} />
+     <Button disabled={busy || !email.trim()}>{busy ? a.busy : a.reset}</Button>
+    </form>
+   </>}
+   {error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
+  </CardContent>
+  <CardFooter className="justify-center">{onBack ? <Button variant="link" onClick={onBack}>{a.back}</Button> : <Link to="/login">{a.back}</Link>}</CardFooter>
+ </Card>
 }

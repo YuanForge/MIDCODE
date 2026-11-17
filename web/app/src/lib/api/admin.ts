@@ -372,6 +372,8 @@ export type AdminCard = {
   used_by?: number
   used_at?: string
   created_at?: string
+  used_username?: string | null
+  used_email?: string | null
 }
 
 export type AdminCardBatch = {

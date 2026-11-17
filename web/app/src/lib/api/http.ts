@@ -3,6 +3,7 @@ import type { AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios'
 import { requestCaptcha, type CaptchaPurpose } from '@/lib/auth/captcha'
 
 import { clearRoleToken, getRoleToken } from '@/lib/auth/storage'
+import { notifyAuthChange, requestLogin } from '@/lib/auth/events'
 
 type Role = 'user' | 'admin' | 'vendor' | 'reseller'
 
@@ -47,7 +48,14 @@ export function createHttpClient(role?: Role): HttpClient {
         }
       }
       if (error.response?.status === 401 && role) {
+        const rejectedToken = error.config?.headers?.Authorization
+        if (rejectedToken !== `Bearer ${getRoleToken(role)}`) return Promise.reject(error)
         clearRoleToken(role)
+        notifyAuthChange()
+        if (role === 'user' && !/^\/(admin|vendor|reseller|login|register|forgot-password)(\/|$)/.test(window.location.pathname)) {
+          requestLogin()
+          return Promise.reject(error)
+        }
         const loginPaths: Record<string, string> = {
           user: '/login',
           admin: '/admin/login',

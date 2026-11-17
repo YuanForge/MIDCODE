@@ -1,5 +1,8 @@
+import { useAuthCopy } from '@/i18n/auth-copy'
+import { notifyAuthChange } from '@/hooks/use-role-token'
+import { setLoginRequested } from '@/lib/auth/events'
 import type { FormEvent } from 'react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowRightIcon, EyeIcon, EyeOffIcon, KeyRoundIcon, LoaderCircleIcon, UserRoundIcon } from 'lucide-react'
 
@@ -23,35 +26,29 @@ type RememberedLogin = {
   password?: string
 }
 
-export function UserLoginPage() {
+export function UserLoginPage({ onSuccess, onRecover, onRegister, embedded = false }: { onSuccess?: () => void; onRecover?: () => void; onRegister?: () => void; embedded?: boolean }) {
+  const a = useAuthCopy()
   const navigate = useNavigate()
   const { settings } = useSiteSettings()
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [rememberLogin, setRememberLogin] = useState(false)
+  const [saved] = useState<RememberedLogin>(() => {
+    try {
+      const value = JSON.parse(localStorage.getItem(REMEMBER_LOGIN_KEY) || '{}')
+      return { username: typeof value?.username === 'string' ? value.username : '', password: typeof value?.password === 'string' ? value.password : '' }
+    } catch { return {} }
+  })
+  const [username, setUsername] = useState(saved.username ?? '')
+  const [password, setPassword] = useState(saved.password ?? '')
+  const [rememberLogin, setRememberLogin] = useState(Boolean(saved.username || saved.password))
   const [agreementAccepted, setAgreementAccepted] = useState(false)
   const [agreementOpen, setAgreementOpen] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(REMEMBER_LOGIN_KEY)
-      if (!raw) return
-      const saved = JSON.parse(raw) as RememberedLogin
-      setUsername(saved.username ?? '')
-      setPassword(saved.password ?? '')
-      setRememberLogin(Boolean(saved.username || saved.password))
-    } catch {
-      window.localStorage.removeItem(REMEMBER_LOGIN_KEY)
-    }
-  }, [])
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!agreementAccepted) {
-      setError('请先阅读并同意用户协议')
+      setError(a.agreeError)
       return
     }
     setSubmitting(true)
@@ -66,9 +63,13 @@ export function UserLoginPage() {
       }
       setRoleToken('user', response.token)
       setSiteModePreference('user')
-      navigate('/dashboard')
+      notifyAuthChange()
+      if (onSuccess) { onSuccess(); return }
+      const next = new URLSearchParams(window.location.search).get('next') || '/dashboard'
+      const allowed = new Set(['/dashboard','/models','/docs','/tutorial','/keys','/billing','/profile','/invite','/stats','/tasks','/llm-logs','/playground','/creation','/image-gen','/video-gen','/music-gen','/recharge','/exchange'])
+      navigate(allowed.has(next.split('?')[0]) ? next : '/dashboard')
     } catch (err) {
-      setError(getApiErrorMessage(err))
+      setError(getApiErrorMessage(err) === '用户名或密码错误' ? a.invalid : a.failed)
     } finally {
       setSubmitting(false)
     }
@@ -77,16 +78,16 @@ export function UserLoginPage() {
   const agreementContent = settings.userAgreementContent.trim()
 
   return (
-    <Card className="w-full max-w-[440px] shadow-lg">
+    <Card className={embedded ? "w-full border-0 shadow-none" : "w-full max-w-[440px] shadow-lg"}>
       <CardHeader className="gap-2 px-6 pt-6 sm:px-8 sm:pt-8">
           <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary/70">
-            User sign in
+            {a.login}
           </p>
           <CardTitle>
-            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">登录用户端</h1>
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{a.loginTitle}</h1>
           </CardTitle>
           <CardDescription>
-            管理 API Key、调用统计、账单余额和生成任务。
+            {a.loginDesc}
           </CardDescription>
       </CardHeader>
 
@@ -94,7 +95,7 @@ export function UserLoginPage() {
           <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="user-login-username" className="text-sm font-medium">
-                用户名 / 邮箱
+                {a.username}
               </Label>
               <div className="relative">
                 <UserRoundIcon className="pointer-events-none absolute left-3 top-1/2 size-[15px] -translate-y-1/2 text-muted-foreground/70" />
@@ -103,7 +104,7 @@ export function UserLoginPage() {
                   className="h-11 rounded-xl border-border/80 pl-9 text-sm transition-colors focus-visible:border-primary/50 focus-visible:ring-primary/20"
                   value={username}
                   onChange={(event) => setUsername(event.target.value)}
-                  placeholder="请输入用户名或邮箱"
+                  placeholder={a.username}
                   autoComplete="username"
                   aria-invalid={Boolean(error)}
                   required
@@ -114,13 +115,14 @@ export function UserLoginPage() {
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
                 <Label htmlFor="user-login-password" className="text-sm font-medium">
-                  密码
+                  {a.password}
                 </Label>
                 <Link
                   className="text-xs font-medium text-primary/70 transition-colors hover:text-primary"
                   to="/forgot-password"
+                  onClick={event => { if (onRecover) { event.preventDefault(); onRecover() } }}
                 >
-                  忘记密码？
+                  {a.forgot}
                 </Link>
               </div>
               <div className="relative">
@@ -131,7 +133,7 @@ export function UserLoginPage() {
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  placeholder="请输入密码"
+                  placeholder={a.password}
                   autoComplete="current-password"
                   aria-invalid={Boolean(error)}
                   required
@@ -141,7 +143,7 @@ export function UserLoginPage() {
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/60 transition-colors hover:text-muted-foreground"
                   onClick={() => setShowPassword((v) => !v)}
                   tabIndex={-1}
-                  aria-label={showPassword ? '隐藏密码' : '显示密码'}
+                  aria-label={showPassword ? a.hide : a.show}
                 >
                   {showPassword
                     ? <EyeOffIcon className="size-4" />
@@ -156,10 +158,10 @@ export function UserLoginPage() {
                   id="user-login-remember"
                   checked={rememberLogin}
                   onCheckedChange={(checked) => setRememberLogin(checked === true)}
-                  aria-label="记住账户密码"
+                  aria-label={a.remember}
                 />
                 <Label htmlFor="user-login-remember" className="cursor-pointer text-sm font-normal">
-                  记住账户密码
+                  {a.remember}
                 </Label>
               </div>
               <div className="flex items-start gap-2 text-muted-foreground">
@@ -168,10 +170,10 @@ export function UserLoginPage() {
                   className="mt-0.5"
                   checked={agreementAccepted}
                   onCheckedChange={(checked) => setAgreementAccepted(checked === true)}
-                  aria-label="同意用户协议"
+                  aria-label={a.agreement}
                 />
                 <span className="text-sm font-normal leading-5">
-                  我已阅读并同意
+                  {a.agree}
                   {agreementContent ? (
                     <button
                       type="button"
@@ -181,7 +183,7 @@ export function UserLoginPage() {
                         setAgreementOpen(true)
                       }}
                     >
-                      《用户协议》
+                      {a.agreement}
                     </button>
                   ) : settings.userAgreementUrl ? (
                     <a
@@ -191,10 +193,10 @@ export function UserLoginPage() {
                       rel="noreferrer"
                       onClick={(event) => event.stopPropagation()}
                     >
-                      《用户协议》
+                      {a.agreement}
                     </a>
                   ) : (
-                    <span className="font-medium text-foreground">《用户协议》</span>
+                    <span className="font-medium text-foreground">{a.agreement}</span>
                   )}
                 </span>
               </div>
@@ -214,11 +216,11 @@ export function UserLoginPage() {
               {submitting ? (
                 <span className="flex items-center gap-2">
                   <LoaderCircleIcon className="animate-spin" data-icon="inline-start" />
-                  登录中...
+                  {a.busy}
                 </span>
               ) : (
                 <span className="flex items-center gap-1.5">
-                  登录
+                  {a.login}
                   <ArrowRightIcon data-icon="inline-end" />
                 </span>
               )}
@@ -229,7 +231,7 @@ export function UserLoginPage() {
         <Dialog open={agreementOpen} onOpenChange={setAgreementOpen}>
           <DialogContent className="max-h-[82vh] overflow-hidden sm:max-w-3xl">
             <DialogHeader>
-              <DialogTitle>用户协议</DialogTitle>
+              <DialogTitle>{a.agreement}</DialogTitle>
             </DialogHeader>
             <div className="max-h-[calc(82vh-5rem)] overflow-auto rounded-lg border bg-background/60 p-4">
               <MarkdownDocument content={agreementContent} />
@@ -238,12 +240,13 @@ export function UserLoginPage() {
         </Dialog>
 
       <CardFooter className="justify-center gap-1 px-6 py-4 text-sm text-muted-foreground sm:px-8">
-          <span>还没有账号？</span>
+          <span>{a.noAccount}</span>
           <Link
             to="/register"
+            onClick={event => { if (onRegister) { event.preventDefault(); onRegister() } else if (embedded) setLoginRequested(false) }}
             className="font-semibold text-primary transition-colors hover:text-primary/80"
           >
-            立即注册
+            {a.register}
           </Link>
       </CardFooter>
     </Card>

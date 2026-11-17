@@ -76,6 +76,7 @@ type ChannelForm = {
   upstream_cost_auto_sync: boolean
   // markup multiplier (selling price = cost * markup)
   billing_markup: string
+  billing_gpt_context_pricing: boolean
   billing_fast_ratio: string
   // token billing
   billing_input_price: string
@@ -139,6 +140,7 @@ const structuredBillingConfigKeys = new Set([
   'cache_creation_cost_per_1m_tokens',
   'cache_read_price_per_1m_tokens',
   'cache_read_cost_per_1m_tokens',
+  'gpt_context_pricing',
   'fast_ratio',
   'input_from_response',
   'base_price',
@@ -183,6 +185,7 @@ const emptyForm: ChannelForm = {
   upstream_group: '',
   upstream_cost_auto_sync: false,
   billing_markup: '1.2',
+  billing_gpt_context_pricing: false,
   billing_fast_ratio: '',
   billing_input_price: '',
   billing_output_price: '',
@@ -403,6 +406,7 @@ function buildBillingConfig(form: ChannelForm): Record<string, unknown> {
 
   switch (form.billing_type) {
     case 'token':
+      cfg.gpt_context_pricing = form.billing_gpt_context_pricing
       setCostAndPrice('input_cost_per_1m_tokens', 'input_price_per_1m_tokens', form.billing_input_cost)
       setCostAndPrice('output_cost_per_1m_tokens', 'output_price_per_1m_tokens', form.billing_output_cost)
       setCostAndPrice('cache_creation_cost_per_1m_tokens', 'cache_creation_price_per_1m_tokens', form.billing_cache_create_cost)
@@ -460,11 +464,11 @@ function buildBillingConfig(form: ChannelForm): Record<string, unknown> {
       break
   }
 
+  cfg.price_markup = markup
   const upstreamPlatformID = Number(form.upstream_platform_id || '0')
   if (upstreamPlatformID > 0) {
     cfg.upstream_platform_id = upstreamPlatformID
     cfg.upstream_model = form.upstream_model.trim() || form.model.trim()
-    cfg.price_markup = markup
     if (form.upstream_cost_auto_sync) {
       cfg.upstream_cost_auto_sync = true
     }
@@ -501,7 +505,17 @@ function buildFormFromChannel(row: AdminChannel, isCopy = false): ChannelForm {
     upstream_group: getConfigString(billingConfig, 'upstream_group'),
     upstream_cost_auto_sync: getConfigBool(billingConfig, 'upstream_cost_auto_sync'),
     billing_markup: (() => {
-      // Infer markup from input price / input cost ratio; fallback to 1.2
+      const savedMarkup = parseAmount(billingConfig.price_markup)
+      if (savedMarkup !== undefined && savedMarkup > 0) {
+        return String(savedMarkup)
+      }
+      // Older count channels may not have an explicit markup saved.
+      const callPrice = parseAmount(billingConfig.price_per_call)
+      const callCost = parseAmount(billingConfig.cost_per_call)
+      if (callPrice && callCost && callCost > 0) {
+        return String(Math.round((callPrice / callCost) * 100) / 100)
+      }
+      // Infer markup from other billing modes; fallback to the creation default.
       const price = parseAmount(billingConfig.input_price_per_1m_tokens)
       const cost = parseAmount(billingConfig.input_cost_per_1m_tokens)
       if (price && cost && cost > 0) {
@@ -519,6 +533,7 @@ function buildFormFromChannel(row: AdminChannel, isCopy = false): ChannelForm {
       }
       return '1.2'
     })(),
+    billing_gpt_context_pricing: billingConfig.gpt_context_pricing === true,
     billing_fast_ratio: getConfigString(billingConfig, 'fast_ratio'),
     billing_input_price: getNum(billingConfig, 'input_price_per_1m_tokens'),
     billing_output_price: getNum(billingConfig, 'output_price_per_1m_tokens'),
@@ -1635,6 +1650,14 @@ export function AdminChannelsPage() {
                       <Input type="number" step="0.01" value={form.billing_markup} onChange={(e) => resetUpstreamCostGate({ billing_markup: e.target.value })} placeholder="如 1.2" />
                     </div>
                     <div className="space-y-2 md:col-span-2">
+                      <label className="flex items-center gap-2 text-sm font-medium">
+                        <input type="checkbox" checked={form.billing_gpt_context_pricing}
+                          onChange={(event) => setForm((current) => ({ ...current, billing_gpt_context_pricing: event.target.checked }))} />
+                        GPT 长上下文动态计费
+                      </label>
+                      <p className="text-xs text-muted-foreground">
+                        下方填写短上下文价格。单次请求输入（含缓存）≤ 272,000 token 使用短档（GPT-6.1 Sol 为 500,000 token）；超过后整次输入、缓存读写价格 ×2，输出价格 ×1.5。输出不计入分档。售价和成本同时生效，请仅对采用此规则的 GPT 渠道开启。
+                      </p>
                       <label className="text-sm font-medium">Fast 倍率</label>
                       <p className="text-xs text-muted-foreground">
                         留空表示该渠道不支持 Fast。倍率同时应用于标准售价和上游成本；GPT Priority 倍率因模型而异，不能统一按 2 倍处理。

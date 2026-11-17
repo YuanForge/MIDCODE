@@ -33,3 +33,13 @@ config.local.yaml
 # OS
 .DS_Store
 Thumbs.db
+
+# Local-only credentials, historical deployment snapshots and generated output.
+/.private-local/
+/artifacts/
+/.superpowers/
+/web/app/dist/
+/web/app/playwright-report/
+*.tsbuildinfo
+
+/test-results/

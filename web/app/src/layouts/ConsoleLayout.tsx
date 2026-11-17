@@ -1,3 +1,8 @@
+import { notifyAuthChange, requestRegister, setAuthDialogMode } from '@/lib/auth/events'
+import { ConsoleLoginDialog } from '@/components/shared/ConsoleLoginDialog'
+import { requestLogin, useRoleToken } from '@/hooks/use-role-token'
+import { LoginRequired } from '@/components/shared/LoginRequired'
+import { CCSwitchImport } from '@/pages/user/CCSwitchImport'
 import type { ComponentType, ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
@@ -68,7 +73,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar'
 import { useSiteSettings } from '@/hooks/use-site-settings'
-import { clearRoleToken, getRoleToken, setSiteModePreference } from '@/lib/auth/storage'
+import { clearRoleToken, setSiteModePreference } from '@/lib/auth/storage'
 import { userApi } from '@/lib/api/user'
 import { sanitizeHtml } from '@/lib/sanitize-html'
 
@@ -98,12 +103,14 @@ type ConsoleLayoutProps = {
     label: string
     description: string
   }
+  guestPrompt?: boolean
   footer?: ReactNode
 }
 
 const GENERATION_USER_PATHS = new Set([
   '/playground',
   '/creation',
+  '/video-studio',
   '/image-gen',
   '/video-gen',
   '/music-gen',
@@ -176,6 +183,7 @@ export function ConsoleLayout({
   subtitle,
   identity,
   footer,
+  guestPrompt,
 }: ConsoleLayoutProps) {
   const { t } = useTranslation()
   const location = useLocation()
@@ -183,7 +191,7 @@ export function ConsoleLayout({
   const { settings } = useSiteSettings()
   const { siteName, logoUrl, qqGroupUrl, wechatCsUrl, headerHtml, footerHtml } = settings
 
-  const isLoggedIn = !!getRoleToken(role)
+  const isLoggedIn = !!useRoleToken(role)
   const displayName = identity?.label
   const isDocsPage = role === 'user' && location.pathname === '/docs'
   const isGenerationPage = role === 'user' && GENERATION_USER_PATHS.has(location.pathname)
@@ -195,7 +203,7 @@ export function ConsoleLayout({
 
   // Build nav groups from either `groups` or flat `items`, filter auth-gated when not logged in
   const rawGroups: NavGroup[] = groups ?? (subtitle ? [{ label: subtitle, items }] : [{ items }])
-  const navGroups = rawGroups.filter((g) => !g.requiresAuth || isLoggedIn)
+  const navGroups = rawGroups.filter((g) => role === 'user' || !g.requiresAuth || isLoggedIn)
 
   function translateUserLabel(label: string, labelKey?: string) {
     if (role !== 'user' || !labelKey) return label
@@ -214,6 +222,11 @@ export function ConsoleLayout({
 
   function logout() {
     clearRoleToken(role)
+    if (role === 'user') {
+      setAuthDialogMode(null)
+      notifyAuthChange()
+      return
+    }
     navigate(
       role === 'admin' ? '/admin/login' :
       role === 'vendor' ? '/vendor/login' :
@@ -222,7 +235,18 @@ export function ConsoleLayout({
   }
 
   return (
-    <SidebarProvider data-slot="app-shell">
+    <SidebarProvider data-slot="app-shell" onClickCapture={event => {
+      if (role !== 'user') return
+      const link = (event.target as HTMLElement).closest('a')
+      if (!link || link.origin !== window.location.origin) return
+      if (link.pathname === '/login' || link.pathname === '/register') {
+        event.preventDefault()
+        event.stopPropagation()
+        if (link.pathname === '/register') requestRegister()
+        else requestLogin()
+      }
+    }}>
+      {role === 'user' ? <ConsoleLoginDialog /> : null}
       <Sidebar collapsible="offcanvas">
         <SidebarHeader>
           <AppLogo siteName={siteName} logoUrl={logoUrl} label={siteName} />
@@ -298,6 +322,7 @@ export function ConsoleLayout({
             <span className="text-sm font-semibold">{pageTitle}</span>
           </div>
           <div className="flex items-center gap-1.5 sm:gap-2">
+            {role === 'user' && <CCSwitchImport />}
             {role === 'user' && <LanguageSwitcher />}
             <ThemeToggle />
             <ContactPopover
@@ -339,12 +364,6 @@ export function ConsoleLayout({
                       用户端
                     </DropdownMenuItem>
                   )}
-                  {role === 'user' && !!getRoleToken('admin') && (
-                    <DropdownMenuItem onClick={() => { setSiteModePreference('admin'); navigate('/admin/dashboard') }}>
-                      <SettingsIcon data-icon="inline-start" />
-                      {t('layout.adminConsole')}
-                    </DropdownMenuItem>
-                  )}
                   <DropdownMenuItem onClick={logout}>
                     <LogOutIcon data-icon="inline-start" />
                     {translateUserText('layout.logout', '退出登录')}
@@ -363,15 +382,15 @@ export function ConsoleLayout({
         <main className="min-w-0 flex-1">
           {isDocsPage ? (
             <div className="flex w-full flex-col">
-              <Outlet />
+              {guestPrompt ? <LoginRequired /> : <Outlet />}
             </div>
           ) : isGenerationPage ? (
             <div className="flex w-full flex-col gap-6 px-4 py-6 md:px-6">
-              <Outlet />
+              {guestPrompt ? <LoginRequired /> : <Outlet />}
             </div>
           ) : (
             <PageContainer className={isWidePage ? 'max-w-none' : undefined}>
-              <Outlet />
+              {guestPrompt ? <LoginRequired /> : <Outlet />}
             </PageContainer>
           )}
         </main>

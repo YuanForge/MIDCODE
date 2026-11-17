@@ -1,3 +1,5 @@
+import { useRoleToken } from '@/hooks/use-role-token'
+import { createHttpClient } from '@/lib/api/http'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { BlocksIcon, Copy, Pin, Search, Star, TerminalSquare } from 'lucide-react'
@@ -167,9 +169,36 @@ function shouldUseChineseExamples(language: string) {
   return language.toLowerCase().startsWith('zh')
 }
 
-function buildChannelRequestBody(channel: UserChannel, sunoMode: SunoMode, language: string) {
+function nativeImageKind(channel: UserChannel) {
+  const model = channel.routing_model || channel.name || ''
+  if (/^gpt-image-/.test(model)) return 'openai'
+  if (/^gemini-.*image/.test(model)) return 'gemini'
+  return null
+}
+
+function supportsImageSizeParameter(channel: UserChannel) {
+  return nativeImageKind(channel) !== null
+}
+
+function buildChannelRequestBody(channel: UserChannel, sunoMode: SunoMode, language: string, imageSize = 'default') {
   const useChinese = shouldUseChineseExamples(language)
   const model = channel.routing_model || channel.name
+  const imageKind = nativeImageKind(channel)
+  const prompt = useChinese ? '雨后蓝色时刻的未来城市全景，无文字' : 'A cinematic futuristic city at blue hour after rain, no text.'
+  if (imageKind === 'gemini') {
+    return JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseModalities: ['TEXT', 'IMAGE'],
+        imageConfig: { aspectRatio: '16:9', ...(imageSize !== 'default' && supportsImageSizeParameter(channel) ? { imageSize } : {}) },
+      },
+    }, null, 2)
+  }
+  if (imageKind === 'openai') {
+    return JSON.stringify({ model, prompt, n: 1, quality: 'high', output_format: 'png',
+      ...(imageSize !== 'default' && supportsImageSizeParameter(channel) ? { size: imageSize === '4K' ? '3840x2160' : '2560x1440' } : {}),
+    }, null, 2)
+  }
   if (channel.type === 'llm') {
     if (channel.protocol === 'gemini') {
       return JSON.stringify({
@@ -281,6 +310,7 @@ function buildChannelRequestBody(channel: UserChannel, sunoMode: SunoMode, langu
 }
 
 function getChannelEndpoint(channel: UserChannel) {
+  if (nativeImageKind(channel) === 'openai') return '/v1/images/generations'
   const endpointMap: Record<string, string> = {
     llm: '/v1/chat/completions',
     image: '/v1/image',
@@ -295,12 +325,12 @@ function getChannelEndpoint(channel: UserChannel) {
   return endpointMap[channel.type ?? 'llm'] || '/v1/chat/completions'
 }
 
-function getChannelCode(channel: UserChannel, lang: LangTab, sunoMode: SunoMode, language: string) {
+function getChannelCode(channel: UserChannel, lang: LangTab, sunoMode: SunoMode, language: string, imageSize = 'default') {
   const origin = window.location.origin
   const endpoint = getChannelEndpoint(channel)
-  const body = buildChannelRequestBody(channel, sunoMode, language)
+  const body = buildChannelRequestBody(channel, sunoMode, language, imageSize)
   if (lang === 'curl') {
-    return `curl -X POST "${origin}${endpoint}" \\\n+  -H "Content-Type: application/json" \\\n+  -H "Authorization: Bearer YOUR_API_KEY" \\\n+  -d '${body}'`
+    return `curl -X POST "${origin}${endpoint}" \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -d '${body}'`
   }
   if (lang === 'javascript') {
     return `const response = await fetch("${origin}${endpoint}", {
@@ -328,9 +358,37 @@ console.log(await response.json());`
   return `import java.net.http.*;\nimport java.net.URI;\n\npublic class Main {\n    public static void main(String[] args) throws Exception {\n        String body = "${escapedBody}";\n\n        var request = HttpRequest.newBuilder()\n            .uri(URI.create("${origin}${endpoint}"))\n            .header("Authorization", "Bearer YOUR_API_KEY")\n            .header("Content-Type", "application/json")\n            .POST(HttpRequest.BodyPublishers.ofString(body))\n            .build();\n\n        var response = HttpClient.newHttpClient()\n            .send(request, HttpResponse.BodyHandlers.ofString());\n        System.out.println(response.body());\n    }\n}`
 }
 
+function getImageEditCode(channel: UserChannel) {
+  const model = channel.routing_model || channel.name
+  const endpoint = `${window.location.origin}/v1/images/edits`
+  if (nativeImageKind(channel) === 'openai') {
+    return [
+      `curl "${endpoint}" \\`,
+      '  -H "Authorization: Bearer YOUR_API_KEY" \\',
+      `  -F "model=${model}" \\`,
+      '  -F "image=@input.png" \\',
+      '  -F "prompt=Change the background to a beach, preserve the subject" \\',
+      '  -F "n=1"',
+    ].join('\n')
+  }
+  const body = JSON.stringify({
+    contents: [{ role: 'user', parts: [
+      { text: 'Change the background to a beach, preserve the subject' },
+      { inlineData: { mimeType: 'image/png', data: 'BASE64_INPUT_IMAGE_WITHOUT_DATA_URL_PREFIX' } },
+    ] }],
+    generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
+  }, null, 2)
+  return [
+    `curl "${window.location.origin}${getChannelEndpoint(channel)}" \\`,
+    '  -H "Authorization: Bearer YOUR_API_KEY" \\',
+    '  -H "Content-Type: application/json" \\',
+    `  -d '${body}'`,
+  ].join('\n')
+}
+
 function getBalanceCode(lang: LangTab) {
   const origin = window.location.origin
-  if (lang === 'curl') return `curl -X GET "${origin}/user/balance" \\\n+  -H "Authorization: Bearer YOUR_API_KEY"`
+  if (lang === 'curl') return `curl -X GET "${origin}/user/balance" \\\n  -H "Authorization: Bearer YOUR_API_KEY"`
   if (lang === 'javascript') return `const response = await fetch("${origin}/user/balance", {
   headers: { "Authorization": "Bearer YOUR_API_KEY" }
 });
@@ -344,7 +402,7 @@ console.log(await response.json());`
 
 function getTaskCode(lang: LangTab) {
   const origin = window.location.origin
-  if (lang === 'curl') return `curl -X GET "${origin}/v1/tasks/YOUR_TASK_ID" \\\n+  -H "Authorization: Bearer YOUR_API_KEY"`
+  if (lang === 'curl') return `curl -X GET "${origin}/v1/tasks/YOUR_TASK_ID" \\\n  -H "Authorization: Bearer YOUR_API_KEY"`
   if (lang === 'javascript') return `const response = await fetch("${origin}/v1/tasks/YOUR_TASK_ID", {
   headers: { "Authorization": "Bearer YOUR_API_KEY" }
 });
@@ -357,6 +415,12 @@ console.log(await response.json());`
 }
 
 function getChannelResponse(channel: UserChannel, language: string) {
+  if (nativeImageKind(channel) === 'openai') {
+    return JSON.stringify({ created: 1750000000, data: [{ b64_json: 'BASE64_IMAGE_DATA' }] }, null, 2)
+  }
+  if (nativeImageKind(channel) === 'gemini') {
+    return JSON.stringify({ candidates: [{ content: { role: 'model', parts: [{ inlineData: { mimeType: 'image/png', data: 'BASE64_IMAGE_DATA' } }] }, finishReason: 'STOP' }] }, null, 2)
+  }
   if (channel.type === 'llm') {
     return JSON.stringify({
       id: 'chatcmpl-abc123',
@@ -409,14 +473,15 @@ function ProviderLogoStack({ providers }: { providers: ProviderOption[] }) {
 }
 
 export function UserModelsPage() {
+  const token = useRoleToken()
   const { i18n, t } = useTranslation()
   const modelPreferences = useModelPreferences()
   const { preferences } = modelPreferences
   const [collection, setCollection] = useState('all')
   const { data, loading, error, reload } = useAsync(async () => {
-    const response = await userApi.listChannels()
+    const response = token ? await userApi.listChannels() : await createHttpClient().get<{ channels: UserChannel[] }>('/public/channels')
     return { channels: Array.isArray(response) ? response : response.channels ?? [] }
-  }, { channels: [] as UserChannel[] })
+  }, { channels: [] as UserChannel[] }, [token])
   const channels = data.channels
   const displayChannels = useMemo(() => channels.map(channelWithSortedPrices), [channels])
 
@@ -429,6 +494,7 @@ export function UserModelsPage() {
   const [docChannel, setDocChannel] = useState<UserChannel | null>(null)
   const [langTab, setLangTab] = useState<LangTab>('curl')
   const [sunoMode, setSunoMode] = useState<SunoMode>('inspire')
+  const [imageSize, setImageSize] = useState('default')
 
   const protocolOptions = useMemo(
     () => Array.from(new Set(displayChannels.map((channel) => channel.protocol || 'openai'))),
@@ -474,6 +540,7 @@ export function UserModelsPage() {
   const favoriteCount = displayChannels.filter(channel => preferences.get(channel.routing_model || channel.name || '')?.favorite).length
 
   function openDoc(channel: UserChannel) {
+    setImageSize('default')
     setDocChannel(channel)
     setDocMode('channel')
     setLangTab('curl')
@@ -730,7 +797,7 @@ export function UserModelsPage() {
             </SheetTitle>
           </SheetHeader>
           <div className="flex-1 space-y-6 bg-muted/10 p-6">
-            {docVisible && docMode === 'channel' && docChannel ? (
+            {token && docVisible && docMode === 'channel' && docChannel ? (
               <LazyModelAvailability key={docChannel.routing_model || docChannel.name} model={docChannel.routing_model || docChannel.model || docChannel.name || ''} />
             ) : null}
             {docMode === 'balance' ? (
@@ -868,6 +935,20 @@ export function UserModelsPage() {
                   {docChannel.description ? <div className="mt-3 whitespace-pre-wrap text-muted-foreground">{docChannel.description}</div> : null}
                 </div>
 
+                {nativeImageKind(docChannel) ? (
+                  <div className="space-y-3 rounded-xl border p-4 text-sm">
+                    <h4 className="font-semibold">图片生成</h4>
+                    {supportsImageSizeParameter(docChannel) ? <label className="flex items-center gap-3">
+                      示例分辨率（横版 16:9）
+                      <select aria-label="示例分辨率" className="rounded border bg-background p-2" value={imageSize} onChange={(event) => setImageSize(event.target.value)}>
+                        <option value="default">默认</option><option value="2K">2K</option><option value="4K">4K</option>
+                      </select>
+                    </label> : <p>当前示例使用默认尺寸，暂未验证该模型能按指定参数返回 2K/4K 图片。</p>}
+                    <p>同步返回图片，不返回任务 ID。请检查实际图片尺寸；生成较慢时，公网入口仍可能超时。</p>
+                    <p>{nativeImageKind(docChannel) === 'openai' ? '将 data[0].b64_json 解码为图片；若返回 data[0].url，则下载该地址的原图。' : '读取 candidates 中的 content.parts，将 inlineData.data 按 Base64 解码，并按 mimeType 保存图片。'}</p>
+                  </div>
+                ) : null}
+
                 {docChannel.type === 'music' ? (
                   <Tabs value={sunoMode} onValueChange={(value) => setSunoMode(value as SunoMode)}>
                     <TabsList className="grid h-auto w-full grid-cols-5 py-1">
@@ -883,7 +964,7 @@ export function UserModelsPage() {
                 <div>
                   <h4 className="mb-2 flex items-center justify-between font-semibold">
                     {t('models.callExample')}
-                    <Button variant="ghost" size="sm" className="h-7" onClick={() => copyText(getChannelCode(docChannel, langTab, sunoMode, i18n.language), t('common.copied'))}>
+                    <Button variant="ghost" size="sm" className="h-7" onClick={() => copyText(getChannelCode(docChannel, langTab, sunoMode, i18n.language, imageSize), t('common.copied'))}>
                       <Copy data-icon="inline-start" />
                       {t('common.copyCode')}
                     </Button>
@@ -898,8 +979,14 @@ export function UserModelsPage() {
                       <TabsTrigger value="java">Java</TabsTrigger>
                     </TabsList>
                   </Tabs>
-                  <pre className="min-h-[140px] overflow-auto rounded-xl bg-foreground p-4 font-mono text-sm whitespace-pre-wrap text-background">{getChannelCode(docChannel, langTab, sunoMode, i18n.language)}</pre>
+                  <pre className="min-h-[140px] overflow-auto rounded-xl bg-foreground p-4 font-mono text-sm whitespace-pre-wrap text-background">{getChannelCode(docChannel, langTab, sunoMode, i18n.language, imageSize)}</pre>
                 </div>
+                {nativeImageKind(docChannel) ? <div className="space-y-3">
+                  <h4 className="font-semibold">图片编辑 · 接口格式参考</h4>
+                  <p className="text-sm text-muted-foreground">该模型的编辑能力及编辑时的 2K/4K 输出尚未实测确认，不能由图片生成成功推断。以下为请求格式参考，请先验证后使用。</p>
+                  <p className="text-sm">{nativeImageKind(docChannel) === 'openai' ? '以 multipart/form-data 上传 input.png；让客户端自动设置 Content-Type 和 boundary。' : '将原图转换为不带 data: 前缀的 Base64，与修改要求一起提交。'}</p>
+                  <pre className="overflow-auto rounded-xl bg-foreground p-4 font-mono text-sm whitespace-pre-wrap text-background">{getImageEditCode(docChannel)}</pre>
+                </div> : null}
 
                 <div>
                   <h4 className="mb-2 font-semibold">{t('models.responseExample')}</h4>
