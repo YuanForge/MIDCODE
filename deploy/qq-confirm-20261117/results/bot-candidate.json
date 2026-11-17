@@ -1,0 +1,10 @@
+{
+  "key_lifecycle": true,
+  "ordinary_keys_and_jwt_rejected": true,
+  "nonroot_management_denied": true,
+  "scope_isolation": true,
+  "date_ranges": true,
+  "ledger_python_crosscheck": true,
+  "query_seconds": 0.804,
+  "live": false
+}
