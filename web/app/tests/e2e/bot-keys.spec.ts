@@ -19,5 +19,5 @@ for(const root of [true,false]) test(`bot keys root=${root}`,async({page},info)=
  await page.screenshot({path:info.outputPath('created.png')});await page.getByRole('button',{name:'已保存，关闭'}).click();await expect(page.getByLabel('新机器人密钥')).toHaveCount(0)
  await page.getByRole('button',{name:'撤销',exact:true}).click();await page.getByRole('button',{name:'取消',exact:true}).click();await expect(page.getByText('启用',{exact:true})).toBeVisible()
  await page.getByRole('button',{name:'撤销',exact:true}).click();await page.getByRole('button',{name:'确认撤销'}).click();await expect(page.getByText('已撤销',{exact:true})).toBeVisible()
- await page.setViewportSize({width:390,height:844});await page.screenshot({path:info.outputPath('mobile.png')});expect(errors).toEqual([])
+ await expect(page.getByRole('dialog')).toHaveCount(0);await page.setViewportSize({width:390,height:844});await page.screenshot({path:info.outputPath('mobile.png')});expect(errors).toEqual([])
 })

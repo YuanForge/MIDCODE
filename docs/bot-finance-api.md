@@ -14,7 +14,7 @@ Root administrator login session only:
 - GET /api/admin/bot-keys returns metadata, never secret/hash.
 - DELETE /api/admin/bot-keys/{id} revokes immediately, returns 204.
 
-The server creates additive bot_api_keys schema at startup, including deployments that skip unrelated migrations. No existing table/data changes. No frontend key-management page is added in this release; creation/revocation uses the authenticated admin API. Do not store the returned raw key in logs or source control.
+The server creates additive bot_api_keys schema at startup, including deployments that skip unrelated migrations. No existing table/data changes. Since v1.0.98, root administrators can use /admin/bot-keys (机器人密钥) to create/list/revoke keys; the authenticated admin API remains available. Do not store the returned raw key in logs or source control.
 
 Release v1.0.97. Build and deployment evidence in deploy/bot-finance-20261117. Candidate port 8161; v1.0.96 predecessor port 8160. Rollback via /root/fanapi-bot-v1.0.97/deploy.py rollback; preserve the additive key table and baseline image/private config. Final deployment results appended after checks.
 
