@@ -1,0 +1,62 @@
+# Include inside the MIDCODE HTTPS server. Render placeholders on the host.
+location ~ "^/media/grok/status/(?<grok_task>[A-Za-z0-9_-]{1,128})$" {
+    access_log off;
+    content_by_lua_block {
+        if ngx.req.get_method() ~= "GET" then return ngx.exit(405) end
+        if ngx.var.http_authorization ~= "Bearer __POOL_KEY__" then return ngx.exit(403) end
+        local id = ngx.var.grok_task
+        local upstream = ngx.location.capture("/_grok_lookup/" .. id)
+        if upstream.status ~= 200 and upstream.status ~= 202 then
+            return ngx.exit(upstream.status)
+        end
+        local json = require "cjson.safe"
+        local result = json.decode(upstream.body)
+        if type(result) ~= "table" then return ngx.exit(502) end
+        local d = result.data or result
+        if type(d.video) == "table" and d.video.url == "/v1/videos/" .. id .. "/content" then
+            local expires = tostring(ngx.time() + 7 * 86400)
+            local digest = ngx.encode_base64(ngx.hmac_sha1("__MEDIA_SECRET__", id .. ":" .. expires), true)
+            digest = digest:gsub("%+", "-"):gsub("/", "_")
+            d.delivery_url = "https://midcode.cc/media/grok/file/" .. id .. "/" .. expires .. "/" .. digest
+        end
+        ngx.header.content_type = "application/json"
+        ngx.header.cache_control = "private, no-store"
+        ngx.print(json.encode(result))
+    }
+}
+location ~ "^/_grok_lookup/(?<grok_lookup>[A-Za-z0-9_-]{1,128})$" {
+    internal;
+    rewrite ^ /v1/videos/$grok_lookup break;
+    proxy_pass_request_headers off;
+    proxy_set_header Host sub.zzshu.cc;
+    proxy_set_header Authorization "Bearer __POOL_KEY__";
+    proxy_ssl_server_name on;
+    proxy_ssl_verify on;
+    proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+    proxy_pass https://sub.zzshu.cc;
+}
+location ~ "^/media/grok/file/(?<grok_file>[A-Za-z0-9_-]{1,128})/(?<grok_expires>[0-9]{10})/(?<grok_sig>[A-Za-z0-9_-]{27})$" {
+    access_log off;
+    content_by_lua_block {
+        if ngx.req.get_method() ~= "GET" and ngx.req.get_method() ~= "HEAD" then return ngx.exit(405) end
+        local id, expires = ngx.var.grok_file, ngx.var.grok_expires
+        local sig = ngx.encode_base64(ngx.hmac_sha1("__MEDIA_SECRET__", id .. ":" .. expires), true)
+        sig = sig:gsub("%+", "-"):gsub("/", "_")
+        if expires == nil or tonumber(expires) < ngx.time() or sig ~= ngx.var.grok_sig then return ngx.exit(403) end
+        return ngx.exec("/_grok_content/" .. id, "")
+    }
+}
+location ~ "^/_grok_content/(?<grok_content>[A-Za-z0-9_-]{1,128})$" {
+    internal;
+    rewrite ^ /v1/videos/$grok_content/content break;
+    proxy_pass_request_headers off;
+    proxy_set_header Host sub.zzshu.cc;
+    proxy_set_header Authorization "Bearer __POOL_KEY__";
+    proxy_set_header Range $http_range;
+    proxy_ssl_server_name on;
+    proxy_ssl_verify on;
+    proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+    proxy_hide_header Set-Cookie;
+    add_header Cache-Control "private, no-store" always;
+    proxy_pass https://sub.zzshu.cc;
+}
