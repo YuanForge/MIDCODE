@@ -32,6 +32,7 @@ location ~ "^/_grok_lookup/(?<grok_lookup>[A-Za-z0-9_-]{1,128})$" {
     proxy_set_header Authorization "Bearer __POOL_KEY__";
     proxy_ssl_server_name on;
     proxy_ssl_verify on;
+    proxy_ssl_verify_depth 4;
     proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
     proxy_pass https://sub.zzshu.cc;
 }
@@ -55,6 +56,7 @@ location ~ "^/_grok_content/(?<grok_content>[A-Za-z0-9_-]{1,128})$" {
     proxy_set_header Range $http_range;
     proxy_ssl_server_name on;
     proxy_ssl_verify on;
+    proxy_ssl_verify_depth 4;
     proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
     proxy_hide_header Set-Cookie;
     add_header Cache-Control "private, no-store" always;
