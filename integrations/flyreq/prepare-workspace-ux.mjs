@@ -13,7 +13,14 @@ await replace('frontend/src/components/workspace/WorkspaceHeader.tsx',
 await replace('frontend/src/components/workspace/WorkspaceHeader.tsx',
   'canRefresh={!!imageApiUrl}\n        />\n      )}', 'canRefresh={!!imageApiUrl}\n        />, document.body\n      )}');
 await replace('frontend/src/components/workspace/WorkspaceModeTabs.tsx',
-  '<TabsList className="mt-4', `<a href="/dashboard" aria-label="返回 MIDCODE 工作台" title="返回 MIDCODE 工作台" className="mt-3 flex h-9 items-center gap-2 rounded-lg px-3 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"><span aria-hidden="true">←</span><span className={labelsHidden}>返回 MIDCODE 工作台</span></a>\n\n        <TabsList className="mt-4`);
+  'import { Bot, Film,', 'import { ArrowLeft, Bot, Film,');
+await replace('frontend/src/components/workspace/WorkspaceModeTabs.tsx',
+  '<TabsList className="mt-4', `<a href="/dashboard" aria-label="返回 MIDCODE 工作台" title="返回 MIDCODE 工作台" className={cn('mt-3 flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-xs hover:bg-muted focus-visible:ring-2', collapsed && 'lg:justify-center lg:px-0')}>
+          <ArrowLeft aria-hidden="true" className="size-4 shrink-0" />
+          <span className={labelsHidden}>返回 MIDCODE 工作台</span>
+        </a>
+
+        <TabsList className="mt-4`);
 
 await replace('frontend/src/components/workspace/WorkspaceHeader.tsx',
   '  const instanceId = useId();', `  const [failed, setFailed] = useState(false);

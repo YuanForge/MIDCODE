@@ -34,6 +34,8 @@ with `npm ci`, then run from this repository:
 ```sh
 node integrations/flyreq/prepare.mjs /path/to/flyreq integrations/flyreq/branding.env.example
 node integrations/flyreq/prepare-integration.mjs /path/to/flyreq
+node integrations/flyreq/prepare-workspace-ux.mjs /path/to/flyreq
+node integrations/flyreq/prepare-random-sources.mjs /path/to/flyreq
 ```
 
 Run `npm run build` in the prepared frontend. Copy this repository's
