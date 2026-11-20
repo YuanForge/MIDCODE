@@ -299,6 +299,60 @@ func refreshUserVIPGroupTx(sess *xorm.Session, userID int64) (string, int64, err
 	return nextGroup, totalRecharge, nil
 }
 
+type VIPLevel struct {
+	Code      string `json:"code"`
+	Name      string `json:"name"`
+	Threshold int64  `json:"threshold"`
+}
+type VIPProgress struct {
+	Current   string     `json:"current"`
+	Recharge  int64      `json:"recharge"`
+	Levels    []VIPLevel `json:"levels"`
+	Next      *VIPLevel  `json:"next"`
+	Remaining int64      `json:"remaining"`
+}
+
+func UserVIPProgress(ctx context.Context, userID int64) (*VIPProgress, error) {
+	sess := db.Engine.NewSession().Context(ctx)
+	defer sess.Close()
+	var user model.User
+	found, err := sess.ID(userID).Cols("group", "vip_recharge_baseline").Get(&user)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("用户不存在")
+	}
+	total, err := totalRechargeForUserTx(sess, userID)
+	if err != nil {
+		return nil, err
+	}
+	var groups []model.VIPGroup
+	if err := sess.Asc("recharge_threshold", "sort_order", "id").Find(&groups); err != nil {
+		return nil, err
+	}
+	result := &VIPProgress{Current: user.Group, Recharge: rechargeAfterBaseline(total, user.VIPRechargeBase), Levels: []VIPLevel{}}
+	threshold := int64(-1)
+	for _, group := range groups {
+		if group.Code == user.Group {
+			result.Current = group.Name
+			threshold = group.RechargeThreshold
+		}
+		if group.IsActive {
+			result.Levels = append(result.Levels, VIPLevel{Code: group.Code, Name: group.Name, Threshold: group.RechargeThreshold})
+		}
+	}
+	for i := range result.Levels {
+		level := &result.Levels[i]
+		if level.Threshold > threshold {
+			result.Next = level
+			result.Remaining = rechargeAfterBaseline(level.Threshold, result.Recharge)
+			break
+		}
+	}
+	return result, nil
+}
+
 func rechargeAfterBaseline(totalRecharge int64, baseline int64) int64 {
 	if totalRecharge <= baseline {
 		return 0

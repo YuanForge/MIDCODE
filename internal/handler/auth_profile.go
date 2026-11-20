@@ -9,6 +9,15 @@ import (
 	"net/http"
 )
 
+func (h *AuthHandler) GetVIPProgress(c *gin.Context) {
+	progress, err := service.UserVIPProgress(c.Request.Context(), c.MustGet("user_id").(int64))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "暂时无法获取 VIP 进度"})
+		return
+	}
+	c.JSON(http.StatusOK, progress)
+}
+
 // GET /user/profile
 func (h *AuthHandler) GetProfile(c *gin.Context) {
 	userID := c.MustGet("user_id").(int64)

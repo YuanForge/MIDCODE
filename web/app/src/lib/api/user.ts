@@ -299,6 +299,13 @@ export type ChatConversation = {
 export const userApi = {
   getTransferBalance: () => http.get<{ credits: number }>('/user/credits/transfer-balance'),
   transferCredits: (data: { recipient_id: number; credits: number; request_id: string }) => http.post('/user/credits/transfer', data),
+  getVIPProgress: () => http.get<{
+    current: string
+    recharge: number
+    levels: Array<{ code: string; name: string; threshold: number }>
+    next: { name: string } | null
+    remaining: number
+  }>('/user/vip-progress'),
   getProfile: () => http.get<UserProfileResponse>('/user/profile'),
   getBalance: () => http.get<UserBalanceResponse>('/user/balance'),
   getStats: () => http.get<UserStatsResponse>('/user/stats'),

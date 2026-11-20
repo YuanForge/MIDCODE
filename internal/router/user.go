@@ -22,6 +22,7 @@ func registerUserRoutes(authed *gin.RouterGroup, deps Dependencies) {
 		user.GET("/qq-binding", handler.GetQQBinding)
 		user.PUT("/qq-binding", handler.SaveQQBinding)
 		user.DELETE("/qq-binding", handler.DeleteQQBinding)
+		user.GET("/vip-progress", deps.Auth.GetVIPProgress)
 		user.GET("/profile", deps.Auth.GetProfile)
 		user.GET("/credits/received-latest", deps.Auth.LatestReceivedGift)
 		user.POST("/credits/transfer", deps.Auth.TransferCredits)
