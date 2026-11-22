@@ -7,26 +7,16 @@ import {
   BarChart3Icon,
   BlocksIcon,
   BookOpenIcon,
-  CheckCircle2Icon,
   Code2Icon,
-  DatabaseZapIcon,
-  GaugeIcon,
-  Globe2Icon,
   ImageIcon,
   KeyRoundIcon,
-  Layers3Icon,
-  LockKeyholeIcon,
   MessageSquareTextIcon,
   MusicIcon,
   NetworkIcon,
-  PlayCircleIcon,
   RadioTowerIcon,
-  ShieldCheckIcon,
   SparklesIcon,
   TerminalSquareIcon,
   VideoIcon,
-  WalletCardsIcon,
-  ZapIcon,
 } from 'lucide-react'
 
 import { AppLogo } from '@/components/shared/AppLogo'
@@ -193,11 +183,12 @@ function PublicHeader({ siteName, logoUrl, signedIn }: { siteName: string; logoU
 }
 
 function ApiTerminal() {
+  const { t } = useTranslation()
   return (
-    <Card className="mx-auto w-full max-w-xl shadow-lg">
+    <Card className="mx-auto w-full max-w-xl border-white/15 bg-slate-950 text-slate-50 shadow-xl dark">
       <CardHeader className="border-b">
         <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">AI Gateway</p>
-        <CardTitle><h3>Request</h3></CardTitle>
+        <CardTitle><h2>{t('home.apiPreviewTitle')}</h2></CardTitle>
         <CardDescription>POST /v1/chat/completions</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-5 font-mono text-xs leading-6">
@@ -260,23 +251,15 @@ export function PublicHomePage() {
 
       <main>
         <section className="relative isolate overflow-hidden">
-          <img
-            src="/landing/gateway-hero.png"
-            alt=""
-            aria-hidden
-            className="absolute inset-0 -z-20 h-full w-full object-cover opacity-25"
-          />
-          <div className="absolute inset-0 -z-10 bg-background/75" />
-
-          <div className="mx-auto flex max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:min-h-[calc(100svh-9rem)] lg:items-center lg:py-20">
+          <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:px-6 sm:py-20 lg:grid-cols-[1fr_0.9fr] lg:items-center lg:gap-16 lg:py-24">
             <div className="max-w-3xl">
               <Badge className="mb-5" variant="secondary">
                 <SparklesIcon data-icon="inline-start" />
                 {t('home.badge')}
               </Badge>
-              <h1 className="text-4xl font-semibold leading-tight tracking-tight text-foreground sm:text-5xl lg:text-6xl">
+              <h1 className="break-words text-5xl font-semibold leading-[1.08] tracking-tight sm:text-6xl lg:text-7xl">
                 {siteName}
-                <span className="block text-primary">{t('home.headline')}</span>
+                <span className="mt-3 block text-balance text-3xl text-primary sm:text-4xl lg:text-5xl">{t('home.headline')}</span>
               </h1>
               <p className="mt-6 max-w-xl text-base leading-8 text-muted-foreground sm:text-lg">
                 {t('home.subhead')}
@@ -305,6 +288,10 @@ export function PublicHomePage() {
                 <CapabilityStrip />
               </div>
             </div>
+            <div className="relative isolate min-w-0 overflow-hidden rounded-3xl border bg-muted px-4 pb-4 pt-32 sm:px-8 sm:pb-8 sm:pt-40">
+              <img src="/landing/gateway-hero.png" alt="" className="absolute inset-0 -z-10 size-full object-cover" />
+              <ApiTerminal />
+            </div>
           </div>
         </section>
 
@@ -318,20 +305,7 @@ export function PublicHomePage() {
           </div>
         </section>
 
-        <section className="px-4 py-16 sm:px-6 lg:py-20">
-          <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
-            <div className="max-w-xl">
-              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-primary">{t('home.apiPreviewKicker')}</p>
-              <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">{t('home.apiPreviewTitle')}</h2>
-              <p className="mt-4 text-base leading-7 text-muted-foreground">
-                {t('home.apiPreviewDesc')}
-              </p>
-            </div>
-            <ApiTerminal />
-          </div>
-        </section>
-
-        <section id="features" className="px-4 py-20 sm:px-6 lg:py-24">
+        <section id="features" className="scroll-mt-16 bg-muted/30 px-4 py-20 sm:px-6 lg:py-24">
           <div className="mx-auto max-w-7xl">
             <div className="mb-10 max-w-2xl">
               <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-primary">{t('home.coreKicker')}</p>
@@ -340,9 +314,9 @@ export function PublicHomePage() {
                 {t('home.coreDesc')}
               </p>
             </div>
-            <div className="grid gap-px overflow-hidden rounded-xl border border-border/70 bg-border/70 lg:grid-cols-3">
+            <div className="grid gap-4 lg:grid-cols-3">
               {features.map(({ titleKey, descriptionKey, Icon, span, preview }) => (
-                <article key={titleKey} className={cn('bg-background p-6 transition hover:bg-muted/30', span)}>
+                <article key={titleKey} className={cn('rounded-2xl border bg-card p-6 sm:p-8', span)}>
                   <div className="mb-5 flex items-center gap-3">
                     <span className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
                       <Icon className="size-5" />
@@ -357,7 +331,7 @@ export function PublicHomePage() {
           </div>
         </section>
 
-        <section id="models" className="border-y border-border/60 bg-muted/25 px-4 py-20 sm:px-6 lg:py-24">
+        <section id="models" className="scroll-mt-16 border-y border-border/60 bg-muted/25 px-4 py-20 sm:px-6 lg:py-24">
           <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
             <div>
               <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-primary">{t('home.modelHubKicker')}</p>
@@ -399,7 +373,7 @@ export function PublicHomePage() {
           </div>
         </section>
 
-        <section id="workflow" className="px-4 py-20 sm:px-6 lg:py-24">
+        <section id="workflow" className="scroll-mt-16 px-4 py-20 sm:px-6 lg:py-24">
           <div className="mx-auto max-w-7xl">
             <div className="mb-12 text-center">
               <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-primary">{t('home.workflowKicker')}</p>
@@ -425,13 +399,6 @@ export function PublicHomePage() {
         <section className="bg-foreground px-4 py-16 text-background sm:px-6 lg:py-20">
           <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[1fr_auto] lg:items-center">
             <div>
-              <div className="mb-4 flex flex-wrap gap-2">
-                {[ShieldCheckIcon, GaugeIcon, WalletCardsIcon, DatabaseZapIcon, LockKeyholeIcon, Globe2Icon, Layers3Icon, PlayCircleIcon, ZapIcon, CheckCircle2Icon].map((Icon, index) => (
-                  <span key={index} className="flex size-9 items-center justify-center rounded-lg bg-background/10 text-background/80">
-                    <Icon className="size-4" />
-                  </span>
-                ))}
-              </div>
               <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">{t('home.finalTitle')}</h2>
               <p className="mt-3 max-w-2xl text-sm leading-7 text-background/70">
                 {t('home.finalDesc')}
