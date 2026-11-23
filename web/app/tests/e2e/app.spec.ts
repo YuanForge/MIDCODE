@@ -237,8 +237,8 @@ test('renders user dashboard with authenticated mocks', async ({ page }) => {
 
   await page.goto('/dashboard')
 
-  await expect(page.getByText('用户数据看板')).toBeVisible()
-  await expect(page.getByText('1.80', { exact: true })).toBeVisible()
+  await expect(page.getByText('用户概览')).toBeVisible()
+  await expect(page.locator('.overview-grid').getByText('¥1.80', { exact: true })).toBeVisible()
   await expect(page.getByText('5.20')).toBeVisible()
   await expect(page.getByText('1.20')).toBeVisible()
 })

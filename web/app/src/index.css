@@ -181,3 +181,8 @@ body {
   border-color: #284777;
 }
 .balance-summary [data-slot=card-description], .balance-summary .text-muted-foreground { color: #cbd9f7; }
+
+.overview-grid { display: grid; gap: 1.25rem; }
+.overview-grid [data-testid="usage-trend"] svg { height: 10rem; }
+.usage-donut { width: clamp(4rem, 7vw, 7rem); aspect-ratio: 1; border-radius: 50%; mask: radial-gradient(circle, transparent 45%, black 46%); }
+@media (min-width: 800px) { .overview-grid { grid-template-columns: minmax(0, .82fr) minmax(0, 1.18fr); align-items: stretch; } }

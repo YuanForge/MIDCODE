@@ -97,10 +97,10 @@ function parseSettings(response: unknown): SiteSettings {
     : response as Record<string, unknown>
 
   return {
-    siteName: getRuntimeString('site_name', String(record.site_name || 'MidCode')),
+    siteName: String(record.site_name || getRuntimeString('site_name', 'MidCode')),
     seoTitle: String(record.seo_title || ''),
     seoDescription: String(record.seo_description || ''),
-    logoUrl: getRuntimeString('logo_url', String(record.logo_url || '')),
+    logoUrl: String(record.logo_url ?? getRuntimeString('logo_url')),
     themeColor: String(record.theme_color || getRuntimeString('theme_color')),
     tutorialMarkdown: String(record.tutorial_markdown || ''),
     plans: (() => {

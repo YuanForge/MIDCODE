@@ -1,9 +1,9 @@
+import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useMemo, useState } from 'react'
 import { CCSwitchImport } from './CCSwitchImport'
 import { KeyRoundIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 
-import { FilterBar } from '@/components/shared/FilterBar'
 import { ModelGroupSelector } from '@/components/shared/ModelGroupSelector'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { TableEmpty } from '@/components/shared/TableEmpty'
@@ -31,7 +31,6 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
 import {
   Table,
   TableBody,
@@ -50,6 +49,7 @@ function spendText(value: number | undefined) {
 }
 
 export function UserKeysPage() {
+  const [detailKey, setDetailKey] = useState<ApiKeyRecord | null>(null)
   const { data: keys, loading, error: loadError, reload } = useAsync(async () => {
     const response = await userApi.listApiKeys()
     return Array.isArray(response) ? response : response.api_keys ?? response.keys ?? []
@@ -149,9 +149,7 @@ export function UserKeysPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Security"
-        title="API 密钥"
-        description="管理 API 调用密钥、模型分组，并一键导入 CC Switch。"
+        title="API 密钥管理"
         actions={
           <Button onClick={() => setCreateOpen(true)}>
             <PlusIcon data-icon="inline-start" />
@@ -164,22 +162,20 @@ export function UserKeysPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
-      <FilterBar filters={<p className="text-sm text-muted-foreground">共 {keys.length} 个密钥</p>} />
+      <div className="rounded-lg bg-accent px-4 py-3 text-sm text-accent-foreground">支持导入 CC Switch 指定密钥，灵活切换不同服务源。<span className="ml-3">共 {keys.length} 个密钥</span></div>
       {loading ? (
         <Card className="overflow-hidden">
           <Table className="min-w-[860px]">
             <TableHeader>
               <TableRow>
                 <TableHead>名称</TableHead>
-                <TableHead>Key</TableHead>
-                <TableHead>模型分组</TableHead>
-                <TableHead className="text-right">今日消耗</TableHead>
-                <TableHead className="text-right">累计消耗</TableHead>
-                <TableHead>状态</TableHead>
+                <TableHead>密钥类型</TableHead>
+                <TableHead>权限范围</TableHead>
+                <TableHead>创建时间</TableHead>
                 <TableHead className="text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
-            <TableSkeleton cols={7} rows={3} />
+            <TableSkeleton cols={5} rows={3} />
           </Table>
         </Card>
       ) : keys.length === 0 ? (
@@ -188,17 +184,15 @@ export function UserKeysPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>名称</TableHead>
-                <TableHead>Key</TableHead>
-                <TableHead>模型分组</TableHead>
-                <TableHead className="text-right">今日消耗</TableHead>
-                <TableHead className="text-right">累计消耗</TableHead>
-                <TableHead>状态</TableHead>
+                <TableHead>密钥类型</TableHead>
+                <TableHead>权限范围</TableHead>
+                <TableHead>创建时间</TableHead>
                 <TableHead className="text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               <TableEmpty
-                cols={7}
+                cols={5}
                 Icon={KeyRoundIcon}
                 title="还没有 API 密钥"
                 description="点击右上角「新建密钥」即可创建并导入 CC Switch。"
@@ -212,55 +206,19 @@ export function UserKeysPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>名称</TableHead>
-                <TableHead>Key</TableHead>
-                <TableHead>模型分组</TableHead>
-                <TableHead className="text-right">今日消耗</TableHead>
-                <TableHead className="text-right">累计消耗</TableHead>
-                <TableHead>状态</TableHead>
+                <TableHead>密钥类型</TableHead>
+                <TableHead>权限范围</TableHead>
+                <TableHead>创建时间</TableHead>
                 <TableHead className="text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {keys.map((item, index) => (
                 <TableRow key={item.id ?? index}>
-                  <TableCell className="font-medium">{item.name ?? '未命名'}</TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {item.viewable
-                      ? (item.raw_key ?? item.key ?? '***')
-                      : item.key_prefix
-                        ? `${item.key_prefix}...`
-                        : (item.masked_key ?? '***')}
-                  </TableCell>
-                  <TableCell>
-                    <KeyGroupSummary item={item} />
-                  </TableCell>
-                  <TableCell className="text-right font-mono text-sm">
-                    <span
-                      className={
-                        (item.today_consumed ?? 0) > 0
-                          ? 'font-semibold text-destructive'
-                          : 'text-muted-foreground'
-                      }
-                    >
-                      {spendText(item.today_consumed)}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right font-mono text-sm">
-                    <span
-                      className={
-                        (item.total_consumed ?? 0) > 0
-                          ? 'font-semibold text-destructive'
-                          : 'text-muted-foreground'
-                      }
-                    >
-                      {spendText(item.total_consumed)}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={item.is_active === false ? 'secondary' : 'default'}>
-                      {item.is_active === false ? '停用' : '启用'}
-                    </Badge>
-                  </TableCell>
+                  <TableCell><button className="cursor-pointer font-medium hover:underline" onClick={() => setDetailKey(item)}>{item.name ?? '未命名'}</button></TableCell>
+                  <TableCell>{item.key_type || '—'}</TableCell>
+                  <TableCell><KeyGroupSummary item={item} /></TableCell>
+                  <TableCell>{item.created_at ? new Date(item.created_at).toLocaleString('zh-CN', {hour12:false}) : '—'}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-2">
                       <CCSwitchImport keys={importKeys} selectedId={String(item.id)} />
@@ -297,6 +255,20 @@ export function UserKeysPage() {
         </Card>
       )}
 
+      <div className="flex flex-wrap items-center gap-3">
+        <CCSwitchImport keys={importKeys} />
+        <Button onClick={() => setCreateOpen(true)}>创建新密钥</Button>
+      </div>
+      <Dialog open={Boolean(detailKey)} onOpenChange={open => { if (!open) setDetailKey(null) }}>
+        <DialogContent><DialogHeader><DialogTitle>{detailKey?.name || '密钥详情'}</DialogTitle></DialogHeader>
+          {detailKey && <dl className="grid grid-cols-[auto_1fr] gap-3 text-sm">
+            <dt>密钥</dt><dd className="break-all font-mono">{detailKey.viewable ? detailKey.raw_key || detailKey.key || '—' : detailKey.masked_key || detailKey.key_prefix || '—'}</dd>
+            <dt>状态</dt><dd>{detailKey.is_active === false ? '停用' : '启用'}</dd>
+            <dt>今日消耗</dt><dd>{spendText(detailKey.today_consumed)}</dd>
+            <dt>累计消耗</dt><dd>{spendText(detailKey.total_consumed)}</dd>
+          </dl>}
+        </DialogContent>
+      </Dialog>
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-h-[calc(100dvh-2rem)] min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden sm:max-w-2xl">
           <DialogHeader>
