@@ -188,17 +188,6 @@ body {
 @media (min-width: 800px) { .overview-grid { grid-template-columns: minmax(0, .82fr) minmax(0, 1.18fr); align-items: stretch; } }
 
 .workspace-filters { padding: .875rem 1rem; background: color-mix(in srgb, var(--accent) 38%, var(--card)); border: 1px solid var(--border); border-radius: .65rem; }
-.catalog-row { padding: 0; }
-.catalog-model-content { display: grid; align-items: center; gap: .75rem 1rem; padding: 1rem; }
-.catalog-actions { grid-row: 1; justify-self: end; }
-.catalog-identifier { overflow-wrap: anywhere; }
-@media (min-width: 900px) {
-  .catalog-model-content { grid-template-columns: minmax(14rem, 1.3fr) minmax(8rem, 1fr) auto; }
-  .catalog-model-content > .flex.items-start { grid-column: 1; grid-row: 1 / span 2; }
-  .catalog-description { grid-column: 2; grid-row: 1; }
-  .catalog-identifier { grid-column: 2; grid-row: 2; flex-direction: row; flex-wrap: wrap; }
-  .catalog-actions { grid-column: 3; grid-row: 1 / span 2; }
-}
 .invitation-card { background: radial-gradient(ellipse at top right, var(--accent), transparent 68%), var(--card); }
 .billing-workspace, .billing-overview { display: grid; gap: 1rem; align-content: start; }
 @media(min-width: 1024px) {
