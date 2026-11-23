@@ -86,7 +86,7 @@ export function UserDashboardPage() {
         </Alert>
       )}
       <div className="overview-grid">
-        <Card className="justify-center"><CardContent className="space-y-4">
+        <Card className="balance-summary overview-balance justify-center"><CardContent className="space-y-4">
           <h2 className="font-semibold">账户余额</h2>
           <div className="flex items-center justify-between gap-2">
             {loading ? <Skeleton className="h-9 w-24" /> : <strong className="text-3xl tabular-nums">¥{formatCredits(data.balance)}</strong>}
@@ -105,7 +105,7 @@ export function UserDashboardPage() {
           <ul className="min-w-0 flex-1 space-y-2">{usage.loading || usage.error || !total ? <li>{usage.loading ? '加载中…' : usage.error ? '用量数据暂不可用' : '暂无请求'}</li> : slices.map((item,i) => <li key={i} className="flex items-center gap-2 text-xs"><span className="size-2 shrink-0 rounded-full" style={{background:colors[i]}} /><span className="truncate" title={item.label}>{item.label}</span><span className="ml-auto">{(item.count/total*100).toFixed(0)}%</span></li>)}</ul></div>
         </CardContent></Card>
         <Card><CardContent><h2 className="mb-5 font-semibold">快速入口</h2><div className="grid grid-cols-3">
-          {[{to:'/playground',label:'开始对话',Icon:MessageSquareIcon},{to:'/keys',label:'管理密钥',Icon:KeySquareIcon},{to:'/billing',label:'查看账单',Icon:ShoppingCartIcon}].map(({to,label,Icon}) => <Link key={to} to={to} className="grid justify-items-center gap-2 text-sm"><span className="grid size-12 place-items-center rounded-full bg-muted"><Icon className="size-5" /></span>{label}</Link>)}
+          {[{to:'/playground',label:'开始对话',Icon:MessageSquareIcon},{to:'/keys',label:'管理密钥',Icon:KeySquareIcon},{to:'/billing',label:'查看账单',Icon:ShoppingCartIcon}].map(({to,label,Icon}) => <Link key={to} to={to} className="quick-entry grid justify-items-center gap-2 text-sm"><span className="grid size-12 place-items-center rounded-full bg-muted"><Icon className="size-5" /></span>{label}</Link>)}
         </div></CardContent></Card>
       </div>
       <PageSection title="API 网关" description="OpenAI 兼容接口使用当前站点地址作为模型基址。">

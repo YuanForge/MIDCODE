@@ -150,6 +150,7 @@ export function UserKeysPage() {
     <>
       <PageHeader
         title="API 密钥管理"
+        description="管理访问凭据、模型分组和调用权限。"
         actions={
           <Button onClick={() => setCreateOpen(true)}>
             <PlusIcon data-icon="inline-start" />
@@ -162,7 +163,7 @@ export function UserKeysPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
-      <div className="rounded-lg bg-accent px-4 py-3 text-sm text-accent-foreground">支持导入 CC Switch 指定密钥，灵活切换不同服务源。<span className="ml-3">共 {keys.length} 个密钥</span></div>
+      <div className="key-summary"><KeyRoundIcon aria-hidden="true" /><div><span>我的密钥</span><strong>{loading ? '—' : keys.length}</strong></div><p>支持导入 CC Switch 指定密钥，灵活切换不同服务源。</p></div>
       {loading ? (
         <Card className="overflow-hidden">
           <Table className="min-w-[860px]">

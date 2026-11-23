@@ -39,7 +39,7 @@ export function StatCard({
   variant?: StatCardVariant
 }) {
   return (
-    <Card className="border-border/70">
+    <Card className="metric-card border-border/70">
       <CardContent className="flex flex-col gap-2">
         <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
           {icon && <span className={cn(iconWrapStyles({ variant }), 'size-7 rounded-full [&>svg]:size-4')}>{icon}</span>}

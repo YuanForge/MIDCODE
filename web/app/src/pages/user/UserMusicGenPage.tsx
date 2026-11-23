@@ -203,7 +203,7 @@ export function UserMusicGenPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
-      <div className="grid min-w-0 items-start gap-4 md:grid-cols-[minmax(240px,.8fr)_minmax(0,1.2fr)]">
+      <div className="music-workspace grid min-w-0 items-start gap-4 md:grid-cols-[minmax(240px,0.7fr)_minmax(0,1.3fr)]">
         <Card size="sm" className="min-w-0">
           <CardContent className="flex flex-col gap-4 p-4">
             <div className="grid gap-1.5">
@@ -313,8 +313,8 @@ export function UserMusicGenPage() {
         <Card size="sm" className="min-h-[480px] min-w-0">
           <CardContent className="flex h-full flex-col gap-4 p-4 md:p-6">
             {taskStatus === 'idle' && items.length === 0 ? (
-              <div className="flex min-h-64 flex-1 flex-col items-center justify-center gap-4 rounded-lg bg-muted/50">
-                <img src="/landing/sample-audio.webp" alt="" className="w-28 rounded-lg" />
+              <div className="music-listening flex min-h-80 flex-1 flex-col items-center justify-center gap-4 rounded-lg">
+                <img src="/landing/sample-audio.webp" alt="" className="w-48 rounded-xl shadow-lg" />
                 <p className="text-sm text-muted-foreground">生成的音乐将在这里试听。</p>
               </div>
             ) : null}

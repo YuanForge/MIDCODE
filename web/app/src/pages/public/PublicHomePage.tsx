@@ -291,7 +291,7 @@ export function PublicHomePage() {
                 </Button>
               </div>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="home-model-cards grid gap-3 sm:grid-cols-2">
               {[
                 { titleKey: 'home.llmTitle', descKey: 'home.llmDesc', Icon: MessageSquareTextIcon },
                 { titleKey: 'home.imageTitle', descKey: 'home.imageDesc', Icon: ImageIcon },
@@ -300,7 +300,7 @@ export function PublicHomePage() {
               ].map(({ titleKey, descKey, Icon }) => (
                 <Card key={titleKey} className="shadow-sm">
                   <CardHeader>
-                    <Icon className="mb-3 size-5 text-primary" />
+                    <Icon className="size-9 rounded-lg bg-accent p-2 text-accent-foreground" />
                     <CardTitle><h3>{t(titleKey)}</h3></CardTitle>
                     <CardDescription className="leading-6">{t(descKey)}</CardDescription>
                   </CardHeader>

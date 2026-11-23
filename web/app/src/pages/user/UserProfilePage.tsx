@@ -257,7 +257,7 @@ export function UserProfilePage() {
           </div>
       </PageSection>
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <div className="grid min-w-0 content-start gap-5">
           <QQBindingCard />
           <CreditTransferCard userId={profile?.id} onSuccess={reloadBalance} />

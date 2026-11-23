@@ -266,38 +266,8 @@ export function UserPlaygroundPage() {
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}
-        <div className="grid min-w-0 items-start gap-4 md:grid-cols-[minmax(240px,0.8fr)_minmax(0,1.2fr)]">
+        <div className="chat-workspace">
           <div className="grid min-w-0 gap-4">
-            <Card><h2 className="px-4 font-semibold">提示词</h2>
-              <div className="px-4 pb-4">
-                <div className="flex flex-col gap-3">
-                  <Textarea
-                    className="min-h-36 min-w-0 flex-1 resize-none"
-                    aria-label="消息输入框"
-                    value={inputText}
-                    onChange={(event) => setInputText(event.target.value)}
-                    placeholder="输入消息，Enter 发送"
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-                        event.preventDefault()
-                        void sendMessage()
-                      }
-                    }}
-                  />
-                  <div className="flex flex-col items-stretch gap-1 ">
-                    <Button
-                      onClick={() => (streaming ? abortRef.current?.abort() : void sendMessage())}
-                      disabled={!streaming && (!inputText.trim() || !canInvoke() || channels.length === 0)}
-                    >
-                      {streaming ? '停止生成' : '开始生成'}
-                    </Button>
-                    {apiKeys.length > 0 && !canInvoke() && (
-                      <p className="text-xs text-destructive">所选密钥不可用，请重新选择</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </Card>
           <Card size="sm" className="min-w-0">
             <CardContent className="flex flex-col gap-4 p-4">
               <h2 className="font-semibold">生成设置</h2>
@@ -394,7 +364,7 @@ export function UserPlaygroundPage() {
             </CardContent>
           </Card>
           </div>
-          <Card size="sm" className="flex h-[70dvh] min-h-[440px] min-w-0 flex-col overflow-hidden">
+          <Card size="sm" className="chat-result flex h-[74dvh] min-h-[440px] min-w-0 flex-col overflow-hidden">
             <h2 className="border-b px-4 pb-3 font-semibold">生成结果</h2>
             <CardContent className="flex min-h-0 flex-1 flex-col p-0">
               <div
@@ -429,6 +399,36 @@ export function UserPlaygroundPage() {
                 ) : null}
               </div>
             </CardContent>
+            <div className="chat-composer"><h2 className="sr-only">提示词</h2>
+              <div className="px-4 pb-4">
+                <div className="flex flex-col gap-3">
+                  <Textarea
+                    className="min-h-16 min-w-0 flex-1 resize-none"
+                    aria-label="消息输入框"
+                    value={inputText}
+                    onChange={(event) => setInputText(event.target.value)}
+                    placeholder="输入消息，Enter 发送"
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                        event.preventDefault()
+                        void sendMessage()
+                      }
+                    }}
+                  />
+                  <div className="flex flex-col items-end gap-1">
+                    <Button
+                      onClick={() => (streaming ? abortRef.current?.abort() : void sendMessage())}
+                      disabled={!streaming && (!inputText.trim() || !canInvoke() || channels.length === 0)}
+                    >
+                      {streaming ? '停止生成' : '开始生成'}
+                    </Button>
+                    {apiKeys.length > 0 && !canInvoke() && (
+                      <p className="text-xs text-destructive">所选密钥不可用，请重新选择</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
           </Card>
           <Card
             size="sm"

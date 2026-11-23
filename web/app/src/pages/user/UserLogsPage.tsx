@@ -217,13 +217,13 @@ export function UserLogsPage() {
               ) : (
                 rows.map((row, index) => (
                   <TableRow key={row.id ?? index}>
-                    <TableCell className="max-w-[200px] truncate font-medium" title={row.model}>
+                    <TableCell data-label="模型" className="max-w-[200px] truncate font-medium" title={row.model}>
                       {row.model ?? '-'}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
+                    <TableCell data-label="请求时间" className="text-sm text-muted-foreground">
                       {row.created_at ? new Date(row.created_at).toLocaleString('zh-CN') : '-'}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell data-label="输入 Tokens" className="text-right">
                       {row.usage?.prompt_tokens != null ? (
                         <div className="text-sm">
                           {row.usage.prompt_tokens.toLocaleString()}
@@ -242,8 +242,8 @@ export function UserLogsPage() {
                         <span className="text-muted-foreground/50">-</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right whitespace-nowrap tabular-nums">{formatCacheHitPercent(row.cache_hit_percent)}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell data-label="缓存命中率" className="text-right whitespace-nowrap tabular-nums">{formatCacheHitPercent(row.cache_hit_percent)}</TableCell>
+                    <TableCell data-label="输出 Tokens" className="text-right">
                       {row.usage?.completion_tokens != null ? (
                         <div className="flex flex-col items-end gap-1">
                           <span className="text-sm">{row.usage.completion_tokens.toLocaleString()}</span>
@@ -257,11 +257,11 @@ export function UserLogsPage() {
                         <span className="text-muted-foreground/50">-</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right whitespace-nowrap tabular-nums">{formatTTFT(row.usage?.performance_ttft_ms)}</TableCell>
-                    <TableCell className="text-right whitespace-nowrap tabular-nums">{formatTPS(row.usage?.performance_tps)}</TableCell>
-                    <TableCell className="text-right">{renderTokenPrice(row.input_price_per_1m_tokens)}</TableCell>
-                    <TableCell className="text-right">{renderTokenPrice(row.output_price_per_1m_tokens)}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell data-label="TTFT" className="text-right whitespace-nowrap tabular-nums">{formatTTFT(row.usage?.performance_ttft_ms)}</TableCell>
+                    <TableCell data-label="TPS" className="text-right whitespace-nowrap tabular-nums">{formatTPS(row.usage?.performance_tps)}</TableCell>
+                    <TableCell data-label="输入价格" className="text-right">{renderTokenPrice(row.input_price_per_1m_tokens)}</TableCell>
+                    <TableCell data-label="输出价格" className="text-right">{renderTokenPrice(row.output_price_per_1m_tokens)}</TableCell>
+                    <TableCell data-label="消耗积分" className="text-right">
                       {(row.credits_charged ?? row.cost_credits) ? (
                         <span className="font-semibold text-destructive">
                           -{formatCredits(row.credits_charged ?? row.cost_credits)}
@@ -270,8 +270,8 @@ export function UserLogsPage() {
                         <span className="text-muted-foreground/50">-</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-center">{renderStatus(row.status)}</TableCell>
-                    <TableCell className="text-center">
+                    <TableCell data-label="状态" className="text-center">{renderStatus(row.status)}</TableCell>
+                    <TableCell data-label="操作" className="text-center">
                       <Button variant="ghost" size="sm" onClick={() => openDetail(row)}>详情</Button>
                     </TableCell>
                   </TableRow>

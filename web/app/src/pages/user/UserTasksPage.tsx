@@ -306,9 +306,9 @@ export function UserTasksPage() {
               <ListIcon className="size-7 text-muted-foreground" /><h2>还没有任务记录</h2>
               <p className="text-sm text-muted-foreground">发起图片、视频、音频或音乐生成后，任务会显示在这里。</p>
             </div>
-          ) : <ul className="divide-y">{data.tasks.map((row,index) => {
+          ) : <ul className="task-cards">{data.tasks.map((row,index) => {
             const id = row.id ?? row.task_id
-            return <li key={id ?? index} className="flex flex-wrap items-center gap-4 py-4">
+            return <li key={id ?? index} className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-4">
               <span className="grid size-10 place-items-center rounded-lg bg-accent text-accent-foreground"><ListIcon className="size-5" /></span>
               <div className="min-w-0 flex-1"><h3 className="font-semibold">{typeLabel(row.type ?? row.task_type)} <span className="break-all text-xs font-normal text-muted-foreground">#{id ?? '—'}</span></h3>
                 <p className="text-xs text-muted-foreground">{row.created_at ? new Date(row.created_at).toLocaleString('zh-CN') : '—'} · 消耗积分 {row.credits_charged != null ? (row.credits_charged / 1e6).toFixed(4) : '—'}</p>

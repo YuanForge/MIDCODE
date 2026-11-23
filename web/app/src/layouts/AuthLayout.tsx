@@ -17,8 +17,9 @@ export function AuthLayout({ adminMode = false }: { adminMode?: boolean } = {}) 
         <section aria-label={siteName}><AppLogo siteName={siteName} logoUrl={logoUrl} label={adminMode ? a.admin : siteName} /></section>
         <div className="flex items-center gap-2"><LanguageSwitcher /><ThemeToggle /></div>
       </header>
-      <main className="mx-auto flex w-full max-w-lg justify-center px-5 py-10 sm:py-16">
-        <Outlet />
+      <main className="auth-layout">
+        <div className="auth-art" aria-hidden="true"><img src="/landing/orbit.png" alt="" /></div>
+        <div className="auth-form"><Outlet /></div>
       </main>
     </div>
   )

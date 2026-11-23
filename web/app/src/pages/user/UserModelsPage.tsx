@@ -614,6 +614,8 @@ export function UserModelsPage() {
           </AlertDescription>
         </Alert>
       ) : null}
+      <div className="catalog-workspace">
+      <aside className="catalog-rail">
       <FilterBar
         filters={
           <div className="flex min-w-0 flex-1 flex-col gap-3">
@@ -681,7 +683,7 @@ export function UserModelsPage() {
           <div className="relative w-full sm:w-auto">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              className="w-full pl-9 sm:w-[280px]"
+              className="w-full pl-9 sm:w-full"
               placeholder={t('models.searchPlaceholder')}
               value={filterName}
               onChange={(event) => setFilterName(event.target.value)}
@@ -691,8 +693,10 @@ export function UserModelsPage() {
         }
       />
 
+      </aside>
+      <div className="min-w-0">
       {loading || (collection === 'favorites' && modelPreferences.loading) ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="catalog-cards">
           {Array.from({ length: 8 }).map((_, index) => (
             <Card key={index}>
               <CardContent className="flex flex-col gap-3 p-5">
@@ -710,7 +714,7 @@ export function UserModelsPage() {
           description={collection === 'favorites' ? (modelPreferences.error ? '请重试加载收藏。' : !modelPreferences.authenticated ? '收藏会随账号保存，登录后即可使用。' : favoriteCount ? '试试调整类型、厂商或搜索条件。' : '点击模型卡片上的星标，把常用模型收藏到这里。') : t('models.emptyDescription')}
         />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="catalog-cards">
           {filteredChannels.map((channel) => (
             <Card
               key={channel.routing_model || channel.name}
@@ -788,6 +792,9 @@ export function UserModelsPage() {
           ))}
         </div>
       )}
+
+      </div>
+      </div>
 
       <Sheet open={docVisible} onOpenChange={setDocVisible}>
         <SheetContent side="right" className="flex w-[90vw] flex-col overflow-y-auto p-0 data-[side=right]:sm:max-w-4xl">

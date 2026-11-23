@@ -272,7 +272,7 @@ export function AdminDashboardPage() {
 
       {/* 第二行：累计数据 */}
       {/* 趋势曲线 + TOP 榜并排 */}
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <TrendSection />
         <TopSection />
       </div>
