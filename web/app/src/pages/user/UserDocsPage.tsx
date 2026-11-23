@@ -3,12 +3,11 @@ import { useEffect, useRef } from 'react'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/button'
 
-const scalarConfiguration = JSON.stringify({
+const scalarConfiguration = {
   theme: 'default',
-  darkMode: false,
   layout: 'sidebar',
   hideDarkModeToggle: true,
-})
+}
 
 export function UserDocsPage() {
   const scalarRootRef = useRef<HTMLDivElement>(null)
@@ -26,7 +25,7 @@ export function UserDocsPage() {
     const reference = document.createElement('div')
     reference.id = 'api-reference'
     reference.setAttribute('data-url', '/openapi-user.json')
-    reference.setAttribute('data-configuration', scalarConfiguration)
+    reference.setAttribute('data-configuration', JSON.stringify({ ...scalarConfiguration, darkMode: document.documentElement.classList.contains('dark') }))
     root.replaceChildren(reference)
 
     const script = document.createElement('script')

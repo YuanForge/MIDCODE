@@ -75,6 +75,7 @@ export function UserLogsPage() {
     return (Array.isArray(response) ? response : response.api_keys ?? response.keys ?? []) as ApiKeyRecord[]
   }, [] as ApiKeyRecord[])
 
+  const [expandedColumns, setExpandedColumns] = useState(false)
   const rows = data.logs
   const total = data.total
 
@@ -184,7 +185,8 @@ export function UserLogsPage() {
       />
 
       <Card className="overflow-hidden">
-        <Table className="min-w-[1340px]">
+        <div className="flex items-center justify-between px-4"><h2 className="font-semibold">调用记录</h2><Button size="sm" variant="outline" aria-pressed={expandedColumns} onClick={() => setExpandedColumns(value => !value)}>{expandedColumns ? '精简视图' : '显示性能与单价'}</Button></div>
+        <Table className={expandedColumns ? 'min-w-[1340px]' : 'compact-log-table min-w-[740px]'}>
           <TableHeader>
             <TableRow>
               <TableHead>模型</TableHead>

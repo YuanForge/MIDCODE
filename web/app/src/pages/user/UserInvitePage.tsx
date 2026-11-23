@@ -201,13 +201,13 @@ export function UserInvitePage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
+      <div className="grid gap-4 md:grid-cols-[minmax(0,1.6fr)_1fr_1fr]">
+        <Card className="invitation-card">
           <CardHeader>
             <CardTitle>邀请码</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-2 text-sm">
-            <div className="font-mono">{loading ? '加载中...' : (info.invite_code ?? '-')}</div>
+            <div className="font-mono text-3xl font-bold tracking-wide">{loading ? '加载中...' : (info.invite_code ?? '-')}</div>
             <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"

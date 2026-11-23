@@ -39,22 +39,14 @@ export function StatCard({
   variant?: StatCardVariant
 }) {
   return (
-    <Card className="border-border/60">
-      <CardContent className="flex items-center justify-between pt-6">
-        <div className="flex flex-col gap-1">
-          {loading ? (
-            <Skeleton className="h-8 w-28" />
-          ) : (
-            <p className="text-2xl font-semibold tracking-tight">{value}</p>
-          )}
-          <p className="text-sm text-muted-foreground">{title}</p>
-          {hint ? <p className="text-xs text-muted-foreground/80">{hint}</p> : null}
+    <Card className="border-border/70">
+      <CardContent className="flex flex-col gap-2">
+        <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+          {icon && <span className={cn(iconWrapStyles({ variant }), 'size-7 rounded-full [&>svg]:size-4')}>{icon}</span>}
+          {title}
         </div>
-        {icon ? (
-          <div className={cn(iconWrapStyles({ variant }))}>
-            <span>{icon}</span>
-          </div>
-        ) : null}
+        {loading ? <Skeleton className="h-8 w-28" /> : <p className="text-3xl font-semibold tracking-tight tabular-nums">{value}</p>}
+        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
       </CardContent>
     </Card>
   )

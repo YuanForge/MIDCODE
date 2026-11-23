@@ -217,13 +217,6 @@ export function ConsoleLayout({
 
   // Find current page title from active nav item
   const allItems = navGroups.flatMap((g) => g.items)
-  const developerRoutes = ['/dashboard', '/playground', '/keys', '/billing', '/profile']
-  const developerView = role === 'user' && developerRoutes.includes(location.pathname)
-  const [showMoreNav, setShowMoreNav] = useState(false)
-  const primaryItems = developerRoutes.flatMap(href => allItems.filter(item => item.href === href))
-  const visibleGroups = developerView ? [{ items: primaryItems }, ...(showMoreNav ? navGroups.map(group => ({
-    ...group, items: group.items.filter(item => !developerRoutes.includes(item.href)),
-  })).filter(group => group.items.length) : [])] : navGroups
   const currentItem = allItems.find((item) => location.pathname === item.href)
   const pageTitle = currentItem ? translateUserLabel(currentItem.label, currentItem.labelKey) : title ?? siteName
 
@@ -260,7 +253,7 @@ export function ConsoleLayout({
         </SidebarHeader>
         <SidebarSeparator />
         <SidebarContent>
-          {visibleGroups.map((group: NavGroup, i) => (
+          {navGroups.map((group, i) => (
             <SidebarGroup key={i}>
               {group.label && <SidebarGroupLabel>{translateUserLabel(group.label, group.labelKey)}</SidebarGroupLabel>}
               <SidebarGroupContent>
@@ -283,7 +276,6 @@ export function ConsoleLayout({
               </SidebarGroupContent>
             </SidebarGroup>
           ))}
-          {developerView && <Button variant="ghost" size="sm" className="mx-2 justify-start text-muted-foreground" aria-expanded={showMoreNav} onClick={() => setShowMoreNav(value => !value)}>{showMoreNav ? '收起导航' : '更多功能'}</Button>}
         </SidebarContent>
         <SidebarFooter>
           {footer}

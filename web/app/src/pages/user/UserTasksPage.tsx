@@ -4,9 +4,7 @@ import { ListIcon } from 'lucide-react'
 import { DateRangeFilter, formatDateTimeFilterValue } from '@/components/shared/DateRangeFilter'
 import { FilterBar } from '@/components/shared/FilterBar'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { TableEmpty } from '@/components/shared/TableEmpty'
 import { TablePagination } from '@/components/shared/TablePagination'
-import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,14 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+
 import { useAsync } from '@/hooks/use-async'
 import { userApi, type UserTask } from '@/lib/api/user'
 import { copyToClipboard } from '@/lib/clipboard'
@@ -309,70 +300,25 @@ export function UserTasksPage() {
       />
 
       <Card className="overflow-hidden">
-        <Table className="min-w-[820px]">
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-20">ID</TableHead>
-              <TableHead className="w-28">类型</TableHead>
-              <TableHead className="w-36">请求时间</TableHead>
-              <TableHead className="w-32 text-right">消耗积分</TableHead>
-              <TableHead className="w-28">状态</TableHead>
-              <TableHead>错误信息</TableHead>
-              <TableHead className="w-16 text-center">操作</TableHead>
-            </TableRow>
-          </TableHeader>
-          {loading ? (
-            <TableSkeleton cols={7} />
-          ) : (
-            <TableBody>
-              {data.tasks.length === 0 ? (
-                <TableEmpty
-                  cols={7}
-                  Icon={ListIcon}
-                  title="还没有任务记录"
-                  description="发起图片、视频、音频或音乐生成后，任务会显示在这里。"
-                />
-              ) : (
-                data.tasks.map((row, index) => {
-                  const taskId = row.id ?? row.task_id
-                  const st = resolveStatus(row)
-                  const errMsg = row.error_msg ?? row.msg
-                  return (
-                    <TableRow key={taskId ?? index}>
-                      <TableCell>{taskId ?? '-'}</TableCell>
-                      <TableCell>
-                        <Badge variant="secondary" className="text-xs">
-                          {typeLabel(row.type ?? row.task_type)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {row.created_at ? new Date(row.created_at).toLocaleString('zh-CN') : '-'}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        {row.credits_charged != null ? (
-                          <span className="font-semibold text-destructive">-{(row.credits_charged / 1e6).toFixed(4)}</span>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>{statusBadge(st)}</TableCell>
-                      <TableCell className="max-w-48 truncate text-xs text-destructive" title={errMsg}>
-                        {errMsg ?? <span className="text-muted-foreground">-</span>}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {taskId != null ? (
-                          <Button size="sm" variant="link" className="h-auto p-0" onClick={() => openDetail(taskId)}>
-                            详情
-                          </Button>
-                        ) : null}
-                      </TableCell>
-                    </TableRow>
-                  )
-                })
-              )}
-            </TableBody>
-          )}
-        </Table>
+        <CardContent aria-busy={loading}>
+          {loading ? <p role="status">正在加载任务…</p> : data.tasks.length === 0 ? (
+            <div className="grid justify-items-center gap-2 py-10 text-center">
+              <ListIcon className="size-7 text-muted-foreground" /><h2>还没有任务记录</h2>
+              <p className="text-sm text-muted-foreground">发起图片、视频、音频或音乐生成后，任务会显示在这里。</p>
+            </div>
+          ) : <ul className="divide-y">{data.tasks.map((row,index) => {
+            const id = row.id ?? row.task_id
+            return <li key={id ?? index} className="flex flex-wrap items-center gap-4 py-4">
+              <span className="grid size-10 place-items-center rounded-lg bg-accent text-accent-foreground"><ListIcon className="size-5" /></span>
+              <div className="min-w-0 flex-1"><h3 className="font-semibold">{typeLabel(row.type ?? row.task_type)} <span className="break-all text-xs font-normal text-muted-foreground">#{id ?? '—'}</span></h3>
+                <p className="text-xs text-muted-foreground">{row.created_at ? new Date(row.created_at).toLocaleString('zh-CN') : '—'} · 消耗积分 {row.credits_charged != null ? (row.credits_charged / 1e6).toFixed(4) : '—'}</p>
+                {(row.error_msg || row.msg) && <p className="break-words text-xs text-destructive">{row.error_msg || row.msg}</p>}
+              </div>
+              {statusBadge(resolveStatus(row))}
+              {id != null && <Button size="sm" variant="outline" onClick={() => openDetail(id)}>详情</Button>}
+            </li>
+          })}</ul>}
+        </CardContent>
         {data.total > 0 ? (
           <CardContent className="flex flex-wrap items-center justify-between gap-3 border-t py-3">
             <span className="text-sm text-muted-foreground">共 {data.total} 条记录</span>

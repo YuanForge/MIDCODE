@@ -76,11 +76,12 @@ export function ResellerDashboardPage() {
           variant={profile?.is_active === false ? 'warning' : 'success'}
         />
       </div>
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,.8fr)_minmax(0,1.2fr)]">
       <Card>
         <CardHeader>
           <CardTitle>代理商资料</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-4">
+        <CardContent className="grid gap-4 sm:grid-cols-2">
           {[
             ['代理商名称', profile?.name],
             ['登录账号', profile?.username],
@@ -102,7 +103,7 @@ export function ResellerDashboardPage() {
           {loading ? (
             <Skeleton className="h-20 w-full" />
           ) : latestSite ? (
-            <div className="grid gap-3 text-sm md:grid-cols-4">
+            <div className="grid gap-3 text-sm sm:grid-cols-2">
               <div>
                 <p className="text-xs text-muted-foreground">站点名称</p>
                 <p className="mt-1 font-medium">{latestSite.site_name}</p>
@@ -125,6 +126,7 @@ export function ResellerDashboardPage() {
           )}
         </CardContent>
       </Card>
+      </div>
     </>
   )
 }

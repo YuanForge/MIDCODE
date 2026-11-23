@@ -186,3 +186,47 @@ body {
 .overview-grid [data-testid="usage-trend"] svg { height: 10rem; }
 .usage-donut { width: clamp(4rem, 7vw, 7rem); aspect-ratio: 1; border-radius: 50%; mask: radial-gradient(circle, transparent 45%, black 46%); }
 @media (min-width: 800px) { .overview-grid { grid-template-columns: minmax(0, .82fr) minmax(0, 1.18fr); align-items: stretch; } }
+
+.workspace-filters { padding: .875rem 1rem; background: color-mix(in srgb, var(--accent) 38%, var(--card)); border: 1px solid var(--border); border-radius: .65rem; }
+.catalog-row { padding: 0; }
+.catalog-model-content { display: grid; align-items: center; gap: .75rem 1rem; padding: 1rem; }
+.catalog-actions { grid-row: 1; justify-self: end; }
+.catalog-identifier { overflow-wrap: anywhere; }
+@media (min-width: 900px) {
+  .catalog-model-content { grid-template-columns: minmax(14rem, 1.3fr) minmax(8rem, 1fr) auto; }
+  .catalog-model-content > .flex.items-start { grid-column: 1; grid-row: 1 / span 2; }
+  .catalog-description { grid-column: 2; grid-row: 1; }
+  .catalog-identifier { grid-column: 2; grid-row: 2; flex-direction: row; flex-wrap: wrap; }
+  .catalog-actions { grid-column: 3; grid-row: 1 / span 2; }
+}
+.invitation-card { background: radial-gradient(ellipse at top right, var(--accent), transparent 68%), var(--card); }
+.billing-workspace, .billing-overview { display: grid; gap: 1rem; align-content: start; }
+@media(min-width: 1024px) {
+  .billing-workspace { grid-template-columns: minmax(15rem,.75fr) minmax(0,1.25fr); align-items: start; }
+  .billing-overview { grid-column: 1; grid-row: 1 / span 3; }
+  .billing-workspace > :not(.billing-overview) { grid-column: 2; }
+  .settings-workspace { display: grid; grid-template-columns: 11rem minmax(0,1fr); align-items: start; }
+  .settings-workspace > div:has(> [role=tablist]) { border: 0; }
+  .settings-workspace [role=tablist] { display: flex; flex-direction: column; align-items: stretch; width: 100%; height: auto; }
+  .settings-workspace [role=tab] { justify-content: flex-start; border: 0; border-radius: .45rem; }
+  .settings-workspace [role=tab][aria-selected=true] { background: var(--accent); color: var(--accent-foreground); }
+}
+.auth-surface [data-slot=card] { border-radius: 1rem; box-shadow: 0 8px 30px color-mix(in srgb,var(--foreground) 6%,transparent); }
+.profile-identity { background: linear-gradient(115deg,var(--card) 55%,var(--accent)); }
+
+.compact-log-table tr > :is(th,td):is(:nth-child(4),:nth-child(6),:nth-child(7),:nth-child(8),:nth-child(9)) { display: none; }
+[data-slot="page-container"] > .workspace-filters:has(+ [data-slot="card"]) {
+  margin-bottom: -1.25rem;
+  border-bottom: 0;
+  border-radius: .65rem .65rem 0 0;
+}
+[data-slot="page-container"] > .workspace-filters + [data-slot="card"] {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+.invitation-card { position: relative; }
+.invitation-card::before, .redeem-card::before { content: ""; display: block; align-self: center; background-position: center; background-repeat: no-repeat; background-size: contain; }
+.invitation-card::before { width: 6rem; height: 6.25rem; background-image: url('/landing/invite-light.webp'); mix-blend-mode: multiply; }
+.redeem-card::before { width: 7.25rem; height: 5rem; background-image: url('/landing/redeem-light.webp'); mix-blend-mode: multiply; }
+.dark .invitation-card::before { background-image: url('/landing/invite-dark.webp'); mix-blend-mode: lighten; }
+.dark .redeem-card::before { background-image: url('/landing/redeem-dark.webp'); mix-blend-mode: lighten; }

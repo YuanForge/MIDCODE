@@ -201,7 +201,7 @@ export function UserProfilePage() {
       ) : null}
 
       {/* 个人信息卡 */}
-      <PageSection title="账户概览" description="查看当前身份、用户编号、邮箱和可用余额。">
+      <PageSection className="profile-identity" title="账户概览" description="查看当前身份、用户编号、邮箱和可用余额。">
           <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
             {/* 头像 */}
             <div className="flex size-20 shrink-0 items-center justify-center rounded-full bg-primary text-3xl font-semibold text-primary-foreground">
@@ -244,7 +244,7 @@ export function UserProfilePage() {
             </div>
 
             {/* 余额 */}
-            <div className="flex flex-col gap-1 rounded-lg border bg-muted/40 px-5 py-4">
+            <div className="balance-summary flex min-w-36 flex-col gap-1 rounded-lg px-5 py-4">
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Wallet className="h-3.5 w-3.5" />
                 <span>当前余额</span>

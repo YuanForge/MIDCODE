@@ -692,7 +692,7 @@ export function UserModelsPage() {
       />
 
       {loading || (collection === 'favorites' && modelPreferences.loading) ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-2">
           {Array.from({ length: 8 }).map((_, index) => (
             <Card key={index}>
               <CardContent className="flex flex-col gap-3 p-5">
@@ -710,17 +710,17 @@ export function UserModelsPage() {
           description={collection === 'favorites' ? (modelPreferences.error ? '请重试加载收藏。' : !modelPreferences.authenticated ? '收藏会随账号保存，登录后即可使用。' : favoriteCount ? '试试调整类型、厂商或搜索条件。' : '点击模型卡片上的星标，把常用模型收藏到这里。') : t('models.emptyDescription')}
         />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-2">
           {filteredChannels.map((channel) => (
             <Card
               key={channel.routing_model || channel.name}
               data-model={channel.routing_model || channel.name}
               data-pinned={!!preferences.get(channel.routing_model || channel.name || '')?.pinned}
-              className="group cursor-pointer overflow-hidden transition-colors hover:border-primary/50"
+              className="catalog-row group cursor-pointer overflow-hidden transition-colors hover:border-primary/50"
               onClick={() => openDoc(channel)}
             >
-              <CardContent className="flex h-full flex-col gap-4 p-5">
-                <div className="flex items-center justify-between gap-2" onClick={event => event.stopPropagation()}>
+              <CardContent className="catalog-model-content">
+                <div className="catalog-actions flex items-center gap-1" onClick={event => event.stopPropagation()}>
                   <Button size="sm" variant={preferences.get(channel.routing_model || channel.name || '')?.pinned ? 'secondary' : 'ghost'}
                     aria-label={`${preferences.get(channel.routing_model || channel.name || '')?.pinned ? '取消置顶' : '置顶'} ${channel.name}`}
                     aria-pressed={!!preferences.get(channel.routing_model || channel.name || '')?.pinned}
@@ -774,10 +774,10 @@ export function UserModelsPage() {
                   </div>
                 </div>
                 {channel.gpt_context_pricing ? <ContextPricingNote compact model={channel.routing_model || channel.name} /> : null}
-                <p className="min-h-10 text-xs leading-5 text-muted-foreground line-clamp-2">
+                <p className="catalog-description text-xs leading-5 text-muted-foreground line-clamp-2">
                   {channel.description || t('models.fallbackDescription')}
                 </p>
-                <div className="mt-auto flex items-center justify-between gap-3 border-t pt-3 text-xs font-medium">
+                <div className="catalog-identifier flex min-w-0 flex-col items-start gap-2 text-xs font-medium">
                   <div className="rounded bg-muted/40 px-2 py-1 font-mono text-muted-foreground">
                     {channel.routing_model || channel.model || channel.name}
                   </div>

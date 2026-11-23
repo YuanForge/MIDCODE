@@ -233,7 +233,7 @@ export function AdminDashboardPage() {
         }
       />
 
-      <ServerPingCard />
+
       {error ? (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
@@ -271,6 +271,12 @@ export function AdminDashboardPage() {
       </div>
 
       {/* 第二行：累计数据 */}
+      {/* 趋势曲线 + TOP 榜并排 */}
+      <div className="grid gap-4 xl:grid-cols-2">
+        <TrendSection />
+        <TopSection />
+      </div>
+      <ServerPingCard />
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
@@ -326,11 +332,6 @@ export function AdminDashboardPage() {
         </Card>
       ) : null}
 
-      {/* 趋势曲线 + TOP 榜并排 */}
-      <div className="grid gap-4 xl:grid-cols-2">
-        <TrendSection />
-        <TopSection />
-      </div>
     </>
   )
 }

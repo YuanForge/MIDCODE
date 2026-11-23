@@ -59,6 +59,34 @@ export function VendorDashboardPage() {
           <AlertDescription>账号已被禁用，请联系管理员处理后再继续提交或查看号池数据。</AlertDescription>
         </Alert>
       ) : null}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>账户余额</CardTitle>
+          </CardHeader>
+          <CardContent className="flex items-end justify-between gap-3">
+            {loading ? <Skeleton className="h-8 w-32" /> : <div className="text-3xl font-semibold text-primary">{formatCredits(profile?.balance ?? 0)}</div>}
+            <Badge variant="outline">可提现余额</Badge>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>提供 Key 数量</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loading ? <Skeleton className="h-8 w-20" /> : <div className="text-2xl font-semibold">{keyCount}</div>}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>手续费比例</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {loading ? <Skeleton className="h-8 w-24" /> : <div className="text-2xl font-semibold">{(commissionRatio * 100).toFixed(2)}%</div>}
+            <p className="text-sm text-muted-foreground">平台扣除后，实际到账约 {(payoutRatio * 100).toFixed(2)}%</p>
+          </CardContent>
+        </Card>
+      </div>
       <Card>
         <CardHeader>
           <CardTitle>供应侧资料</CardTitle>
@@ -88,34 +116,6 @@ export function VendorDashboardPage() {
           ))}
         </CardContent>
       </Card>
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle>账户余额</CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-end justify-between gap-3">
-            {loading ? <Skeleton className="h-8 w-32" /> : <div className="text-2xl font-semibold text-blue-600">{formatCredits(profile?.balance ?? 0)}</div>}
-            <Badge variant="outline">可提现余额</Badge>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>提供 Key 数量</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? <Skeleton className="h-8 w-20" /> : <div className="text-2xl font-semibold">{keyCount}</div>}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>手续费比例</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2">
-            {loading ? <Skeleton className="h-8 w-24" /> : <div className="text-2xl font-semibold">{(commissionRatio * 100).toFixed(2)}%</div>}
-            <p className="text-sm text-muted-foreground">平台扣除后，实际到账约 {(payoutRatio * 100).toFixed(2)}%</p>
-          </CardContent>
-        </Card>
-      </div>
       <Card>
         <CardHeader>
           <CardTitle>名下 Key</CardTitle>

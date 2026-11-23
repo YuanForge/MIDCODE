@@ -64,7 +64,7 @@ export function CardRedemptionSection({ purchaseUrl, onRedeemed }: CardRedemptio
 
   return (
     <>
-      <PageSection title="卡密充值" description="输入卡密兑换积分，兑换后会立即计入账户余额。">
+      <PageSection className="redeem-card" title="卡密充值" description="输入卡密兑换积分，兑换后会立即计入账户余额。">
         {mutError ? (
           <Alert id={mutationErrorId} variant="destructive" className="mb-4">
             <AlertDescription>{mutError}</AlertDescription>
