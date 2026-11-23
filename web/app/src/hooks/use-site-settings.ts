@@ -97,10 +97,10 @@ function parseSettings(response: unknown): SiteSettings {
     : response as Record<string, unknown>
 
   return {
-    siteName: String(record.site_name || getRuntimeString('site_name', 'MidCode')),
+    siteName: getRuntimeString('site_name', String(record.site_name || 'MidCode')),
     seoTitle: String(record.seo_title || ''),
     seoDescription: String(record.seo_description || ''),
-    logoUrl: String(record.logo_url ?? getRuntimeString('logo_url')),
+    logoUrl: getRuntimeString('logo_url', String(record.logo_url || '')),
     themeColor: String(record.theme_color || getRuntimeString('theme_color')),
     tutorialMarkdown: String(record.tutorial_markdown || ''),
     plans: (() => {
@@ -186,7 +186,7 @@ export function SiteSettingsProvider({ children }: { children: ReactNode }) {
       clearBrandTheme()
       return
     }
-    applyBrandTheme({ themeColor: import.meta.env.VITE_PREVIEW_THEME_COLOR || settings.themeColor })
+    applyBrandTheme({ themeColor: settings.themeColor })
     return clearBrandTheme
   }, [settings.themeColor, status])
 

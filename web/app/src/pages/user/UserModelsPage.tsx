@@ -614,8 +614,6 @@ export function UserModelsPage() {
           </AlertDescription>
         </Alert>
       ) : null}
-      <div className="catalog-workspace">
-      <aside className="catalog-rail">
       <FilterBar
         filters={
           <div className="flex min-w-0 flex-1 flex-col gap-3">
@@ -683,7 +681,7 @@ export function UserModelsPage() {
           <div className="relative w-full sm:w-auto">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              className="w-full pl-9 sm:w-full"
+              className="w-full pl-9 sm:w-[280px]"
               placeholder={t('models.searchPlaceholder')}
               value={filterName}
               onChange={(event) => setFilterName(event.target.value)}
@@ -693,10 +691,8 @@ export function UserModelsPage() {
         }
       />
 
-      </aside>
-      <div className="min-w-0">
       {loading || (collection === 'favorites' && modelPreferences.loading) ? (
-        <div className="catalog-cards">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 8 }).map((_, index) => (
             <Card key={index}>
               <CardContent className="flex flex-col gap-3 p-5">
@@ -714,7 +710,7 @@ export function UserModelsPage() {
           description={collection === 'favorites' ? (modelPreferences.error ? '请重试加载收藏。' : !modelPreferences.authenticated ? '收藏会随账号保存，登录后即可使用。' : favoriteCount ? '试试调整类型、厂商或搜索条件。' : '点击模型卡片上的星标，把常用模型收藏到这里。') : t('models.emptyDescription')}
         />
       ) : (
-        <div className="catalog-cards">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filteredChannels.map((channel) => (
             <Card
               key={channel.routing_model || channel.name}
@@ -724,6 +720,22 @@ export function UserModelsPage() {
               onClick={() => openDoc(channel)}
             >
               <CardContent className="flex h-full flex-col gap-4 p-5">
+                <div className="flex items-center justify-between gap-2" onClick={event => event.stopPropagation()}>
+                  <Button size="sm" variant={preferences.get(channel.routing_model || channel.name || '')?.pinned ? 'secondary' : 'ghost'}
+                    aria-label={`${preferences.get(channel.routing_model || channel.name || '')?.pinned ? '取消置顶' : '置顶'} ${channel.name}`}
+                    aria-pressed={!!preferences.get(channel.routing_model || channel.name || '')?.pinned}
+                    disabled={modelPreferences.disabled(channel.routing_model || channel.name || '')}
+                    onClick={() => void modelPreferences.toggle(channel.routing_model || channel.name || '', 'pinned')}>
+                    <Pin data-icon="inline-start" />{preferences.get(channel.routing_model || channel.name || '')?.pinned ? '已置顶' : '置顶'}
+                  </Button>
+                  <Button size="sm" variant={preferences.get(channel.routing_model || channel.name || '')?.favorite ? 'secondary' : 'ghost'}
+                    aria-label={`${preferences.get(channel.routing_model || channel.name || '')?.favorite ? '取消收藏' : '收藏'} ${channel.name}`}
+                    aria-pressed={!!preferences.get(channel.routing_model || channel.name || '')?.favorite}
+                    disabled={modelPreferences.disabled(channel.routing_model || channel.name || '')}
+                    onClick={() => void modelPreferences.toggle(channel.routing_model || channel.name || '', 'favorite')}>
+                    <Star data-icon="inline-start" fill={preferences.get(channel.routing_model || channel.name || '')?.favorite ? 'currentColor' : 'none'} />{preferences.get(channel.routing_model || channel.name || '')?.favorite ? '已收藏' : '收藏'}
+                  </Button>
+                </div>
                 <div className="flex items-start gap-3">
                   <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border bg-muted/30 text-lg font-bold">
                     {channel.icon_url ? (
@@ -734,9 +746,9 @@ export function UserModelsPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                      <h3 className="break-all text-base font-semibold" title={channel.name}>{channel.name}</h3>
+                      <h3 className="truncate text-sm font-semibold" title={channel.name}>{channel.name}</h3>
                       <button
-                        aria-label={t('models.copiedModelId')} className="shrink-0 text-muted-foreground hover:text-foreground"
+                        className="hidden shrink-0 text-muted-foreground hover:text-foreground group-hover:block"
                         onClick={(event) => {
                           event.stopPropagation()
                           copyText(channel.routing_model || channel.name || '', t('models.copiedModelId'))
@@ -750,48 +762,32 @@ export function UserModelsPage() {
                       <Badge variant="outline">{getProtocolLabel(channel.protocol || 'openai')}</Badge>
                       {channel.billing_type ? <Badge variant="outline">{getBillingTypeLabel(channel.billing_type)}</Badge> : null}
                     </div>
-                  </div>
-                </div>
-                {channel.gpt_context_pricing ? <ContextPricingNote compact model={channel.routing_model || channel.name} /> : null}
-                {channel.description && channel.description !== channel.name && (
-                  <p className="line-clamp-2 text-sm text-muted-foreground">{channel.description}</p>
-                )}
-                    <div className="mt-auto border-t pt-3 text-sm tabular-nums text-foreground">
+                    <div className="mt-2 text-xs text-muted-foreground">
                       {channelSummaryPrice(channel) ? (
                         channelSummaryPrice(channel).split('\n').map((line, lineIndex) => (
-                          <div key={lineIndex} className={lineIndex === 0 ? 'font-semibold' : 'mt-1 text-xs text-muted-foreground'}>{line}</div>
+                          <div key={lineIndex} className={lineIndex === 0 ? 'font-medium text-primary/80' : 'text-[10px]'}>{line}</div>
                         ))
                       ) : (
                         <div>{t('models.meteredBilling')}</div>
                       )}
                     </div>
-                <div className="flex items-center justify-between gap-2">
-                  <Badge variant="secondary">{t('common.available')}</Badge>
-                <div className="flex items-center gap-1" onClick={event => event.stopPropagation()}>
-                  <Button size="icon-sm" variant={preferences.get(channel.routing_model || channel.name || '')?.pinned ? 'secondary' : 'ghost'}
-                    aria-label={`${preferences.get(channel.routing_model || channel.name || '')?.pinned ? '取消置顶' : '置顶'} ${channel.name}`}
-                    aria-pressed={!!preferences.get(channel.routing_model || channel.name || '')?.pinned}
-                    disabled={modelPreferences.disabled(channel.routing_model || channel.name || '')}
-                    onClick={() => void modelPreferences.toggle(channel.routing_model || channel.name || '', 'pinned')}>
-                    <Pin data-icon="inline-start" />
-                  </Button>
-                  <Button size="icon-sm" variant={preferences.get(channel.routing_model || channel.name || '')?.favorite ? 'secondary' : 'ghost'}
-                    aria-label={`${preferences.get(channel.routing_model || channel.name || '')?.favorite ? '取消收藏' : '收藏'} ${channel.name}`}
-                    aria-pressed={!!preferences.get(channel.routing_model || channel.name || '')?.favorite}
-                    disabled={modelPreferences.disabled(channel.routing_model || channel.name || '')}
-                    onClick={() => void modelPreferences.toggle(channel.routing_model || channel.name || '', 'favorite')}>
-                    <Star data-icon="inline-start" fill={preferences.get(channel.routing_model || channel.name || '')?.favorite ? 'currentColor' : 'none'} />
-                  </Button>
+                  </div>
                 </div>
+                {channel.gpt_context_pricing ? <ContextPricingNote compact model={channel.routing_model || channel.name} /> : null}
+                <p className="min-h-10 text-xs leading-5 text-muted-foreground line-clamp-2">
+                  {channel.description || t('models.fallbackDescription')}
+                </p>
+                <div className="mt-auto flex items-center justify-between gap-3 border-t pt-3 text-xs font-medium">
+                  <div className="rounded bg-muted/40 px-2 py-1 font-mono text-muted-foreground">
+                    {channel.routing_model || channel.model || channel.name}
+                  </div>
+                  <Badge variant="secondary">{t('common.available')}</Badge>
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
       )}
-
-      </div>
-      </div>
 
       <Sheet open={docVisible} onOpenChange={setDocVisible}>
         <SheetContent side="right" className="flex w-[90vw] flex-col overflow-y-auto p-0 data-[side=right]:sm:max-w-4xl">

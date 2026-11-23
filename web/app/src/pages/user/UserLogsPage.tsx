@@ -75,7 +75,6 @@ export function UserLogsPage() {
     return (Array.isArray(response) ? response : response.api_keys ?? response.keys ?? []) as ApiKeyRecord[]
   }, [] as ApiKeyRecord[])
 
-  const [expandedColumns, setExpandedColumns] = useState(false)
   const rows = data.logs
   const total = data.total
 
@@ -185,8 +184,7 @@ export function UserLogsPage() {
       />
 
       <Card className="overflow-hidden">
-        <div className="flex items-center justify-between px-4"><h2 className="font-semibold">调用记录</h2><Button size="sm" variant="outline" aria-pressed={expandedColumns} onClick={() => setExpandedColumns(value => !value)}>{expandedColumns ? '精简视图' : '显示性能与单价'}</Button></div>
-        <Table className={expandedColumns ? 'min-w-[1340px]' : 'compact-log-table min-w-[740px]'}>
+        <Table className="min-w-[1340px]">
           <TableHeader>
             <TableRow>
               <TableHead>模型</TableHead>
@@ -217,13 +215,13 @@ export function UserLogsPage() {
               ) : (
                 rows.map((row, index) => (
                   <TableRow key={row.id ?? index}>
-                    <TableCell data-label="模型" className="max-w-[200px] truncate font-medium" title={row.model}>
+                    <TableCell className="max-w-[200px] truncate font-medium" title={row.model}>
                       {row.model ?? '-'}
                     </TableCell>
-                    <TableCell data-label="请求时间" className="text-sm text-muted-foreground">
+                    <TableCell className="text-sm text-muted-foreground">
                       {row.created_at ? new Date(row.created_at).toLocaleString('zh-CN') : '-'}
                     </TableCell>
-                    <TableCell data-label="输入 Tokens" className="text-right">
+                    <TableCell className="text-right">
                       {row.usage?.prompt_tokens != null ? (
                         <div className="text-sm">
                           {row.usage.prompt_tokens.toLocaleString()}
@@ -242,8 +240,8 @@ export function UserLogsPage() {
                         <span className="text-muted-foreground/50">-</span>
                       )}
                     </TableCell>
-                    <TableCell data-label="缓存命中率" className="text-right whitespace-nowrap tabular-nums">{formatCacheHitPercent(row.cache_hit_percent)}</TableCell>
-                    <TableCell data-label="输出 Tokens" className="text-right">
+                    <TableCell className="text-right whitespace-nowrap tabular-nums">{formatCacheHitPercent(row.cache_hit_percent)}</TableCell>
+                    <TableCell className="text-right">
                       {row.usage?.completion_tokens != null ? (
                         <div className="flex flex-col items-end gap-1">
                           <span className="text-sm">{row.usage.completion_tokens.toLocaleString()}</span>
@@ -257,11 +255,11 @@ export function UserLogsPage() {
                         <span className="text-muted-foreground/50">-</span>
                       )}
                     </TableCell>
-                    <TableCell data-label="TTFT" className="text-right whitespace-nowrap tabular-nums">{formatTTFT(row.usage?.performance_ttft_ms)}</TableCell>
-                    <TableCell data-label="TPS" className="text-right whitespace-nowrap tabular-nums">{formatTPS(row.usage?.performance_tps)}</TableCell>
-                    <TableCell data-label="输入价格" className="text-right">{renderTokenPrice(row.input_price_per_1m_tokens)}</TableCell>
-                    <TableCell data-label="输出价格" className="text-right">{renderTokenPrice(row.output_price_per_1m_tokens)}</TableCell>
-                    <TableCell data-label="消耗积分" className="text-right">
+                    <TableCell className="text-right whitespace-nowrap tabular-nums">{formatTTFT(row.usage?.performance_ttft_ms)}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums">{formatTPS(row.usage?.performance_tps)}</TableCell>
+                    <TableCell className="text-right">{renderTokenPrice(row.input_price_per_1m_tokens)}</TableCell>
+                    <TableCell className="text-right">{renderTokenPrice(row.output_price_per_1m_tokens)}</TableCell>
+                    <TableCell className="text-right">
                       {(row.credits_charged ?? row.cost_credits) ? (
                         <span className="font-semibold text-destructive">
                           -{formatCredits(row.credits_charged ?? row.cost_credits)}
@@ -270,8 +268,8 @@ export function UserLogsPage() {
                         <span className="text-muted-foreground/50">-</span>
                       )}
                     </TableCell>
-                    <TableCell data-label="状态" className="text-center">{renderStatus(row.status)}</TableCell>
-                    <TableCell data-label="操作" className="text-center">
+                    <TableCell className="text-center">{renderStatus(row.status)}</TableCell>
+                    <TableCell className="text-center">
                       <Button variant="ghost" size="sm" onClick={() => openDetail(row)}>详情</Button>
                     </TableCell>
                   </TableRow>

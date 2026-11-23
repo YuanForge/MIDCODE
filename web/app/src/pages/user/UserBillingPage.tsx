@@ -301,11 +301,10 @@ export function UserBillingPage() {
           <TabsTrigger value="orders">订单记录</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="recharge" className="billing-workspace">
-          <div className="billing-overview">
+        <TabsContent value="recharge" className="space-y-6">
+          <div className="grid gap-6 md:grid-cols-2">
             <PageSection
-              className="balance-summary"
-                title="当前积分"
+              title="当前积分"
               description="积分永不过期，随时可用"
             >
                 <div className="flex items-baseline gap-2">
@@ -345,7 +344,7 @@ export function UserBillingPage() {
             </PageSection>
           ) : null}
 
-
+          <CardRedemptionSection purchaseUrl={settings.cardPurchaseUrl} onRedeemed={reloadBalance} />
 
           {(settings.epayEnabled || settings.payApplyEnabled || settings.shouqianbaEnabled) && (
             <PageSection title="选择充值套餐" description="选择套餐或输入自定义金额，确认优惠与实付金额后发起支付。">
@@ -455,7 +454,6 @@ export function UserBillingPage() {
                 </div>
             </PageSection>
           )}
-          <CardRedemptionSection purchaseUrl={settings.cardPurchaseUrl} onRedeemed={reloadBalance} />
         </TabsContent>
 
         <TabsContent value="transactions" className="space-y-4">

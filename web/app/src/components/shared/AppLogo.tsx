@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { BotIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
@@ -34,13 +35,15 @@ export function AppLogo({
           {initial}
         </div>
       ) : (
-        <img src="/landing/orbit-mark.png" alt="" className="size-9 shrink-0" />
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+          <BotIcon className="size-5" />
+        </div>
       )}
       <div className="min-w-0">
-        <p className="truncate text-xl font-semibold tracking-tight text-foreground">
+        <p className="truncate text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
           {siteName}
         </p>
-        {label !== siteName && <p className="truncate text-xs text-muted-foreground">{label}</p>}
+        <p className="truncate text-sm font-medium text-foreground">{label}</p>
       </div>
     </div>
   )

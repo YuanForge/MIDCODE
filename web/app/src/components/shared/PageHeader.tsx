@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 
 export function PageHeader({
+  eyebrow,
   title,
   description,
   actions,
@@ -11,9 +12,14 @@ export function PageHeader({
   actions?: ReactNode
 }) {
   return (
-    <div data-slot="page-heading" className="flex flex-col gap-3 pb-2 md:flex-row md:items-center md:justify-between">
+    <div className="flex flex-col gap-4 border-b border-border pb-5 md:flex-row md:items-end md:justify-between">
       <div className="flex min-w-0 flex-col gap-1.5">
-        <h1 className="text-2xl font-bold leading-8 tracking-[-0.02em] text-foreground">
+        {eyebrow ? (
+          <p className="text-xs font-medium tracking-wide text-muted-foreground">
+            {eyebrow}
+          </p>
+        ) : null}
+        <h1 className="text-[28px] font-semibold leading-9 tracking-[-0.02em] text-foreground">
           {title}
         </h1>
         {description ? (

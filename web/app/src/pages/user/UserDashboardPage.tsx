@@ -1,16 +1,16 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-
+  ArrowRightIcon,
+  BlocksIcon,
   CheckIcon,
   CopyIcon,
   KeySquareIcon,
   MessageSquareIcon,
+  ImageIcon,
   ShoppingCartIcon,
 } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { UsageTrendChart } from '@/components/shared/UsageTrendChart'
-import { emptyUsage } from '@/lib/usage-stats'
 import { PageSection } from '@/components/shared/PageSection'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -21,6 +21,21 @@ import { userApi, type UserStatsResponse } from '@/lib/api/user'
 import { formatCredits } from '@/lib/formatters/credits'
 import { useAsync } from '@/hooks/use-async'
 import { useSiteSettings } from '@/hooks/use-site-settings'
+
+type GuideStep = {
+  num: number
+  text: string
+  to: string
+  Icon: React.ComponentType<{ className?: string }>
+}
+
+const guideSteps: GuideStep[] = [
+  { num: 1, text: '点击左侧【API 密钥】创建密钥', to: '/keys', Icon: KeySquareIcon },
+  { num: 2, text: '点击左侧【模型列表】查看模型 ID 和接口调用地址', to: '/models', Icon: BlocksIcon },
+  { num: 3, text: '点击左侧【文本对话】在线体验所有 AI 聊天模型', to: '/playground', Icon: MessageSquareIcon },
+  { num: 4, text: '点击左侧【图片生成】在线体验所有图片生成模型', to: '/image-gen', Icon: ImageIcon },
+  { num: 5, text: '点击左侧【积分充值】充值积分', to: '/billing', Icon: ShoppingCartIcon },
+]
 
 export function UserDashboardPage() {
   const { data, loading, error, reload } = useAsync(async () => {
@@ -33,23 +48,6 @@ export function UserDashboardPage() {
     }
   }, { balance: 0, totalConsumed: 0, todayConsumed: 0, stats: {} as UserStatsResponse })
 
-  const [wide, setWide] = useState(false)
-  const [days, setDays] = useState(30)
-  const usage = useAsync(() => {
-    const end = new Date()
-    return userApi.getUsageStats({ start_at: new Date(end.getTime() - days * 86400000).toISOString(), end_at: end.toISOString(), bucket: 'day' })
-  }, emptyUsage, [days])
-  const models = [...(usage.data.models ?? [])].filter(model => model.requests > 0).sort((a,b) => b.requests - a.requests)
-  const slices = models.slice(0, 3).map(model => ({ label: model.model, count: model.requests }))
-  if (models.length > 3) slices.push({ label: '其他', count: models.slice(3).reduce((sum,model) => sum + model.requests, 0) })
-  const total = slices.reduce((sum,item) => sum + item.count, 0)
-  const colors = ['#4263ab', '#7192d4', '#a1b8e4', '#cbd7ef']
-  let offset = 0
-  const stops = slices.map((item, index) => {
-    const start = offset
-    offset += item.count / total * 100
-    return `${colors[index]} ${start}% ${offset}%`
-  })
   const { settings } = useSiteSettings()
   const [copied, setCopied] = useState(false)
   const apiBase = typeof window !== 'undefined' ? window.location.origin : ''
@@ -68,7 +66,9 @@ export function UserDashboardPage() {
   return (
     <>
       <PageHeader
-        title="开发者工作区"
+        eyebrow="Overview"
+        title="用户数据看板"
+        description="查看账户余额与积分消耗，并快速进入常用功能。"
         actions={error ? <Button size="sm" variant="outline" onClick={reload}>重试</Button> : null}
       />
       {error ? (
@@ -86,33 +86,43 @@ export function UserDashboardPage() {
           </AlertDescription>
         </Alert>
       )}
-      <section className="monitor-board" data-expanded={wide}>
-        <header className="monitor-heading"><h2>调用监控</h2><Button size="sm" variant="outline" aria-pressed={wide} onClick={() => setWide(value => !value)}>{wide ? '退出大屏' : '大屏模式'}</Button></header>
-        <div className="overview-grid">
-        <Card className="balance-summary overview-balance justify-center"><CardContent className="space-y-4">
-          <h2 className="font-semibold">账户余额</h2>
-          <div className="flex items-center justify-between gap-2">
-            {loading ? <Skeleton className="h-9 w-24" /> : <strong className="text-3xl tabular-nums">¥{formatCredits(data.balance)}</strong>}
-            <Button size="sm" asChild><Link to="/billing">充值</Link></Button>
-          </div>
-          <p className="text-xs text-muted-foreground">今日消耗 ¥{formatCredits(data.todayConsumed)} · 累计消耗 ¥{formatCredits(data.totalConsumed)}</p>
-        </CardContent></Card>
-        <Card className="monitor-trend"><CardContent>
-          <div className="flex items-center justify-between"><h2 className="font-semibold">请求趋势</h2>
-            <div className="flex gap-1">{[7,30,90].map(value => <Button key={value} size="sm" variant={days === value ? 'secondary' : 'ghost'} aria-pressed={days === value} onClick={() => setDays(value)}>{value}天</Button>)}</div>
-          </div>
-          <p className="monitor-reading">{usage.loading || usage.error ? '—' : (usage.data.summary?.requests ?? 0).toLocaleString()} <small>次请求 / 近 {days} 天</small></p>
-          {usage.loading ? <Skeleton className="mt-3 h-32" /> : usage.error ? <Button variant="ghost" onClick={usage.reload}>加载失败，重试</Button> : <UsageTrendChart points={usage.data.points ?? []} bucket="day" metric="requests" />}
-        </CardContent></Card>
-        <Card><CardContent><h2 className="mb-5 font-semibold">用量分布</h2>
-          <div className="flex items-center gap-6"><div aria-hidden="true" className="usage-donut" style={{background: stops.length ? `conic-gradient(${stops.join(',')})` : 'var(--muted)'}} />
-          <ul className="min-w-0 flex-1 space-y-2">{usage.loading || usage.error || !total ? <li>{usage.loading ? '加载中…' : usage.error ? '用量数据暂不可用' : '暂无请求'}</li> : slices.map((item,i) => <li key={i} className="flex items-center gap-2 text-xs"><span className="size-2 shrink-0 rounded-full" style={{background:colors[i]}} /><span className="truncate" title={item.label}>{item.label}</span><span className="ml-auto">{(item.count/total*100).toFixed(0)}%</span></li>)}</ul></div>
-        </CardContent></Card>
-        <Card><CardContent><h2 className="mb-5 font-semibold">快速入口</h2><div className="grid grid-cols-3">
-          {[{to:'/playground',label:'开始对话',Icon:MessageSquareIcon},{to:'/keys',label:'管理密钥',Icon:KeySquareIcon},{to:'/billing',label:'查看账单',Icon:ShoppingCartIcon}].map(({to,label,Icon}) => <Link key={to} to={to} className="quick-entry grid justify-items-center gap-2 text-sm"><span className="grid size-12 place-items-center rounded-full bg-muted"><Icon className="size-5" /></span>{label}</Link>)}
-        </div></CardContent></Card>
-      </div>
-      </section>
+      <Card>
+        <CardContent className="grid gap-0 p-0 sm:grid-cols-3">
+          {[
+            ['剩余积分', data.balance],
+            ['累计消耗积分', data.totalConsumed],
+            ['今日消耗积分', data.todayConsumed],
+          ].map(([label, value], index) => (
+            <div key={label} className="flex min-h-28 flex-col justify-center gap-2 border-b px-5 py-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
+              <p className="text-sm text-muted-foreground">{label}</p>
+              {loading ? <Skeleton className="h-8 w-28" /> : <p className="text-2xl font-semibold tracking-tight tabular-nums">{formatCredits(value as number)}</p>}
+              {index === 0 ? <p className="text-xs text-muted-foreground">当前可用账户余额</p> : null}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <PageSection title="快速开始" description="按顺序完成密钥创建、模型查看和接口体验。">
+        <div className="flex flex-col divide-y">
+          {guideSteps.map((step) => (
+            <Link
+              key={step.num}
+              to={step.to}
+              className="group flex items-center gap-3 px-1 py-3 text-sm transition-colors hover:bg-muted/50"
+            >
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-md border bg-background text-xs font-semibold text-foreground">
+                {step.num}
+              </span>
+              <step.Icon className="size-4 text-muted-foreground" />
+              <span className="flex-1 text-foreground">{step.text}</span>
+              <span className="hidden items-center gap-1 text-xs text-primary opacity-0 transition group-hover:opacity-100 sm:flex">
+                立即前往 <ArrowRightIcon className="size-3" />
+              </span>
+            </Link>
+          ))}
+        </div>
+      </PageSection>
+
       <PageSection title="API 网关" description="OpenAI 兼容接口使用当前站点地址作为模型基址。">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm">本站大模型接口网关：</span>

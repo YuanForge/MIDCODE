@@ -203,7 +203,7 @@ export function UserMusicGenPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
-      <div className="music-workspace grid min-w-0 items-start gap-4 md:grid-cols-[minmax(240px,0.7fr)_minmax(0,1.3fr)]">
+      <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)_minmax(220px,260px)]">
         <Card size="sm" className="min-w-0">
           <CardContent className="flex flex-col gap-4 p-4">
             <div className="grid gap-1.5">
@@ -313,10 +313,7 @@ export function UserMusicGenPage() {
         <Card size="sm" className="min-h-[480px] min-w-0">
           <CardContent className="flex h-full flex-col gap-4 p-4 md:p-6">
             {taskStatus === 'idle' && items.length === 0 ? (
-              <div className="music-listening flex min-h-80 flex-1 flex-col items-center justify-center gap-4 rounded-lg">
-                <img src="/landing/sample-audio.webp" alt="" className="w-48 rounded-xl shadow-lg" />
-                <p className="text-sm text-muted-foreground">生成的音乐将在这里试听。</p>
-              </div>
+              <p className="text-sm text-muted-foreground">提交后将在这里显示生成的音乐。</p>
             ) : null}
             {taskStatus === 'polling' ? (
               <Alert>
@@ -356,7 +353,7 @@ export function UserMusicGenPage() {
             ))}
           </CardContent>
         </Card>
-        <Card size="sm" className="flex max-h-[520px] min-w-0 flex-col overflow-hidden md:col-span-2 2xl:max-h-[calc(100dvh-14rem)]">
+        <Card size="sm" className="flex max-h-[520px] min-w-0 flex-col overflow-hidden xl:col-span-2 2xl:col-span-1 2xl:max-h-[calc(100dvh-14rem)]">
           <div className="flex items-center justify-between border-b px-4 py-3 shrink-0">
             <span className="text-sm font-semibold">历史生成</span>
             <button type="button" onClick={() => void loadHistory()} className="inline-flex h-9 items-center px-2 text-xs text-muted-foreground hover:text-foreground">刷新</button>

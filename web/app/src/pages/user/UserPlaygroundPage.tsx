@@ -226,25 +226,11 @@ export function UserPlaygroundPage() {
   return (
     <>
       <PageHeader
-        title="对话调试台"
+        eyebrow="Playground"
+        title="文本对话"
+        description="选择模型，开始文本对话。"
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Label htmlFor="debug-model">模型选择</Label>
-                <NativeSelect id="debug-model"
-                  value={selectedChannelId}
-                  onChange={(event) => setSelectedChannelId(Number(event.target.value))}
-                >
-                  {channels.map((channel) => (
-                    <option key={channel.id} value={channel.id}>
-                      {channel.name} {channel.routing_model ? `· ${channel.routing_model}` : ''}
-                    </option>
-                  ))}
-                </NativeSelect>
-                {channels.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">当前没有可用的文本模型渠道。</p>
-                ) : null}
-              </div>
+          (
             <Button
               disabled={streaming}
               onClick={() => {
@@ -257,7 +243,7 @@ export function UserPlaygroundPage() {
             >
               新对话
             </Button>
-          </div>
+          )
         }
       />
       <div>
@@ -266,11 +252,9 @@ export function UserPlaygroundPage() {
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}
-        <div className="chat-workspace">
-          <div className="grid min-w-0 gap-4">
+        <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)_minmax(220px,260px)]">
           <Card size="sm" className="min-w-0">
             <CardContent className="flex flex-col gap-4 p-4">
-              <h2 className="font-semibold">生成设置</h2>
               <div className="flex flex-col gap-2">
                 <Label>API 密钥</Label>
                 <NativeSelect
@@ -284,6 +268,22 @@ export function UserPlaygroundPage() {
                   ))}
                 </NativeSelect>
                 <p className="text-xs text-muted-foreground">已登录用户可直接使用已创建的密钥进行调用。</p>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>模型</Label>
+                <NativeSelect
+                  value={selectedChannelId}
+                  onChange={(event) => setSelectedChannelId(Number(event.target.value))}
+                >
+                  {channels.map((channel) => (
+                    <option key={channel.id} value={channel.id}>
+                      {channel.name} {channel.routing_model ? `· ${channel.routing_model}` : ''}
+                    </option>
+                  ))}
+                </NativeSelect>
+                {channels.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">当前没有可用的文本模型渠道。</p>
+                ) : null}
               </div>
               <div className="flex flex-col gap-2">
                 <Label>系统提示词</Label>
@@ -363,16 +363,16 @@ export function UserPlaygroundPage() {
               </div>
             </CardContent>
           </Card>
-          </div>
-          <Card size="sm" className="chat-result flex h-[74dvh] min-h-[440px] min-w-0 flex-col overflow-hidden">
-            <h2 className="border-b px-4 pb-3 font-semibold">生成结果</h2>
+          <Card size="sm" className="flex h-[70dvh] min-h-[440px] min-w-0 flex-col overflow-hidden">
             <CardContent className="flex min-h-0 flex-1 flex-col p-0">
               <div
                 ref={scrollRef}
                 className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto overscroll-contain p-4 md:p-6"
               >
                 {messages.length === 0 && !streaming ? (
-                  <figure className="relative min-h-52 flex-1 overflow-hidden rounded-lg"><img src="/landing/playground-example.webp" alt="城市日落示例" className="absolute inset-0 size-full object-cover" /><figcaption className="absolute bottom-3 left-3 rounded bg-black/65 px-2 py-1 text-xs text-white">示例预览 · 发送提示词后显示对话结果</figcaption></figure>
+                  <div className="flex min-h-[300px] items-center justify-center text-sm text-muted-foreground">
+                    开始一段对话吧。
+                  </div>
                 ) : null}
                 {messages.map((message, index) => (
                   <div
@@ -398,12 +398,10 @@ export function UserPlaygroundPage() {
                   </div>
                 ) : null}
               </div>
-            </CardContent>
-            <div className="chat-composer"><h2 className="sr-only">提示词</h2>
-              <div className="px-4 pb-4">
-                <div className="flex flex-col gap-3">
+              <div className="shrink-0 border-t border-border/70 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row">
                   <Textarea
-                    className="min-h-16 min-w-0 flex-1 resize-none"
+                    className="min-h-24 min-w-0 flex-1 resize-none"
                     aria-label="消息输入框"
                     value={inputText}
                     onChange={(event) => setInputText(event.target.value)}
@@ -415,12 +413,12 @@ export function UserPlaygroundPage() {
                       }
                     }}
                   />
-                  <div className="flex flex-col items-end gap-1">
+                  <div className="flex flex-col items-stretch gap-1 sm:items-end">
                     <Button
                       onClick={() => (streaming ? abortRef.current?.abort() : void sendMessage())}
                       disabled={!streaming && (!inputText.trim() || !canInvoke() || channels.length === 0)}
                     >
-                      {streaming ? '停止生成' : '开始生成'}
+                      {streaming ? '停止生成' : '发送'}
                     </Button>
                     {apiKeys.length > 0 && !canInvoke() && (
                       <p className="text-xs text-destructive">所选密钥不可用，请重新选择</p>
@@ -428,11 +426,11 @@ export function UserPlaygroundPage() {
                   </div>
                 </div>
               </div>
-            </div>
+            </CardContent>
           </Card>
           <Card
             size="sm"
-            className="flex max-h-[520px] min-w-0 flex-col overflow-hidden md:col-span-2 2xl:max-h-[calc(100dvh-14rem)]"
+            className="flex max-h-[520px] min-w-0 flex-col overflow-hidden xl:col-span-2 2xl:col-span-1 2xl:max-h-[calc(100dvh-14rem)]"
           >
             <div className="flex items-center justify-between border-b px-4 py-3 shrink-0">
               <span className="text-sm font-semibold">历史对话</span>

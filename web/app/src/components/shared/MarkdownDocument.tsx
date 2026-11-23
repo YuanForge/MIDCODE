@@ -342,7 +342,7 @@ export function MarkdownDocument({ content, showHeadingNav = false }: MarkdownDo
     if (!canShowHeadingNav) return null
 
     return (
-      <aside className="order-first lg:sticky lg:top-6 lg:self-start">
+      <aside className="order-first lg:order-none lg:sticky lg:top-6 lg:self-start">
         <nav className="rounded-lg border bg-card/80 p-3 text-sm shadow-sm">
           <div className="mb-2 flex items-center justify-between gap-2">
             <p className="text-xs font-medium text-muted-foreground">标题定位</p>
@@ -379,7 +379,7 @@ export function MarkdownDocument({ content, showHeadingNav = false }: MarkdownDo
   }
 
   return (
-    <div className={cn('mx-auto w-full max-w-5xl', canShowHeadingNav && 'grid max-w-7xl gap-6 lg:grid-cols-[210px_minmax(0,1fr)]')}>
+    <div className={cn('mx-auto w-full max-w-5xl', canShowHeadingNav && 'grid max-w-7xl gap-6 lg:grid-cols-[minmax(0,1fr)_240px]')}>
       <article className="min-w-0 space-y-6">
         {blocks.map((block, index) => {
           if (block.type === 'heading') {

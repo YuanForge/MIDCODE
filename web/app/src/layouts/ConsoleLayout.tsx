@@ -379,7 +379,7 @@ export function ConsoleLayout({
             dangerouslySetInnerHTML={{ __html: sanitizeHtml(headerHtml) }}
           />
         ) : null}
-        <main className="console-canvas min-w-0 flex-1" data-path={location.pathname}>
+        <main className="min-w-0 flex-1">
           {isDocsPage ? (
             <div className="flex w-full flex-col">
               {guestPrompt ? <LoginRequired /> : <Outlet />}

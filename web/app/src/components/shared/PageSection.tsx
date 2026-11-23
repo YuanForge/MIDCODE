@@ -24,7 +24,7 @@ export function PageSection({
 }) {
   return (
     <Card className={className}>
-      <CardHeader className="has-data-[slot=card-action]:grid-cols-1 sm:has-data-[slot=card-action]:grid-cols-[1fr_auto]">
+      <CardHeader className="border-b has-data-[slot=card-action]:grid-cols-1 sm:has-data-[slot=card-action]:grid-cols-[1fr_auto]">
         <CardTitle>
           <h2>{title}</h2>
         </CardTitle>

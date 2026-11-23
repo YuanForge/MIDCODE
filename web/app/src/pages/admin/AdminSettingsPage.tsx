@@ -283,7 +283,7 @@ export function AdminSettingsPage() {
               </div>
             </div>
           ) : (
-            <Tabs defaultValue="basic" className="settings-workspace">
+            <Tabs defaultValue="basic">
               <div className="w-full overflow-x-auto border-b">
                 <TabsList className="min-w-max rounded-none bg-transparent justify-start gap-0 p-0">
                   {(['basic', 'appearance', 'payment', 'notice', 'plans', 'rebate', 'vendor', 'withdraw', 'alert', 'official-prices', 'logs'] as const).map((tab) => (
@@ -303,7 +303,7 @@ export function AdminSettingsPage() {
                 <div className="max-w-2xl divide-y">
                   <FieldRow label="站点名称">
                     <Input value={form.site_name ?? ''} onChange={(e) => set('site_name', e.target.value)} placeholder="例如：MidCode" />
-                    <Tip>显示在页面 Logo 旁，未设置 SEO 标题时也用作浏览器标题。</Tip>
+                    <Tip>显示在浏览器标题栏和页面 Logo 旁；如果 env.js 配置了 site_name，则前台展示会优先使用 env.js</Tip>
                   </FieldRow>
                   <FieldRow label="主题颜色">
                     <ThemeColorField value={form.theme_color ?? ''} onChange={(value) => set('theme_color', value)} />

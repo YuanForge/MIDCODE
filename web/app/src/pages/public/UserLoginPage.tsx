@@ -80,6 +80,9 @@ export function UserLoginPage({ onSuccess, onRecover, onRegister, embedded = fal
   return (
     <Card className={embedded ? "w-full border-0 shadow-none" : "w-full max-w-[440px] shadow-lg"}>
       <CardHeader className="gap-2 px-6 pt-6 sm:px-8 sm:pt-8">
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary/70">
+            {a.login}
+          </p>
           <CardTitle>
             <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{a.loginTitle}</h1>
           </CardTitle>
