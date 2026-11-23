@@ -33,6 +33,7 @@ export function UserDashboardPage() {
     }
   }, { balance: 0, totalConsumed: 0, todayConsumed: 0, stats: {} as UserStatsResponse })
 
+  const [wide, setWide] = useState(false)
   const [days, setDays] = useState(30)
   const usage = useAsync(() => {
     const end = new Date()
@@ -67,7 +68,7 @@ export function UserDashboardPage() {
   return (
     <>
       <PageHeader
-        title="用户概览"
+        title="开发者工作区"
         actions={error ? <Button size="sm" variant="outline" onClick={reload}>重试</Button> : null}
       />
       {error ? (
@@ -85,7 +86,9 @@ export function UserDashboardPage() {
           </AlertDescription>
         </Alert>
       )}
-      <div className="overview-grid">
+      <section className="monitor-board" data-expanded={wide}>
+        <header className="monitor-heading"><h2>调用监控</h2><Button size="sm" variant="outline" aria-pressed={wide} onClick={() => setWide(value => !value)}>{wide ? '退出大屏' : '大屏模式'}</Button></header>
+        <div className="overview-grid">
         <Card className="balance-summary overview-balance justify-center"><CardContent className="space-y-4">
           <h2 className="font-semibold">账户余额</h2>
           <div className="flex items-center justify-between gap-2">
@@ -94,10 +97,11 @@ export function UserDashboardPage() {
           </div>
           <p className="text-xs text-muted-foreground">今日消耗 ¥{formatCredits(data.todayConsumed)} · 累计消耗 ¥{formatCredits(data.totalConsumed)}</p>
         </CardContent></Card>
-        <Card><CardContent>
+        <Card className="monitor-trend"><CardContent>
           <div className="flex items-center justify-between"><h2 className="font-semibold">请求趋势</h2>
             <div className="flex gap-1">{[7,30,90].map(value => <Button key={value} size="sm" variant={days === value ? 'secondary' : 'ghost'} aria-pressed={days === value} onClick={() => setDays(value)}>{value}天</Button>)}</div>
           </div>
+          <p className="monitor-reading">{usage.loading || usage.error ? '—' : (usage.data.summary?.requests ?? 0).toLocaleString()} <small>次请求 / 近 {days} 天</small></p>
           {usage.loading ? <Skeleton className="mt-3 h-32" /> : usage.error ? <Button variant="ghost" onClick={usage.reload}>加载失败，重试</Button> : <UsageTrendChart points={usage.data.points ?? []} bucket="day" metric="requests" />}
         </CardContent></Card>
         <Card><CardContent><h2 className="mb-5 font-semibold">用量分布</h2>
@@ -108,6 +112,7 @@ export function UserDashboardPage() {
           {[{to:'/playground',label:'开始对话',Icon:MessageSquareIcon},{to:'/keys',label:'管理密钥',Icon:KeySquareIcon},{to:'/billing',label:'查看账单',Icon:ShoppingCartIcon}].map(({to,label,Icon}) => <Link key={to} to={to} className="quick-entry grid justify-items-center gap-2 text-sm"><span className="grid size-12 place-items-center rounded-full bg-muted"><Icon className="size-5" /></span>{label}</Link>)}
         </div></CardContent></Card>
       </div>
+      </section>
       <PageSection title="API 网关" description="OpenAI 兼容接口使用当前站点地址作为模型基址。">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm">本站大模型接口网关：</span>

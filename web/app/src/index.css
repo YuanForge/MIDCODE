@@ -314,3 +314,40 @@ body {
   .admin-records :is(th,td):last-child:not([colspan]) { position:sticky; right:0; background:var(--card); box-shadow:-1px 0 var(--border); }
   .admin-records th:last-child { background:var(--muted); }
 }
+
+.monitor-board {
+  --signal: #1963c7;
+  --panel-line: #b1c8e1;
+  background-color: #e8f0fa;
+  color: #102b49;
+  background-image: linear-gradient(#729dca1a 1px,transparent 1px),linear-gradient(90deg,#729dca1a 1px,transparent 1px);
+  background-size: 24px 24px;
+  padding: clamp(.75rem,2vw,2rem);
+  border: 1px solid var(--panel-line);
+}
+.dark .monitor-board {
+  --signal: #62cbff;
+  --panel-line: #284766;
+  background-color: #071321;
+  color: #e4f4ff;
+}
+.monitor-board[data-expanded=true] { position:fixed; inset:0; z-index:60; overflow:auto; }
+.monitor-heading { display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--panel-line); padding-bottom:.8rem; margin-bottom:1rem; }
+.monitor-heading h2 { font-weight:700; letter-spacing:.12em; border-inline-start:4px solid var(--signal); padding-inline-start:.7rem; }
+.monitor-board .overview-grid { gap:.8rem; }
+.monitor-board [data-slot=card], .catalog-cards [data-model] {
+  border-radius:4px; position:relative;
+  background-image:linear-gradient(90deg,var(--signal,var(--primary)) 2.5rem,transparent 2.5rem);
+  background-size:100% 2px; background-position:top left; background-repeat:no-repeat;
+}
+.monitor-board [data-slot=card] { border-color:var(--panel-line); padding-block:1.4rem; }
+.monitor-board .overview-balance { background-color:#112f55; }
+.monitor-reading { color:var(--signal); font:600 clamp(2rem,3vw,3.6rem)/1.2 ui-monospace,monospace; margin:1.5rem 0 .75rem; }
+.monitor-reading small { color:var(--muted-foreground); font:500 .75rem/1.5 var(--font-sans); }
+.monitor-board [data-testid=usage-trend] svg { height:clamp(14rem,26vh,23rem); }
+@media(min-width:960px) {
+  .monitor-board .overview-grid { grid-template-columns:minmax(0,2fr) minmax(16rem,1fr); }
+  .monitor-trend { grid-column:1; grid-row:1 / span 2; }
+  .monitor-board .overview-grid > :last-child { grid-column:1 / -1; }
+  .monitor-board[data-expanded=true] [data-testid=usage-trend] svg { height:40vh; }
+}
