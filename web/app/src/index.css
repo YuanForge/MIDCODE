@@ -317,3 +317,7 @@ body {
   .compact-log-table td[data-label]::before { display:block; content:attr(data-label); color:var(--muted-foreground); font-size:.7rem; }
   .compact-log-table td[data-label] .items-end { align-items:flex-start; }
 }
+@media (min-width:900px) {
+  .admin-records :is(th,td):last-child:not([colspan]) { position:sticky; right:0; background:var(--card); box-shadow:-1px 0 var(--border); }
+  .admin-records th:last-child { background:var(--muted); }
+}

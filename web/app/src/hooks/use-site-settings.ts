@@ -186,7 +186,7 @@ export function SiteSettingsProvider({ children }: { children: ReactNode }) {
       clearBrandTheme()
       return
     }
-    applyBrandTheme({ themeColor: settings.themeColor })
+    applyBrandTheme({ themeColor: import.meta.env.VITE_PREVIEW_THEME_COLOR || settings.themeColor })
     return clearBrandTheme
   }, [settings.themeColor, status])
 

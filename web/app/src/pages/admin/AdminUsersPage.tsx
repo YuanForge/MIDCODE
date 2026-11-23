@@ -626,7 +626,7 @@ export function AdminUsersPage() {
       ) : null}
 
       <Card className="overflow-hidden">
-        <Table className="min-w-[1100px]">
+        <Table className="admin-records min-w-[1100px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-10">
