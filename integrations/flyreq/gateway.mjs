@@ -39,6 +39,7 @@ export async function createGateway(env = process.env) {
   const accounts = JSON.parse(await readFile(resolve(state, 'accounts.json'), 'utf8').catch(() => '{}'));
   const tenants = new Map(), authCache = new Map();
   let persistQueue = Promise.resolve(), nextPort = Number(env.MIDCODE_TENANT_PORT_BASE || 19000);
+  const workspaceTheme = await readFile(new URL('./workspace-theme.css', import.meta.url), 'utf8');
   const boot = await readFile(new URL('./boot.js', import.meta.url), 'utf8');
   /** 序列化保存密钥配置；无输入，返回持久化 Promise。 */
   function persist() {
@@ -166,7 +167,7 @@ export async function createGateway(env = process.env) {
       res.writeHead(result.status, { 'Content-Type':type, 'Cache-Control':'no-store' });
       if (type.includes('text/html')) {
         const config = JSON.stringify({userId:Number(uid),prefix,registry:registry(accounts[uid].profiles)}).replaceAll('<','\\u003c');
-        res.end((await result.text()).replace('<head>', `<head><script>window.__MIDCODE_STUDIO__=${config};${boot}</script>`));
+        res.end((await result.text()).replace('<head>', `<head><script>window.__MIDCODE_STUDIO__=${config};${boot}</script>`).replace('</head>', `<style>${workspaceTheme}</style></head>`));
       } else if(result.body) await pipeline(Readable.fromWeb(result.body),res); else res.end();
     } catch(e) { if (!res.headersSent) json(res,e.status||502,{error:e.status?e.message:'Workspace temporarily unavailable'}); else res.end(); }
   });

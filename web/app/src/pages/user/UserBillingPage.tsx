@@ -304,7 +304,8 @@ export function UserBillingPage() {
         <TabsContent value="recharge" className="space-y-6">
           <div className="grid gap-6 md:grid-cols-2">
             <PageSection
-              title="当前积分"
+              className="balance-summary"
+                title="当前积分"
               description="积分永不过期，随时可用"
             >
                 <div className="flex items-baseline gap-2">

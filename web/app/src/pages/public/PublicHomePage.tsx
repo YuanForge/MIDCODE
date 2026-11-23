@@ -6,7 +6,6 @@ import {
   ArrowRightIcon,
   BarChart3Icon,
   BlocksIcon,
-  BookOpenIcon,
   Code2Icon,
   ImageIcon,
   KeyRoundIcon,
@@ -14,7 +13,6 @@ import {
   MusicIcon,
   NetworkIcon,
   RadioTowerIcon,
-  SparklesIcon,
   TerminalSquareIcon,
   VideoIcon,
 } from 'lucide-react'
@@ -22,9 +20,8 @@ import {
 import { AppLogo } from '@/components/shared/AppLogo'
 import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher'
 import { ThemeToggle } from '@/components/shared/ThemeToggle'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useSiteSettings } from '@/hooks/use-site-settings'
 import { getHomePathForLanguage } from '@/i18n'
 import { getRoleToken } from '@/lib/auth/storage'
@@ -145,7 +142,7 @@ function PublicHeader({ siteName, logoUrl, signedIn }: { siteName: string; logoU
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/88 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
         <Link to={homePath} aria-label={siteName}>
-          <AppLogo siteName={siteName} logoUrl={logoUrl} label="AI Gateway" />
+          <AppLogo siteName={siteName} logoUrl={logoUrl} label={siteName} />
         </Link>
         <nav className="hidden items-center gap-7 text-sm font-medium text-muted-foreground md:flex">
           <a href="#features" className="transition hover:text-foreground">{t('common.features')}</a>
@@ -182,63 +179,6 @@ function PublicHeader({ siteName, logoUrl, signedIn }: { siteName: string; logoU
   )
 }
 
-function ApiTerminal() {
-  const { t } = useTranslation()
-  return (
-    <Card className="mx-auto w-full max-w-xl border-white/15 bg-slate-950 text-slate-50 shadow-xl dark">
-      <CardHeader className="border-b">
-        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">AI Gateway</p>
-        <CardTitle><h2>{t('home.apiPreviewTitle')}</h2></CardTitle>
-        <CardDescription>POST /v1/chat/completions</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-5 font-mono text-xs leading-6">
-        <div className="grid gap-2 sm:grid-cols-3">
-          {[
-            ['Chat', '/v1/chat/completions'],
-            ['Image', '/v1/images/generations'],
-            ['Task', '/v1/tasks/{id}'],
-          ].map(([label, endpoint]) => (
-            <div key={label} className="min-w-0 rounded-md border border-border bg-muted/40 px-3 py-2">
-              <div className="font-medium text-foreground">{label}</div>
-              <div className="truncate text-[11px] text-muted-foreground">{endpoint}</div>
-            </div>
-          ))}
-        </div>
-        <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg border border-border bg-muted p-4 text-foreground">
-<span className="text-primary">curl</span> -X POST "{'{'}origin{'}'}/v1/chat/completions" \
-  -H "Authorization: Bearer YOUR_API_KEY" \
-  -d '{'{'}"model":"MODEL_ID","messages":[...]{'}'}'
-        </pre>
-      </CardContent>
-    </Card>
-  )
-}
-
-function CapabilityStrip() {
-  const { t } = useTranslation()
-  const items = [
-    { label: t('home.capabilityText'), Icon: MessageSquareTextIcon },
-    { label: t('home.capabilityImage'), Icon: ImageIcon },
-    { label: t('home.capabilityVideo'), Icon: VideoIcon },
-    { label: t('home.capabilityMusic'), Icon: MusicIcon },
-    { label: t('home.capabilityAsync'), Icon: RadioTowerIcon },
-  ]
-
-  return (
-    <div className="flex flex-wrap gap-3">
-      {items.map(({ label, Icon }) => (
-        <span
-          key={label}
-          className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/70 px-4 py-2 text-sm font-medium shadow-sm backdrop-blur"
-        >
-          <Icon className="size-4 text-primary" />
-          {label}
-        </span>
-      ))}
-    </div>
-  )
-}
-
 export function PublicHomePage() {
   const { t } = useTranslation()
   const { settings } = useSiteSettings()
@@ -251,47 +191,44 @@ export function PublicHomePage() {
 
       <main>
         <section className="relative isolate overflow-hidden">
-          <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:px-6 sm:py-20 lg:grid-cols-[1fr_0.9fr] lg:items-center lg:gap-16 lg:py-24">
+          <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:px-6 sm:py-20 sm:grid-cols-[1fr_0.9fr] sm:items-center lg:gap-12 lg:py-16">
             <div className="max-w-3xl">
-              <Badge className="mb-5" variant="secondary">
-                <SparklesIcon data-icon="inline-start" />
-                {t('home.badge')}
-              </Badge>
-              <h1 className="break-words text-5xl font-semibold leading-[1.08] tracking-tight sm:text-6xl lg:text-7xl">
-                {siteName}
-                <span className="mt-3 block text-balance text-3xl text-primary sm:text-4xl lg:text-5xl">{t('home.headline')}</span>
-              </h1>
+              <h1 className="max-w-[12em] whitespace-pre-line text-balance text-5xl font-bold leading-[1.12] tracking-tight sm:text-6xl lg:text-7xl">{t('home.headline')}</h1>
               <p className="mt-6 max-w-xl text-base leading-8 text-muted-foreground sm:text-lg">
                 {t('home.subhead')}
               </p>
               <div className="mt-8 flex flex-wrap items-center gap-3">
-                <Button asChild size="lg" className="h-11 px-5">
+                <Button asChild size="lg" className="h-11 rounded-full px-7">
                   <Link to={'/dashboard'}>
                     {signedIn ? t('home.primaryCtaSignedIn') : t('home.primaryCtaGuest')}
                     <ArrowRightIcon data-icon="inline-end" />
                   </Link>
                 </Button>
-                <Button asChild size="lg" variant="outline" className="h-11 px-5">
-                  <Link to="/models">
-                    {t('home.viewModels')}
-                    <BlocksIcon data-icon="inline-end" />
-                  </Link>
-                </Button>
-                <Button asChild size="lg" variant="ghost" className="h-11 px-5">
-                  <Link to="/docs">
-                    {t('home.readDocs')}
-                    <BookOpenIcon data-icon="inline-end" />
-                  </Link>
-                </Button>
-              </div>
-              <div className="mt-10 hidden sm:block">
-                <CapabilityStrip />
               </div>
             </div>
-            <div className="relative isolate min-w-0 overflow-hidden rounded-3xl border bg-muted px-4 pb-4 pt-32 sm:px-8 sm:pb-8 sm:pt-40">
-              <img src="/landing/gateway-hero.png" alt="" className="absolute inset-0 -z-10 size-full object-cover" />
-              <ApiTerminal />
+            <div className="orbit-scene" aria-hidden="true">
+              <img className="orbit-hero" src="/landing/orbit.png" alt="" />
+              <div className="orbit-samples">
+                {['image', 'audio', 'art'].map(kind => <img key={kind} src={`/landing/sample-${kind}.webp`} alt="" />)}
+              </div>
             </div>
+          </div>
+        </section>
+
+        <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6">
+          <h2 className="mb-4 text-xl font-semibold">{t('home.explore')}</h2>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[
+              { to: '/image-gen', title: 'home.imageTitle', description: 'home.imageDesc', Icon: ImageIcon },
+              { to: '/music-gen', title: 'home.musicTitle', description: 'home.musicDesc', Icon: MusicIcon },
+              { to: '/playground', title: 'home.llmTitle', description: 'home.llmDesc', Icon: BlocksIcon },
+            ].map(({ to, title, description, Icon }) => (
+              <Link key={to} to={to} className="rounded-xl border bg-card p-5 shadow-sm transition-colors hover:bg-accent">
+                <Icon className="mb-3 size-6 text-primary" />
+                <h3 className="font-semibold">{t(title)}</h3>
+                <p className="mt-1 text-sm text-muted-foreground">{t(description)}</p>
+              </Link>
+            ))}
           </div>
         </section>
 

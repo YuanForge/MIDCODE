@@ -11,6 +11,7 @@ import {
   ShoppingCartIcon,
 } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { TrendChart } from '@/components/shared/TrendChart'
 import { PageSection } from '@/components/shared/PageSection'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -66,7 +67,6 @@ export function UserDashboardPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Overview"
         title="用户数据看板"
         description="查看账户余额与积分消耗，并快速进入常用功能。"
         actions={error ? <Button size="sm" variant="outline" onClick={reload}>重试</Button> : null}
@@ -86,29 +86,31 @@ export function UserDashboardPage() {
           </AlertDescription>
         </Alert>
       )}
-      <Card>
-        <CardContent className="grid gap-0 p-0 sm:grid-cols-3">
-          {[
-            ['剩余积分', data.balance],
-            ['累计消耗积分', data.totalConsumed],
-            ['今日消耗积分', data.todayConsumed],
-          ].map(([label, value], index) => (
-            <div key={label} className="flex min-h-28 flex-col justify-center gap-2 border-b px-5 py-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
+      <div className="grid gap-4 sm:grid-cols-3">
+        {[
+          ['剩余积分', data.balance],
+          ['累计消耗积分', data.totalConsumed],
+          ['今日消耗积分', data.todayConsumed],
+        ].map(([label, value]) => (
+          <Card key={label}>
+            <CardContent className="flex min-h-24 flex-col justify-center gap-3">
               <p className="text-sm text-muted-foreground">{label}</p>
-              {loading ? <Skeleton className="h-8 w-28" /> : <p className="text-2xl font-semibold tracking-tight tabular-nums">{formatCredits(value as number)}</p>}
-              {index === 0 ? <p className="text-xs text-muted-foreground">当前可用账户余额</p> : null}
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
+              {loading ? <Skeleton className="h-8 w-28" /> : <p className="text-3xl font-semibold tracking-tight tabular-nums">{formatCredits(value as number)}</p>}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      {Boolean(data.stats.daily_credits?.length) && (
+        <TrendChart title="消耗趋势" color="var(--chart-1)" formatValue={formatCredits}
+          points={(data.stats.daily_credits ?? []).slice(-7).map(row => ({ label: row.day ?? '', value: row.credits ?? 0 }))} />
+      )}
       <PageSection title="快速开始" description="按顺序完成密钥创建、模型查看和接口体验。">
-        <div className="flex flex-col divide-y">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           {guideSteps.map((step) => (
             <Link
               key={step.num}
               to={step.to}
-              className="group flex items-center gap-3 px-1 py-3 text-sm transition-colors hover:bg-muted/50"
+              className="group flex items-center gap-3 rounded-lg border px-3 py-4 text-sm transition-colors hover:bg-muted/50"
             >
               <span className="flex size-7 shrink-0 items-center justify-center rounded-md border bg-background text-xs font-semibold text-foreground">
                 {step.num}
