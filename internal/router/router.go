@@ -16,6 +16,7 @@ type Dependencies struct {
 }
 
 func Register(r *gin.Engine, deps Dependencies) {
+	r.POST("/v1/bot/lotteries", handler.BotLottery)
 	r.GET("/v1/bot/users/:id/financial-summary", handler.BotUserFinancialSummary)
 	r.GET("/v1/bot/qq/:qq/financial-summary", handler.BotUserFinancialSummary)
 	r.POST("/v1/bot/qq/confirm-binding", handler.ConfirmQQBinding)

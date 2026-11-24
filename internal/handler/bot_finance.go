@@ -35,7 +35,8 @@ func CreateBotKey(c *gin.Context) {
 	}
 	c.Header("Cache-Control", "no-store")
 	var req struct {
-		Name string `json:"name" binding:"required,max=64"`
+		Lottery bool   `json:"lottery"`
+		Name    string `json:"name" binding:"required,max=64"`
 	}
 	if c.ShouldBindJSON(&req) != nil || strings.TrimSpace(req.Name) == "" {
 		c.JSON(400, gin.H{"error": "请提供密钥名称（最多64字符）"})
@@ -48,19 +49,19 @@ func CreateBotKey(c *gin.Context) {
 	}
 	raw := "bot_" + hex.EncodeToString(secret)
 	var id int64
-	err := db.Engine.DB().QueryRowContext(c.Request.Context(), `INSERT INTO bot_api_keys(name,key_hash,created_by) VALUES($1,$2,$3) RETURNING id`, strings.TrimSpace(req.Name), botKeyHash(raw), c.GetInt64("user_id")).Scan(&id)
+	err := db.Engine.DB().QueryRowContext(c.Request.Context(), `INSERT INTO bot_api_keys(name,key_hash,created_by,lottery) VALUES($1,$2,$3,$4) RETURNING id`, strings.TrimSpace(req.Name), botKeyHash(raw), c.GetInt64("user_id"), req.Lottery).Scan(&id)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "密钥创建失败"})
 		return
 	}
-	c.JSON(201, gin.H{"id": id, "name": strings.TrimSpace(req.Name), "key": raw, "scope": "users:financial-summary:read", "note": "密钥仅显示一次，请妥善保存"})
+	c.JSON(201, gin.H{"id": id, "name": strings.TrimSpace(req.Name), "key": raw, "scope": "users:financial-summary:read", "lottery": req.Lottery, "note": "密钥仅显示一次，请妥善保存"})
 }
 func ListBotKeys(c *gin.Context) {
 	if !botKeyAdmin(c) {
 		return
 	}
 	c.Header("Cache-Control", "no-store")
-	rows, err := db.Engine.QueryString(`SELECT id,name,is_active,created_by,created_at FROM bot_api_keys ORDER BY id DESC`)
+	rows, err := db.Engine.QueryString(`SELECT id,name,is_active,created_by,created_at,lottery FROM bot_api_keys ORDER BY id DESC`)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "密钥列表读取失败"})
 		return
@@ -119,6 +120,10 @@ const botSpendQuery = `WITH grouped AS (
  COALESCE(SUM(credits) FILTER(WHERE usage_at >= $3 AND usage_at < $4),0) FROM grouped`
 
 func authorizeBot(c *gin.Context, ctx context.Context) bool {
+	return authorizeBotCapability(c, ctx, false)
+}
+
+func authorizeBotCapability(c *gin.Context, ctx context.Context, lottery bool) bool {
 	c.Header("Cache-Control", "no-store")
 	raw := strings.TrimSpace(c.GetHeader("X-API-Key"))
 	if raw == "" {
@@ -129,7 +134,7 @@ func authorizeBot(c *gin.Context, ctx context.Context) bool {
 		return false
 	}
 	var allowed bool
-	err := db.Engine.DB().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM bot_api_keys k JOIN users u ON u.id=k.created_by WHERE k.key_hash=$1 AND k.is_active AND u.is_active AND u.role='admin')`, botKeyHash(raw)).Scan(&allowed)
+	err := db.Engine.DB().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM bot_api_keys k JOIN users u ON u.id=k.created_by WHERE k.key_hash=$1 AND k.is_active AND u.is_active AND u.role='admin' AND (NOT $2 OR k.lottery))`, botKeyHash(raw), lottery).Scan(&allowed)
 	if err != nil {
 		c.JSON(503, gin.H{"error": "认证服务暂不可用"})
 		return false
