@@ -22,6 +22,11 @@ export function AdminBotKeysPage() {
 function BotKeysManager() {
   const { data, loading, error, reload } = useAsync(() => adminApi.listBotKeys(), { keys: [] })
   const [name, setName] = useState('')
+  const [lottery, setLottery] = useState(false)
+  const [draftQQ, setDraftQQ] = useState<string | null>(null)
+  const [notice, setNotice] = useState('')
+  const storedQQ = data.lottery_admin_qq ?? ''
+  const qq = draftQQ ?? storedQQ
   const [busy, setBusy] = useState(false)
   const [mutError, setMutError] = useState('')
   const [secret, setSecret] = useState('')
@@ -29,7 +34,7 @@ function BotKeysManager() {
   async function create(event: FormEvent) {
     event.preventDefault(); if (!name.trim() || busy || secret) return
     setBusy(true); setMutError('')
-    try { const result = await adminApi.createBotKey(name.trim()); setSecret(result.key); setName(''); reload() }
+    try { const result = await adminApi.createBotKey(name.trim(), lottery); setSecret(result.key); setName(''); setLottery(false); reload() }
     catch (err) { setMutError(getApiErrorMessage(err)) }
     finally { setBusy(false) }
   }
@@ -40,14 +45,34 @@ function BotKeysManager() {
     catch (err) { setMutError(getApiErrorMessage(err)) }
     finally { setBusy(false) }
   }
+  async function saveQQ(event: FormEvent) {
+    event.preventDefault()
+    if (busy || loading || error) return
+    setBusy(true)
+    setMutError('')
+    setNotice('')
+    try {
+      await adminApi.setLotteryAdminQQ(qq.trim())
+      setNotice(qq.trim() ? '抽奖管理员 QQ 已保存' : '后台设置的 QQ 已清除')
+      reload()
+    } catch (err) { setMutError(getApiErrorMessage(err)) }
+    finally { setBusy(false) }
+  }
   const example = `curl '${window.location.origin}/api/v1/bot/users/123/financial-summary' \\\n  -H 'Authorization: Bearer YOUR_BOT_KEY'`
   return <>
     <PageHeader title="机器人密钥" description="授权机器人按用户 ID 查询余额、昨日和近七日消费。仅主管理员可管理。" />
     {mutError ? <Alert variant="destructive"><AlertDescription>{mutError}</AlertDescription></Alert> : null}
-    <Card><CardHeader><CardTitle>创建密钥</CardTitle><CardDescription>专用于查询所有用户的财务摘要，不支持模型调用。密钥仅在创建时显示一次。</CardDescription></CardHeader>
+    <Card><CardHeader><CardTitle>抽奖管理员 QQ</CardTitle><CardDescription>保存后，该 QQ 可通过机器人创建群抽奖。留空保存可清除本项授权。</CardDescription></CardHeader>
+      <CardContent><form onSubmit={saveQQ} className="flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-2">QQ 号<Input value={qq} inputMode="numeric" pattern="[1-9][0-9]{4,19}" maxLength={20} disabled={busy || loading || !!error} onChange={e => { setDraftQQ(e.target.value.trim()); setNotice('') }} /></label>
+        <Button type="submit" disabled={busy || loading || !!error || qq === storedQQ}>保存 QQ</Button>
+        {notice && <span role="status">{notice}</span>}
+      </form></CardContent></Card>
+    <Card><CardHeader><CardTitle>创建密钥</CardTitle><CardDescription>密钥可查询用户财务摘要。抽奖机器人还需启用抽奖权限。</CardDescription></CardHeader>
       <CardContent><form onSubmit={create} className="flex flex-wrap items-end gap-3">
         <label className="flex min-w-0 flex-1 flex-col gap-2" htmlFor="bot-key-name">密钥名称<Input id="bot-key-name" value={name} onChange={e => setName(e.target.value)} maxLength={64} required placeholder="例如：余额查询机器人" disabled={busy} /></label>
         <Button type="submit" disabled={busy || !name.trim() || !!secret}>{busy ? '处理中…' : '创建密钥'}</Button>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={lottery} disabled={busy} onChange={e => setLottery(e.target.checked)} />启用抽奖权限</label>
       </form></CardContent></Card>
     <Card><CardHeader><CardTitle>已创建的密钥</CardTitle><CardDescription>撤销后立即失效，机器人将无法继续使用该密钥。</CardDescription></CardHeader>
       <CardContent className="flex flex-col gap-3">

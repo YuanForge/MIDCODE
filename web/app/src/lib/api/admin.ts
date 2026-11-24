@@ -961,8 +961,9 @@ export const adminApi = {
   deleteRiskLabel: (id: number) =>
     http.delete<Record<string, unknown>>(`/admin/risk-labels/${id}`),
   // API Key 总览
-  listBotKeys: () => http.get<{ keys: Array<{ id: string; name: string; is_active: string; created_at: string }> }>('/admin/bot-keys'),
-  createBotKey: (name: string) => http.post<{ id: number; key: string }>('/admin/bot-keys', { name }),
+  listBotKeys: () => http.get<{ lottery_admin_qq?: string; keys: Array<{ id: string; name: string; is_active: string; created_at: string }> }>('/admin/bot-keys'),
+  setLotteryAdminQQ: (qq: string) => http.put('/admin/lottery-admin-qq', { qq }),
+  createBotKey: (name: string, lottery = false) => http.post<{ id: number; key: string }>('/admin/bot-keys', { name, lottery }),
   revokeBotKey: (id: string) => http.delete<void>(`/admin/bot-keys/${id}`),
   listApiKeys: (params: Record<string, unknown> = {}) =>
     http.get<{ keys: AdminAPIKey[]; total: number }>('/admin/api-keys', { params }),

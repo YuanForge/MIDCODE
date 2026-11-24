@@ -12,6 +12,7 @@ func registerAdminRoutes(authed *gin.RouterGroup, deps Dependencies) {
 	admin.Use(middleware.Admin())
 	{
 		admin.POST("/bot-keys", handler.CreateBotKey)
+		admin.PUT("/lottery-admin-qq", handler.SetLotteryAdminQQ)
 		admin.GET("/bot-keys", handler.ListBotKeys)
 		admin.DELETE("/bot-keys/:id", handler.RevokeBotKey)
 		admin.POST("/channels", handler.CreateChannel)

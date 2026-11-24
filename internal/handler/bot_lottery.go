@@ -64,9 +64,11 @@ func runLottery(ctx context.Context, r lotteryCommand) (gin.H, int, error) {
 	defer tx.Rollback()
 	if r.Action == "create" {
 		var admin int64
-		err = tx.QueryRowContext(ctx, `SELECT u.id FROM users u JOIN user_qq_bindings b ON b.user_id=u.id WHERE b.qq=$1 AND b.verified_at IS NOT NULL AND u.role='admin' AND u.is_active`, r.QQ).Scan(&admin)
+		err = tx.QueryRowContext(ctx, `SELECT u.id FROM users u WHERE u.role='admin' AND u.is_active AND (
+		 EXISTS (SELECT 1 FROM bot_lottery_admins a WHERE a.user_id=u.id AND a.qq=$1)
+		 OR EXISTS (SELECT 1 FROM user_qq_bindings b WHERE b.user_id=u.id AND b.qq=$1 AND b.verified_at IS NOT NULL)) ORDER BY u.id LIMIT 1`, r.QQ).Scan(&admin)
 		if errors.Is(err, sql.ErrNoRows) {
-			return gin.H{"error": "仅已绑定 QQ 的站点管理员可创建活动"}, 403, nil
+			return gin.H{"error": "请先在后台授权抽奖管理员 QQ"}, 403, nil
 		}
 		if err != nil {
 			return nil, 0, err

@@ -66,7 +66,42 @@ func ListBotKeys(c *gin.Context) {
 		c.JSON(500, gin.H{"error": "密钥列表读取失败"})
 		return
 	}
-	c.JSON(200, gin.H{"keys": rows})
+	var qq string
+	if err := db.Engine.DB().QueryRowContext(c.Request.Context(), `SELECT COALESCE((SELECT qq FROM bot_lottery_admins WHERE user_id=$1),'')`, c.GetInt64("user_id")).Scan(&qq); err != nil {
+		c.JSON(503, gin.H{"error": "读取抽奖管理员 QQ 失败"})
+		return
+	}
+	c.JSON(200, gin.H{"keys": rows, "lottery_admin_qq": qq})
+}
+
+func SetLotteryAdminQQ(c *gin.Context) {
+	if !botKeyAdmin(c) {
+		return
+	}
+	var req struct {
+		QQ *string `json:"qq"`
+	}
+	if c.ShouldBindJSON(&req) != nil || req.QQ == nil {
+		c.JSON(400, gin.H{"error": "请提供 QQ 号"})
+		return
+	}
+	qq := strings.TrimSpace(*req.QQ)
+	if qq != "" && !validQQ(qq) {
+		c.JSON(400, gin.H{"error": "QQ 号格式错误"})
+		return
+	}
+	id := c.GetInt64("user_id")
+	var err error
+	if qq == "" {
+		_, err = db.Engine.DB().ExecContext(c.Request.Context(), `DELETE FROM bot_lottery_admins WHERE user_id=$1`, id)
+	} else {
+		_, err = db.Engine.DB().ExecContext(c.Request.Context(), `INSERT INTO bot_lottery_admins(user_id,qq) VALUES($1,$2) ON CONFLICT(user_id) DO UPDATE SET qq=excluded.qq`, id, qq)
+	}
+	if err != nil {
+		c.JSON(503, gin.H{"error": "保存抽奖管理员 QQ 失败"})
+		return
+	}
+	c.JSON(200, gin.H{"qq": qq})
 }
 func RevokeBotKey(c *gin.Context) {
 	if !botKeyAdmin(c) {
