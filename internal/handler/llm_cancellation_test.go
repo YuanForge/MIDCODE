@@ -67,3 +67,21 @@ func TestCanceledLLMIncompleteRefundIsNotSuccessful(t *testing.T) {
 		t.Fatalf("incomplete refund reported as success: %+v", op.record)
 	}
 }
+
+func TestEstimatedTokenUsageRefundsCompletedStream(t *testing.T) {
+	oldQueue := llmLogWriteCh
+	t.Cleanup(func() { llmLogWriteCh = oldQueue })
+	llmLogWriteCh = make(chan llmLogOp, 4)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("POST", "/v1/responses", nil)
+	c.Set(llmStreamCompletedKey, true)
+	usage := map[string]interface{}{"estimated": true, "prompt_tokens": int64(4529252), "completion_tokens": int64(100)}
+	llmSettle(c, &model.Channel{BillingType: "token"}, nil, usage, 0, 1, 1, 0, 0, "estimated", "")
+	if len(llmLogWriteCh) != 1 {
+		t.Fatalf("expected one final log patch, got %d", len(llmLogWriteCh))
+	}
+	op := <-llmLogWriteCh
+	if op.record.Status != "refunded" || op.record.Usage["estimated"] != true {
+		t.Fatalf("unexpected estimated usage settlement: %+v", op.record)
+	}
+}

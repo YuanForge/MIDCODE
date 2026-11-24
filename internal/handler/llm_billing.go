@@ -44,16 +44,23 @@ func llmSettle(c *gin.Context, ch *model.Channel, reqData, usageData map[string]
 	for _, err := range requestErrors {
 		canceled = canceled || errors.Is(err, context.Canceled)
 	}
+	var reason, message string
+	estimated, _ := usageData["estimated"].(bool)
 	if canceled && !c.GetBool(llmStreamCompletedKey) {
-		status, message := "refunded", context.Canceled.Error()
+		reason, message = "context_canceled", context.Canceled.Error()
+	} else if ch.BillingType == "token" && estimated {
+		reason, message = "estimated_usage", "upstream token usage unavailable"
+	}
+	if reason != "" {
+		status := "refunded"
 		if totalHold > 0 {
 			refunded, mcRefunded := llmRefundCredits(c, userID, totalHold)
 			recorded := recordLLMRefundTx(ctx, c, userID, channelID, apiKeyIDVal, poolKeyIDVal, corrID,
 				refunded, scaleRefundCost(upstreamCostHold, refunded, totalHold), mcRefunded,
-				model.JSON{"reason": "context_canceled"})
+				model.JSON{"reason": reason})
 			if refunded != totalHold || !recorded {
 				status = "error"
-				message += "; cancellation refund incomplete"
+				message += "; refund incomplete"
 			}
 		}
 		enqueueLLMLogPatch(corrID, []string{"status", "usage", "error_msg"}, model.LLMLog{
