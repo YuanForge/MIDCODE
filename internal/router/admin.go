@@ -13,6 +13,8 @@ func registerAdminRoutes(authed *gin.RouterGroup, deps Dependencies) {
 	{
 		admin.POST("/bot-keys", handler.CreateBotKey)
 		admin.PUT("/lottery-admin-qq", handler.SetLotteryAdminQQ)
+		admin.PUT("/lottery-admins/:qq", handler.UpdateLotteryAdminMember)
+		admin.DELETE("/lottery-admins/:qq", handler.UpdateLotteryAdminMember)
 		admin.GET("/bot-keys", handler.ListBotKeys)
 		admin.DELETE("/bot-keys/:id", handler.RevokeBotKey)
 		admin.POST("/channels", handler.CreateChannel)

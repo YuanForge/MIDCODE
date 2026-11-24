@@ -13,6 +13,7 @@ func EnsureBotKeyTable() error {
 	_, err := Engine.Exec(botKeySchema + `;
  ALTER TABLE bot_api_keys ADD COLUMN IF NOT EXISTS lottery boolean NOT NULL DEFAULT false;
  CREATE TABLE IF NOT EXISTS bot_lottery_admins (user_id bigint PRIMARY KEY REFERENCES users(id), qq text NOT NULL UNIQUE);
+ CREATE TABLE IF NOT EXISTS bot_lottery_admin_members (user_id bigint NOT NULL REFERENCES users(id), qq text NOT NULL, PRIMARY KEY(user_id,qq));
  CREATE TABLE IF NOT EXISTS bot_lotteries (
  id bigserial PRIMARY KEY, group_id text NOT NULL, event_id text NOT NULL, creator bigint NOT NULL REFERENCES users(id),
  target integer NOT NULL CHECK(target>0), prizes integer NOT NULL CHECK(prizes BETWEEN 1 AND target),

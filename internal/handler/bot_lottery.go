@@ -66,6 +66,7 @@ func runLottery(ctx context.Context, r lotteryCommand) (gin.H, int, error) {
 		var admin int64
 		err = tx.QueryRowContext(ctx, `SELECT u.id FROM users u WHERE u.role='admin' AND u.is_active AND (
 		 EXISTS (SELECT 1 FROM bot_lottery_admins a WHERE a.user_id=u.id AND a.qq=$1)
+		 OR EXISTS (SELECT 1 FROM bot_lottery_admin_members a WHERE a.user_id=u.id AND a.qq=$1)
 		 OR EXISTS (SELECT 1 FROM user_qq_bindings b WHERE b.user_id=u.id AND b.qq=$1 AND b.verified_at IS NOT NULL)) ORDER BY u.id LIMIT 1`, r.QQ).Scan(&admin)
 		if errors.Is(err, sql.ErrNoRows) {
 			return gin.H{"error": "请先在后台授权抽奖管理员 QQ"}, 403, nil

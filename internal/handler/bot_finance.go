@@ -11,6 +11,7 @@ import (
 	"fanapi/internal/service"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/lib/pq"
 	"net/http"
 	"strconv"
 	"strings"
@@ -67,11 +68,32 @@ func ListBotKeys(c *gin.Context) {
 		return
 	}
 	var qq string
-	if err := db.Engine.DB().QueryRowContext(c.Request.Context(), `SELECT COALESCE((SELECT qq FROM bot_lottery_admins WHERE user_id=$1),'')`, c.GetInt64("user_id")).Scan(&qq); err != nil {
+	var members pq.StringArray
+	if err := db.Engine.DB().QueryRowContext(c.Request.Context(), `SELECT COALESCE((SELECT qq FROM bot_lottery_admins WHERE user_id=$1),''), ARRAY(SELECT qq FROM bot_lottery_admins WHERE user_id=$1 UNION SELECT qq FROM bot_lottery_admin_members WHERE user_id=$1 ORDER BY qq)`, c.GetInt64("user_id")).Scan(&qq, &members); err != nil {
 		c.JSON(503, gin.H{"error": "读取抽奖管理员 QQ 失败"})
 		return
 	}
-	c.JSON(200, gin.H{"keys": rows, "lottery_admin_qq": qq})
+	c.JSON(200, gin.H{"keys": rows, "lottery_admin_qq": qq, "lottery_admin_qqs": members})
+}
+
+func UpdateLotteryAdminMember(c *gin.Context) {
+	if !botKeyAdmin(c) {
+		return
+	}
+	qq := c.Param("qq")
+	if !validQQ(qq) {
+		c.JSON(400, gin.H{"error": "QQ 号格式错误"})
+		return
+	}
+	query := `INSERT INTO bot_lottery_admin_members(user_id,qq) VALUES($1,$2) ON CONFLICT DO NOTHING`
+	if c.Request.Method == http.MethodDelete {
+		query = `WITH removed AS (DELETE FROM bot_lottery_admins WHERE user_id=$1 AND qq=$2) DELETE FROM bot_lottery_admin_members WHERE user_id=$1 AND qq=$2`
+	}
+	if _, err := db.Engine.DB().ExecContext(c.Request.Context(), query, c.GetInt64("user_id"), qq); err != nil {
+		c.JSON(503, gin.H{"error": "更新抽奖管理员名单失败"})
+		return
+	}
+	c.Status(204)
 }
 
 func SetLotteryAdminQQ(c *gin.Context) {

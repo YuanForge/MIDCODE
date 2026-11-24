@@ -23,10 +23,9 @@ function BotKeysManager() {
   const { data, loading, error, reload } = useAsync(() => adminApi.listBotKeys(), { keys: [] })
   const [name, setName] = useState('')
   const [lottery, setLottery] = useState(false)
-  const [draftQQ, setDraftQQ] = useState<string | null>(null)
+  const [qq, setQQ] = useState('')
   const [notice, setNotice] = useState('')
-  const storedQQ = data.lottery_admin_qq ?? ''
-  const qq = draftQQ ?? storedQQ
+  const members = data.lottery_admin_qqs ?? []
   const [busy, setBusy] = useState(false)
   const [mutError, setMutError] = useState('')
   const [secret, setSecret] = useState('')
@@ -45,15 +44,18 @@ function BotKeysManager() {
     catch (err) { setMutError(getApiErrorMessage(err)) }
     finally { setBusy(false) }
   }
-  async function saveQQ(event: FormEvent) {
-    event.preventDefault()
+  async function updateQQ(number: string, remove: boolean) {
     if (busy || loading || error) return
     setBusy(true)
     setMutError('')
     setNotice('')
     try {
-      await adminApi.setLotteryAdminQQ(qq.trim())
-      setNotice(qq.trim() ? '抽奖管理员 QQ 已保存' : '后台设置的 QQ 已清除')
+      if (remove) await adminApi.removeLotteryAdmin(number)
+      else {
+        await adminApi.addLotteryAdmin(number)
+        setQQ('')
+      }
+      setNotice(remove ? '已移除抽奖管理员' : '已添加抽奖管理员')
       reload()
     } catch (err) { setMutError(getApiErrorMessage(err)) }
     finally { setBusy(false) }
@@ -62,12 +64,14 @@ function BotKeysManager() {
   return <>
     <PageHeader title="机器人密钥" description="授权机器人按用户 ID 查询余额、昨日和近七日消费。仅主管理员可管理。" />
     {mutError ? <Alert variant="destructive"><AlertDescription>{mutError}</AlertDescription></Alert> : null}
-    <Card><CardHeader><CardTitle>抽奖管理员 QQ</CardTitle><CardDescription>保存后，该 QQ 可通过机器人创建群抽奖。留空保存可清除本项授权。</CardDescription></CardHeader>
-      <CardContent><form onSubmit={saveQQ} className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-2">QQ 号<Input value={qq} inputMode="numeric" pattern="[1-9][0-9]{4,19}" maxLength={20} disabled={busy || loading || !!error} onChange={e => { setDraftQQ(e.target.value.trim()); setNotice('') }} /></label>
-        <Button type="submit" disabled={busy || loading || !!error || qq === storedQQ}>保存 QQ</Button>
+    <Card><CardHeader><CardTitle>抽奖管理员 QQ</CardTitle><CardDescription>名单中的 QQ 都可以通过机器人创建群抽奖。</CardDescription></CardHeader>
+      <CardContent><form onSubmit={event => { event.preventDefault(); void updateQQ(qq, false) }} className="flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-2">QQ 号<Input value={qq} required inputMode="numeric" pattern="[1-9][0-9]{4,19}" maxLength={20} disabled={busy || loading || !!error} onChange={e => { setQQ(e.target.value.trim()); setNotice('') }} /></label>
+        <Button type="submit" disabled={busy || loading || !!error || !qq || members.includes(qq)}>添加管理员</Button>
         {notice && <span role="status">{notice}</span>}
-      </form></CardContent></Card>
+      </form><ul className="mt-3 space-y-2">{members.map(number => <li key={number} className="flex items-center justify-between border-b py-2">
+        <span>{number}</span><Button variant="outline" size="sm" aria-label={`移除 ${number}`} disabled={busy || loading || !!error} onClick={() => void updateQQ(number, true)}>移除</Button>
+      </li>)}</ul></CardContent></Card>
     <Card><CardHeader><CardTitle>创建密钥</CardTitle><CardDescription>密钥可查询用户财务摘要。抽奖机器人还需启用抽奖权限。</CardDescription></CardHeader>
       <CardContent><form onSubmit={create} className="flex flex-wrap items-end gap-3">
         <label className="flex min-w-0 flex-1 flex-col gap-2" htmlFor="bot-key-name">密钥名称<Input id="bot-key-name" value={name} onChange={e => setName(e.target.value)} maxLength={64} required placeholder="例如：余额查询机器人" disabled={busy} /></label>
