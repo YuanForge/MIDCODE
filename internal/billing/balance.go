@@ -338,6 +338,12 @@ func Charge(ctx context.Context, userID, credits int64) error {
 	if credits <= 0 {
 		return nil
 	}
+	return withChargeLock(ctx, userID, func() error {
+		return chargeLocked(ctx, userID, credits)
+	})
+}
+
+func chargeLocked(ctx context.Context, userID, credits int64) error {
 	if err := ensureQuota(ctx, userID, credits); err != nil {
 		return err
 	}

@@ -271,6 +271,40 @@ func TestDurableRefundPostgres(t *testing.T) {
 		}
 		check(7, 1100, 0, 1)
 	})
+	t.Run("concurrent charges spend exactly the available balance", func(t *testing.T) {
+		addr := os.Getenv("FANAPI_TEST_REDIS_ADDR")
+		if addr == "" {
+			t.Skip("FANAPI_TEST_REDIS_ADDR is not set")
+		}
+		old := cache.Client
+		cache.Client = redis.NewClient(&redis.Options{Addr: addr})
+		defer func() { cache.Client.Close(); cache.Client = old }()
+		seed(79, 0, 0, "contention")
+		keys := []string{"billing:quota:79", "billing:quota_version:79", "user:balance:79"}
+		defer cache.Client.Del(ctx, keys...)
+		start := make(chan struct{})
+		results := make(chan error, 64)
+		for i := 0; i < 64; i++ {
+			go func() { <-start; results <- billing.Charge(ctx, 79, 25) }()
+		}
+		close(start)
+		accepted := 0
+		for i := 0; i < 64; i++ {
+			err := <-results
+			if err == nil {
+				accepted++
+			} else if err.Error() != "余额不足" {
+				t.Fatal(err)
+			}
+		}
+		if accepted != 40 {
+			t.Fatalf("accepted %d charges against 1000 credits, want 40", accepted)
+		}
+		balance, err := billing.GetBalance(ctx, 79)
+		if err != nil || balance != 0 {
+			t.Fatalf("remaining balance = %d, err = %v", balance, err)
+		}
+	})
 	t.Run("bad hot quota does not persist a 500 loop", func(t *testing.T) {
 		addr := os.Getenv("FANAPI_TEST_REDIS_ADDR")
 		if addr == "" {
