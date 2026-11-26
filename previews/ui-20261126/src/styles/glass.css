@@ -1,0 +1,260 @@
+/*
+ * Glass surfaces and home-page motion. Colours come from the semantic tokens (glass, glass-border, canvas-*)
+ * and the brand hue, so the admin theme colour and dark mode carry through. Loops and entrances all
+ * collapse under the reduced-motion rule in base.css.
+ */
+
+@utility glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid var(--glass-border);
+  border-radius: 1.25rem;
+  box-shadow: var(--glass-shadow);
+}
+
+/* The one module a page exists for floats highest: stronger glass and the long shadow. */
+@utility glass-raised {
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid var(--glass-border);
+  border-radius: 1.25rem;
+  box-shadow: var(--glass-shadow-high);
+}
+
+/* For small modules repeated many times, such as model cards: nearly solid and without blur, so a page of them stays fast. */
+@utility surface-dense {
+  background: var(--glass-dense);
+  border: 1px solid var(--glass-border);
+  border-radius: 1.25rem;
+  box-shadow: var(--glass-shadow);
+}
+
+@utility home-canvas {
+  position: relative;
+  isolation: isolate;
+  background: linear-gradient(160deg, var(--canvas-from), var(--canvas-to));
+  background-attachment: fixed;
+}
+
+@utility home-blob {
+  position: fixed;
+  z-index: 0;
+  border-radius: 9999px;
+  pointer-events: none;
+  filter: blur(80px);
+  opacity: 0.5;
+  background: color-mix(in oklab, var(--brand) var(--blob-mix, 55%), var(--canvas-to));
+  animation: blob-drift var(--blob-dur, 30s) ease-in-out infinite alternate;
+  &:where(.dark *) {
+    opacity: 0.22;
+  }
+}
+
+@utility home-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 60;
+  width: 100%;
+  height: 3px;
+  background: var(--primary);
+  transform: scaleX(var(--sp, 0));
+  transform-origin: left;
+}
+
+/* Scroll reveal: the hook sets data-in once the element is on screen. Fill is backwards, so hover transforms still work afterwards. */
+@utility reveal-up {
+  opacity: 0;
+  &[data-in='true'] {
+    opacity: 1;
+    animation: reveal-up 800ms var(--ease-out) backwards;
+    animation-delay: calc(var(--d, 0) * 90ms);
+  }
+}
+
+/* Headline lines rise out of a mask; set --i on each line for the stagger. */
+@utility home-line {
+  display: block;
+  transform: translateY(110%);
+  animation: line-rise 1s var(--ease-out) forwards;
+  animation-delay: calc(var(--i, 0) * 140ms + 150ms);
+}
+
+@utility home-fade {
+  opacity: 0;
+  animation: fade-rise 900ms var(--ease-out) forwards;
+  animation-delay: calc(var(--i, 0) * 120ms + 450ms);
+}
+
+@utility home-marquee {
+  display: flex;
+  width: max-content;
+  animation: marquee 36s linear infinite;
+  &:hover {
+    animation-play-state: paused;
+  }
+}
+
+@utility home-caret {
+  display: inline-block;
+  width: 8px;
+  height: 1.1em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: color-mix(in oklab, var(--brand) 55%, white);
+  animation: caret-blink 1s steps(1) infinite;
+}
+
+@utility dash-flow {
+  stroke-dasharray: 6 10;
+  animation: dash-flow 1.2s linear infinite;
+}
+
+@utility shine {
+  position: relative;
+  overflow: hidden;
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -60%;
+    width: 40%;
+    pointer-events: none;
+    background: linear-gradient(100deg, transparent, rgb(255 255 255 / 0.45), transparent);
+  }
+  &:hover::after {
+    animation: shine-sweep 800ms var(--ease-out);
+  }
+}
+
+@utility step-ring {
+  animation: step-ring 1.6s ease-out infinite;
+}
+
+@keyframes step-ring {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--primary) 40%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 10px transparent;
+  }
+}
+
+@utility tab-progress {
+  transform-origin: left;
+  animation: tab-progress 3600ms linear forwards;
+}
+
+@keyframes tab-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@utility hop-dot {
+  animation: hop-dot 4400ms infinite;
+}
+
+@utility hop-a {
+  animation: hop-a 4400ms infinite;
+}
+
+@utility hop-b {
+  animation: hop-b 4400ms infinite;
+}
+
+@keyframes hop-dot {
+  0% { left: 8px; opacity: 0; }
+  8% { opacity: 1; }
+  30% { left: 8px; }
+  55%, 86% { left: 74px; opacity: 1; }
+  96%, 100% { left: 74px; opacity: 0; }
+}
+
+@keyframes hop-a {
+  0%, 28%, 66%, 100% { border-color: color-mix(in oklab, var(--muted-foreground) 35%, transparent); background: var(--glass-strong); color: var(--muted-foreground); }
+  34%, 58% { border-color: var(--destructive); background: color-mix(in oklab, var(--destructive) 14%, transparent); color: var(--destructive); }
+}
+
+@keyframes hop-b {
+  0%, 52%, 94%, 100% { border-color: color-mix(in oklab, var(--muted-foreground) 35%, transparent); background: var(--glass-strong); color: var(--muted-foreground); }
+  58%, 88% { border-color: var(--success); background: color-mix(in oklab, var(--success) 16%, transparent); color: var(--success); }
+}
+
+@keyframes reveal-up {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+}
+
+@keyframes line-rise {
+  to {
+    transform: none;
+  }
+}
+
+@keyframes fade-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes blob-drift {
+  to {
+    transform: translate(120px, 80px) scale(1.1);
+  }
+}
+
+@keyframes dash-flow {
+  to {
+    stroke-dashoffset: -32;
+  }
+}
+
+@keyframes shine-sweep {
+  from {
+    left: -60%;
+  }
+  to {
+    left: 130%;
+  }
+}
+
+/* Reduced motion: entrances must not wait out their stagger delay, so they show at once. */
+@media (prefers-reduced-motion: reduce) {
+  .home-fade,
+  .home-line,
+  .reveal-up[data-in='true'] {
+    animation: none;
+  }
+  .home-fade {
+    opacity: 1;
+  }
+  .home-line {
+    transform: none;
+  }
+}

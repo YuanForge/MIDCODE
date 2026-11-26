@@ -1,0 +1,142 @@
+import { emptyJson } from '@/pages/admin/channels/config'
+
+/** Everything the channel dialog edits. Numbers are kept as text until save so a half-typed value is not lost. */
+export type ChannelForm = {
+  id?: number
+  name: string
+  model: string
+  model_provider_id: number
+  type: string
+  protocol: string
+  base_url: string
+  method: string
+  query_url: string
+  query_method: string
+  timeout_ms: string
+  query_timeout_ms: string
+  billing_type: string
+  headers_text: string
+  billing_config_text: string
+  upstream_platform_id: string
+  upstream_model: string
+  upstream_group: string
+  upstream_cost_auto_sync: boolean
+  /** Selling price = cost × markup. */
+  billing_markup: string
+  billing_fast_ratio: string
+  // token billing
+  billing_input_price: string
+  billing_output_price: string
+  billing_input_cost: string
+  billing_output_cost: string
+  billing_cache_create_price: string
+  billing_cache_create_cost: string
+  billing_cache_read_price: string
+  billing_cache_read_cost: string
+  billing_input_from_response: boolean
+  // image billing
+  billing_base_price: string
+  billing_base_cost: string
+  billing_size_price_1k: string
+  billing_size_price_2k: string
+  billing_size_price_3k: string
+  billing_size_price_4k: string
+  billing_size_cost_1k: string
+  billing_size_cost_2k: string
+  billing_size_cost_3k: string
+  billing_size_cost_4k: string
+  billing_default_size_price: string
+  billing_default_size_cost: string
+  // video / audio billing
+  billing_price_per_second: string
+  billing_cost_per_second: string
+  // count billing
+  billing_price_per_call: string
+  billing_cost_per_call: string
+  billing_script: string
+  request_script: string
+  response_script: string
+  query_script: string
+  error_script: string
+  key_pool_id: string
+  auth_type: string
+  auth_param_name: string
+  auth_region: string
+  auth_service: string
+  passthrough_headers: boolean
+  passthrough_body: boolean
+  weight: string
+  priority: string
+  icon_url: string
+  description: string
+  display_name: string
+  groups: string[]
+  is_active: boolean
+}
+
+export const emptyForm: ChannelForm = {
+  name: '',
+  model: '',
+  model_provider_id: 0,
+  type: 'llm',
+  protocol: 'openai',
+  base_url: '',
+  method: 'POST',
+  query_url: '',
+  query_method: 'GET',
+  timeout_ms: '60000',
+  query_timeout_ms: '30000',
+  billing_type: 'token',
+  headers_text: emptyJson,
+  billing_config_text: emptyJson,
+  upstream_platform_id: '',
+  upstream_model: '',
+  upstream_group: '',
+  upstream_cost_auto_sync: false,
+  billing_markup: '1.2',
+  billing_fast_ratio: '',
+  billing_input_price: '',
+  billing_output_price: '',
+  billing_input_cost: '',
+  billing_output_cost: '',
+  billing_cache_create_price: '',
+  billing_cache_create_cost: '',
+  billing_cache_read_price: '',
+  billing_cache_read_cost: '',
+  billing_input_from_response: false,
+  billing_base_price: '',
+  billing_base_cost: '',
+  billing_size_price_1k: '',
+  billing_size_price_2k: '',
+  billing_size_price_3k: '',
+  billing_size_price_4k: '',
+  billing_size_cost_1k: '',
+  billing_size_cost_2k: '',
+  billing_size_cost_3k: '',
+  billing_size_cost_4k: '',
+  billing_default_size_price: '',
+  billing_default_size_cost: '',
+  billing_price_per_second: '',
+  billing_cost_per_second: '',
+  billing_price_per_call: '',
+  billing_cost_per_call: '',
+  billing_script: '',
+  request_script: '',
+  response_script: '',
+  query_script: '',
+  error_script: '',
+  key_pool_id: '',
+  auth_type: 'bearer',
+  auth_param_name: '',
+  auth_region: '',
+  auth_service: '',
+  passthrough_headers: false,
+  passthrough_body: false,
+  weight: '1',
+  priority: '0',
+  icon_url: '',
+  description: '',
+  display_name: '',
+  groups: [],
+  is_active: true,
+}

@@ -1,0 +1,15 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+@import '@fontsource-variable/geist';
+@import './styles/tokens.css';
+@import './styles/theme.css';
+@import './styles/base.css';
+@import './styles/glass.css';
+@import './styles/console.css';
+
+/* .gitignore 里的 `logs` 规则会让 Tailwind 跳过这两个目录，这里显式登记，否则其中的类不会生成 */
+@source './pages/user/logs';
+@source './pages/admin/logs';
+
+@custom-variant dark (&:is(.dark *));

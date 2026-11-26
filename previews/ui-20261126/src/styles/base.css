@@ -1,0 +1,84 @@
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    -webkit-tap-highlight-color: transparent;
+    scrollbar-color: var(--input) transparent;
+  }
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground;
+    margin: 0;
+    min-width: 320px;
+    font-size: 13px;
+    line-height: 1.65;
+    font-variant-numeric: tabular-nums;
+  }
+  ::selection {
+    background-color: color-mix(in oklab, var(--primary) 22%, transparent);
+  }
+  code,
+  kbd,
+  pre,
+  samp {
+    font-feature-settings: 'liga' 0, 'calt' 0;
+  }
+}
+
+/* Keyboard row focus: j and k move it and Enter opens. The bar and tint say which row is current. */
+[data-row]:focus {
+  outline: none;
+  background-color: color-mix(in oklab, var(--primary) 10%, transparent);
+  box-shadow: inset 2px 0 0 var(--primary);
+}
+
+/* A reading: the number is the content, so it gets the largest, tightest type on the page. */
+@utility readout {
+  font-size: clamp(2.5rem, 4.4vw, 3.5rem);
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Inline reveal (grid-rows trick): the panel grows from its own top edge instead of popping in. */
+@utility reveal-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 200ms var(--ease-out),
+    opacity 140ms var(--ease-out);
+  & > * {
+    min-height: 0;
+    overflow: hidden;
+  }
+  &[data-open='true'] {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+}
+
+/* Theme switches cross-fade through the View Transition API where available. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 260ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *:not(.animate-spin),
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
