@@ -39,8 +39,8 @@ export function createHttpClient(role?: Role): HttpClient {
           reseller: '/reseller/login',
         }
         const loginPath = loginPaths[role]
-        if (loginPath && !window.location.pathname.startsWith(loginPath)) {
-          window.location.href = loginPath
+        if (loginPath && !window.location.hash.startsWith(`#${loginPath}`)) {
+          window.location.hash = loginPath
         }
       }
 

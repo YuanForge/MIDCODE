@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react'
 import type { ReactNode } from 'react'
-import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom'
+import { createHashRouter, Navigate, Outlet } from 'react-router-dom'
 
 import { i18n, supportedLanguages, type AppLanguage } from '@/i18n'
 import { getRoleToken } from '@/lib/auth/storage'
@@ -128,7 +128,7 @@ function PublicOnly({
   return <Outlet />
 }
 
-export const router = createBrowserRouter([
+export const router = createHashRouter([
   { path: '/', element: renderLazy(<PublicHomePage />), errorElement: renderLazy(<AppErrorPage />) },
   ...localizedHomeRoutes,
   {
