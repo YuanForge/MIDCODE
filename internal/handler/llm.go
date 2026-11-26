@@ -330,6 +330,18 @@ func llmProxy(c *gin.Context) {
 		return
 	}
 
+	if c.GetString("client_proto") == protocolResponses {
+		if removed := omitAmbientBrowserOutputs(reqData); removed > 0 {
+			body, err := json.Marshal(reqData)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			c.Set("raw_body", body)
+			c.Set("ambient_browser_outputs_removed", removed)
+		}
+	}
+
 	// 渠道选择
 	var ch *model.Channel
 	var triedIDs []int64
@@ -433,6 +445,28 @@ func getResponsesOperation(c *gin.Context) string {
 	}
 	op, _ := raw.(string)
 	return op
+}
+
+// Codex desktop persists ambient tab snapshots as unpaired tool outputs.
+func omitAmbientBrowserOutputs(request map[string]interface{}) int {
+	input, _ := request["input"].([]interface{})
+	kept := input[:0]
+	for _, value := range input {
+		item, _ := value.(map[string]interface{})
+		if item["type"] == "function_call_output" && item["namespace"] == "agent" && item["name"] == "browser_tabs" && (item["call_id"] == nil || item["call_id"] == "") {
+			output, _ := item["output"].(string)
+			output = strings.TrimSpace(output)
+			if strings.HasPrefix(output, `<in-app-browser-context source="ambient-ui-state">`) && strings.HasSuffix(output, "</in-app-browser-context>") {
+				continue
+			}
+		}
+		kept = append(kept, value)
+	}
+	removed := len(input) - len(kept)
+	if removed > 0 {
+		request["input"] = kept
+	}
+	return removed
 }
 
 func shouldConvertRequestBody(clientProto, channelProto string, reqData map[string]interface{}) bool {
@@ -616,6 +650,9 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 	}
 
 	corrID := uuid.New().String()
+	if removed := c.GetInt("ambient_browser_outputs_removed"); removed > 0 {
+		log.Printf("[responses] corr_id=%s ambient_browser_outputs_removed=%d", corrID, removed)
+	}
 	c.Header("X-Corr-Id", corrID)
 	if totalHold > 0 {
 		if err := service.WriteTx(c.Request.Context(), userID, channelID, apiKeyIDVal, poolKeyIDVal, corrID, "hold", totalHold, upstreamCostHold, modelCreditCharged, model.JSON{
