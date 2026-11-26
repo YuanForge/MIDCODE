@@ -137,3 +137,17 @@ func TestResponsesWSSessionRejectsModelChangeDuringContinuation(t *testing.T) {
 		t.Fatal("expected model-change error")
 	}
 }
+func TestResponsesWSCreateFrameV2(t *testing.T) {
+	output := map[string]interface{}{"type": "function_call_output", "call_id": "call_1", "output": "ok"}
+	req := map[string]interface{}{"model": "route", "input": []interface{}{output}, "previous_response_id": "resp_1"}
+	frame := responsesWSCreateFrame(req, "responses_websockets=2026-02-06")
+	if frame["type"] != "response.create" || frame["model"] != "route" || frame["previous_response_id"] != "resp_1" || frame["response"] != nil {
+		t.Fatalf("unexpected v2 frame: %#v", frame)
+	}
+	if frame["input"].([]interface{})[0].(map[string]interface{})["call_id"] != "call_1" {
+		t.Fatal("lost tool call ID")
+	}
+	if legacy := responsesWSCreateFrame(req, ""); legacy["response"] == nil {
+		t.Fatal("missing legacy envelope")
+	}
+}

@@ -126,13 +126,13 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 
 	// 渠道选择
 	routingKey, _ := responseData["model"].(string)
-	if routingKey == "" {
-		routingKey, _ = responseData["model"].(string)
+	previousResponseID, _ := responseData["previous_response_id"].(string)
+	if routingKey == "" && previousResponseID != "" && upstreamSession != nil && upstreamSession.pinnedRoute != nil {
+		routingKey = upstreamSession.pinnedRoute.routingKey
 	}
 	if routingKey == "" {
 		return fmt.Errorf("请在请求体 model 字段填写模型名称")
 	}
-	previousResponseID, _ := responseData["previous_response_id"].(string)
 
 	ch, poolKey, reusedRoute, routeErr := upstreamSession.continuationRoute(routingKey, previousResponseID)
 	if routeErr != nil {
@@ -445,18 +445,11 @@ func forwardResponsesWS(ctx context.Context, clientConn *websocket.Conn, c *gin.
 	}
 	defer upConn.Close()
 
-	reqBody := make(map[string]interface{}, len(responseReq)+1)
-	for k, v := range responseReq {
-		reqBody[k] = v
+	createMsg := responsesWSCreateFrame(responseReq, c.GetHeader("OpenAI-Beta"))
+	if nested, legacy := createMsg["response"].(map[string]interface{}); legacy {
+		nested["stream"] = true
 	}
-	reqBody["stream"] = true
-
-	createMsg := map[string]interface{}{
-		"type":     "response.create",
-		"response": reqBody,
-	}
-	createBytes, _ := json.Marshal(createMsg)
-	if err := upConn.WriteMessage(websocket.TextMessage, createBytes); err != nil {
+	if err := upConn.WriteJSON(createMsg); err != nil {
 		return nil, nil, nil, err
 	}
 
@@ -676,12 +669,8 @@ func forwardResponsesWSWithSession(ctx context.Context, session *responsesWSUpst
 		return nil, nil, nil, err
 	}
 
-	createMsg := map[string]interface{}{
-		"type":     "response.create",
-		"response": responseReq,
-	}
-	createBytes, _ := json.Marshal(createMsg)
-	if err := upConn.WriteMessage(websocket.TextMessage, createBytes); err != nil {
+	createMsg := responsesWSCreateFrame(responseReq, c.GetHeader("OpenAI-Beta"))
+	if err := upConn.WriteJSON(createMsg); err != nil {
 		session.close()
 		return nil, nil, nil, err
 	}
@@ -771,6 +760,17 @@ func forwardResponsesWSWithSession(ctx context.Context, session *responsesWSUpst
 	}
 
 	return usage, nil, toWSClientResp(textBuf.String()), nil
+}
+
+func responsesWSCreateFrame(request map[string]interface{}, beta string) map[string]interface{} {
+	body := prepareResponsesWSRequest(request, "")
+	for _, feature := range strings.Split(beta, ",") {
+		if strings.TrimSpace(feature) == "responses_websockets=2026-02-06" {
+			body["type"] = "response.create"
+			return body
+		}
+	}
+	return map[string]interface{}{"type": "response.create", "response": body}
 }
 
 func prepareResponsesWSRequest(responseData map[string]interface{}, resolvedModel string) map[string]interface{} {
