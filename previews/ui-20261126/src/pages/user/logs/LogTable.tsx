@@ -1,3 +1,4 @@
+import { formatTTFT, formatTPS } from '@/lib/formatters/performance'
 import { ChevronRightIcon, FileClockIcon } from 'lucide-react'
 
 import { TableEmpty } from '@/components/shared/TableEmpty'
@@ -11,7 +12,7 @@ import { formatCallDuration } from '@/lib/formatters/duration'
 import { cn } from '@/lib/utils'
 import { Dash, LogStatus, TokenPrice } from '@/pages/user/logs/LogCells'
 
-const COLS = 10
+const COLS = 12
 const COMPACT_COLS = 4
 
 /**
@@ -44,6 +45,8 @@ export function LogTable({
             <TableHead>模型</TableHead>
             <TableHead>请求时间</TableHead>
             <TableHead className={cn('text-right', compact && 'hidden')}>耗时</TableHead>
+            <TableHead className={cn('text-right', compact && 'hidden')}>TTFT</TableHead>
+            <TableHead className={cn('text-right', compact && 'hidden')}>TPS</TableHead>
             <TableHead className={cn('text-right', compact && 'hidden')}>输入 Tokens</TableHead>
             <TableHead className={cn('text-right', compact && 'hidden')}>输出 Tokens</TableHead>
             <TableHead className={cn('text-right', compact && 'hidden')}>输入价格</TableHead>
@@ -87,6 +90,10 @@ export function LogTable({
                     <TableCell className={cn('text-right text-[13px] text-muted-foreground', compact && 'hidden')}>
                       {formatCallDuration(row.latency_ms) ?? <Dash />}
                     </TableCell>
+                    <TableCell className={cn('text-right', compact && 'hidden')}>
+                      {formatTTFT(usage?.performance_ttft_ms)}
+                    </TableCell>
+                    <TableCell className={cn('text-right whitespace-nowrap', compact && 'hidden')}>{formatTPS(usage?.performance_tps)}</TableCell>
                     <TableCell className={cn('text-right', compact && 'hidden')}>
                       {usage?.prompt_tokens != null ? (
                         <div className='font-mono text-[13px]'>

@@ -1,3 +1,4 @@
+import { formatTTFT, formatTPS } from '@/lib/formatters/performance'
 import type { ReactNode } from 'react'
 import { XIcon } from 'lucide-react'
 
@@ -60,6 +61,8 @@ function buildFacts(log: UserLog, loading: boolean): Fact[] {
   const finishedAt = log.status !== 'pending' ? formatTime(log.updated_at) : null
   return [
     { label: '消耗', value: charged ? `${formatCredits(charged)} 积分` : NONE },
+    { label: 'TTFT · 首字延迟', value: formatTTFT(log.usage?.performance_ttft_ms) },
+    { label: 'TPS · 输出速度', value: formatTPS(log.usage?.performance_tps) },
     { label: '耗时', value: formatCallDuration(log.latency_ms) ?? NONE },
     { label: '输入 tokens', value: log.usage?.prompt_tokens?.toLocaleString() ?? NONE },
     {

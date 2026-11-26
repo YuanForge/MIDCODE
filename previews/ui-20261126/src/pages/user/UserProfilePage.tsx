@@ -11,6 +11,35 @@ import { EmailBinding } from '@/pages/user/profile/EmailBinding'
 import { InviteBinding } from '@/pages/user/profile/InviteBinding'
 import { PasswordForm } from '@/pages/user/profile/PasswordForm'
 
+import { PageSection } from '@/components/shared/PageSection'
+import { QQBindingCard } from './QQBindingCard'
+import { CreditTransferCard } from './CreditTransferCard'
+
+const yuan = (credits: number) => (credits / 1_000_000).toLocaleString('zh-CN', { maximumFractionDigits: 6 })
+
+function VIPCard() {
+  const { data, loading, error, reload } = useAsync(userApi.getVIPProgress, null)
+  return (
+    <PageSection title="VIP 会员等级" description="按计入升级的累计充值金额自动升档。">
+      {loading ? <Skeleton className="h-20" /> : error ? (
+        <Button variant="outline" onClick={reload}>加载失败，重新获取</Button>
+      ) : data && (
+        <div className="space-y-5 text-sm">
+          <div className="space-y-2 rounded-lg bg-muted p-4">
+            <div className="flex items-center justify-between"><span>当前等级</span><Badge>{data.current || '普通用户'}</Badge></div>
+            <p>已计入升级的充值金额 <strong>{yuan(data.recharge)} 元</strong></p>
+            <p>{data.next ? (data.remaining > 0 ? `再充值 ${yuan(data.remaining)} 元可升至 ${data.next.name}` : `已达到 ${data.next.name} 的充值门槛`) : data.levels?.length ? '已达最高等级' : '暂无开放的 VIP 等级'}</p>
+          </div>
+          {!!data.levels?.length && <table className="w-full text-left">
+            <thead className="text-muted-foreground"><tr><th className="pb-2">会员等级</th><th className="pb-2 text-right">累计充值门槛</th></tr></thead>
+            <tbody>{data.levels.map(level => <tr key={level.code} className="border-t"><td className="py-2">{level.name}</td><td className="text-right tabular-nums">{yuan(level.threshold)} 元</td></tr>)}</tbody>
+          </table>}
+        </div>
+      )}
+    </PageSection>
+  )
+}
+
 /**
  * Profile (ledger): an account header with the balance as a reading, then each setting as a ruled row.
  * The stamp is the same ink initial the brand lockup uses.
@@ -20,7 +49,7 @@ export function UserProfilePage() {
     () => userApi.getProfile(),
     null as UserProfileResponse | null,
   )
-  const { data: balanceCredits, loading: balanceLoading } = useAsync(async () => {
+  const { data: balanceCredits, loading: balanceLoading, reload: reloadBalance } = useAsync(async () => {
     const res = await userApi.getBalance()
     return res.balance_credits ?? 0
   }, 0)
@@ -81,6 +110,11 @@ export function UserProfilePage() {
         </div>
         <Readout label='当前余额' value={`¥${balanceYuan}`} loading={balanceLoading} />
       </section>
+
+      <div className='grid gap-4 lg:grid-cols-2'>
+        <div className='grid gap-4'><QQBindingCard /><CreditTransferCard userId={profile?.id} onSuccess={reloadBalance} /></div>
+        <VIPCard />
+      </div>
 
       <div className='glass divide-y divide-glass-border overflow-hidden'>
         <InviteBinding />
