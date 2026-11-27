@@ -1,3 +1,5 @@
+import { getRoleToken } from '@/lib/auth/storage'
+import { GiftArrival } from '@/components/shared/GiftArrival'
 import { BookOpenIcon } from 'lucide-react'
 
 import { ConsoleLayout, userNavGroups } from '@/layouts/ConsoleLayout'
@@ -29,5 +31,5 @@ function withTutorialNav(groups: NavGroup[]) {
 const userNavGroupsWithTutorial = withTutorialNav(userNavGroups)
 
 export function UserLayout() {
-  return <ConsoleLayout role='user' groups={userNavGroupsWithTutorial} />
+  return <><ConsoleLayout role='user' groups={userNavGroupsWithTutorial} />{getRoleToken('user') && <GiftArrival />}</>
 }

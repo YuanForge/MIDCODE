@@ -47,7 +47,7 @@ export const USER_SECTIONS: SectionSpec[] = [
   { key: 'activity', label: '调用日志', labelKey: 'layout.navLogs', hrefs: ['/llm-logs', '/tasks', '/stats'], requiresAuth: true },
   { key: 'keys', label: 'API 密钥', labelKey: 'layout.navKeys', hrefs: ['/keys'] },
   { key: 'account', label: '账户管理', labelKey: 'layout.groupAccount', hrefs: ['/billing', '/invite', '/profile'] },
-  { key: 'try', label: '在线体验', labelKey: 'layout.groupExperience', hrefs: ['/playground', '/creation'], secondary: true },
+  { key: 'try', label: '在线体验', labelKey: 'layout.groupExperience', hrefs: ['/playground', '/creation', '/video-studio'], secondary: true },
   { key: 'guide', label: '接口文档', labelKey: 'layout.navDocs', hrefs: ['/docs', '/tutorial'], secondary: true },
 ]
 
@@ -58,7 +58,7 @@ export const ADMIN_SECTIONS: SectionSpec[] = [
   { key: 'users', label: '用户', icon: UsersIcon, hrefs: ['/admin/users', '/admin/api-keys', '/admin/vip-groups', '/admin/vendors', '/admin/resellers'] },
   { key: 'money', label: '资金', icon: WalletCardsIcon, hrefs: ['/admin/payments', '/admin/billing', '/admin/withdraw', '/admin/cards', '/admin/coupons'] },
   { key: 'trace', label: '排障', icon: FileClockIcon, hrefs: ['/admin/llm-logs', '/admin/tasks', '/admin/alerts', '/admin/audit', '/admin/exports'] },
-  { key: 'site', label: '设置', icon: SettingsIcon, hrefs: ['/admin/settings', '/admin/roles', '/admin/notifications', '/admin/inspiration', '/admin/ocpc'] },
+  { key: 'site', label: '设置', icon: SettingsIcon, hrefs: ['/admin/settings', '/admin/bot-keys', '/admin/roles', '/admin/notifications', '/admin/inspiration', '/admin/ocpc'] },
 ]
 
 /**

@@ -1,3 +1,5 @@
+import { requestCaptcha, type CaptchaPurpose } from '@/lib/auth/captcha'
+import type { InternalAxiosRequestConfig } from 'axios'
 import axios from 'axios'
 import type { AxiosRequestConfig } from 'axios'
 
@@ -29,7 +31,22 @@ export function createHttpClient(role?: Role): HttpClient {
 
   client.interceptors.response.use(
     (response) => response,
-    (error) => {
+    async (error) => {
+      const config = error.config as (InternalAxiosRequestConfig & { captchaRetried?: boolean }) | undefined
+      const purposes: Record<string, CaptchaPurpose> = {
+        '/auth/login': 'login', '/auth/send-code': 'send_code', '/auth/forgot-password': 'reset_email',
+      }
+      const purpose = config?.url ? purposes[config.url] : undefined
+      if (config && purpose && error.response?.data?.code === 'CAPTCHA_REQUIRED' && !config.captchaRetried) {
+        const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data
+        const subject = purpose === 'login' ? (payload?.username || payload?.email) : payload?.email
+        if (typeof subject === 'string' && subject.trim()) {
+          const token = await requestCaptcha(purpose, subject.trim())
+          config.captchaRetried = true
+          config.data = JSON.stringify({ ...payload, captcha_token: token })
+          return client.request(config)
+        }
+      }
       if (error.response?.status === 401 && role) {
         clearRoleToken(role)
         const loginPaths: Record<string, string> = {

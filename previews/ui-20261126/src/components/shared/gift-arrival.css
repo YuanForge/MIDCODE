@@ -1,0 +1,7 @@
+@keyframes gift-arrive { from { opacity: 0; transform: translateY(-12px) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes gift-spark { 0% { transform: translateY(-12px) rotate(0deg); opacity: 0; } 15% { opacity: .65; } 100% { transform: translateY(240px) rotate(240deg); opacity: 0; } }
+@keyframes gift-bounce { 0%,100% { transform: rotate(0); } 30% { transform: rotate(-12deg); } 60% { transform: rotate(12deg); } }
+.gift-arrival { animation: gift-arrive .35s ease-out; }
+.gift-spark { animation: gift-spark 1.8s ease-out both; }
+.gift-icon { animation: gift-bounce .7s ease-in-out; }
+@media (prefers-reduced-motion: reduce) { .gift-arrival, .gift-spark, .gift-icon { animation: none; } .gift-spark { display: none; } }

@@ -90,6 +90,8 @@ export type ModelAvailability = {
   total: number
   success: number
   availability_percent: number
+  ttft_ms?: number | null
+  tps?: number | null
   p50_latency_ms: number
   recent: ModelAvailabilityRecent[]
 }
@@ -271,7 +273,29 @@ export type ChatConversation = {
   updated_at: string
 }
 
+export type UsageMetrics = Omit<TokenUsageRow, 'model'> & {
+  requests: number
+  success: number
+  failed: number
+  credits: number
+}
+export type UsageModel = UsageMetrics & { model: string }
+export type UsagePoint = UsageMetrics & { at: string }
+export type UsageStatsResponse = {
+  start_at: string
+  end_at: string
+  bucket: 'hour' | 'day'
+  summary: UsageMetrics
+  previous: UsageMetrics
+  points: UsagePoint[]
+  models: UsageModel[]
+  available_models: string[]
+}
+
 export const userApi = {
+  getUsageStats: (params: { start_at: string; end_at: string; bucket: 'hour' | 'day'; model?: string }) =>
+    http.get<UsageStatsResponse>('/user/stats/usage', { params }),
+
   getTransferBalance: () => http.get<{ credits: number }>('/user/credits/transfer-balance'),
   transferCredits: (data: { recipient_id: number; credits: number; request_id: string }) => http.post('/user/credits/transfer', data),
   getVIPProgress: () => http.get<{

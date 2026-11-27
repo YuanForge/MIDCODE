@@ -1,3 +1,4 @@
+import { CCSwitchImport } from '../CCSwitchImport'
 import { KeyRoundIcon, PencilIcon, Trash2Icon } from 'lucide-react'
 
 import { CopyButton } from '@/components/shared/CopyButton'
@@ -163,6 +164,7 @@ export function KeyTable({
                         )}
                       </TableCell>
                       <TableCell className='text-right'>
+                        <CCSwitchImport selectedId={String(item.id)} keys={[{ id: String(item.id), name: item.name || '未命名密钥', key: item.viewable ? (item.raw_key ?? item.key ?? '') : '', unavailable: !item.viewable || item.is_active === false || item.needs_group_binding === true || !(item.raw_key || item.key) }]} />
                         <Button
                           variant='ghost'
                           size='sm'

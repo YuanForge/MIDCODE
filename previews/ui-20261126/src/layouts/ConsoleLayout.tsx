@@ -49,6 +49,7 @@ export const userNavGroups: NavGroup[] = [
     requiresAuth: true,
     items: [
       { label: '文本对话', labelKey: 'layout.navPlayground', href: '/playground', icon: MessageSquareIcon },
+      { label: '视频工作台', href: '/video-studio', icon: SparklesIcon },
       { label: '创作中心', labelKey: 'layout.navCreation', href: '/creation', icon: SparklesIcon },
     ],
   },
@@ -74,6 +75,7 @@ export const adminNavItems: NavItem[] = [
   { label: '号池管理', href: '/admin/key-pools', icon: KeySquareIcon },
   { label: '用户管理', href: '/admin/users', icon: UsersIcon },
   { label: 'API Key', href: '/admin/api-keys', icon: KeySquareIcon },
+  { label: '机器人密钥', href: '/admin/bot-keys', icon: KeySquareIcon },
   { label: '账单流水', href: '/admin/billing', icon: WalletCardsIcon },
   { label: '充值订单', href: '/admin/payments', icon: CreditCardIcon },
   { label: 'VIP 分组', href: '/admin/vip-groups', icon: UsersRoundIcon },

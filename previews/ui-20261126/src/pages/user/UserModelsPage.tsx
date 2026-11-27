@@ -1,3 +1,5 @@
+import { useModelPreferences } from '@/hooks/use-model-preferences'
+import { formatTTFT, formatTPS } from '@/lib/formatters/performance'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { BlocksIcon, TerminalSquare } from 'lucide-react'
@@ -368,6 +370,9 @@ export function UserModelsPage() {
       availability: availability?.models ?? null,
     }
   }, { channels: [] as UserChannel[], availability: null as ModelAvailability[] | null })
+  const prefs = useModelPreferences()
+  const [favoritesOnly, setFavoritesOnly] = useState(false)
+  const selectedModel = (channel: UserChannel) => channel.routing_model || channel.model || channel.name || ''
   const channels = data.channels
   const displayChannels = useMemo(() => channels.map(channelWithSortedPrices), [channels])
   const availabilityByModel = useMemo(
@@ -414,6 +419,7 @@ export function UserModelsPage() {
 
   const filteredChannels = useMemo(() => {
     return displayChannels.filter((channel) => {
+      if (favoritesOnly && !prefs.preferences.get(selectedModel(channel))?.favorite) return false
       if (filterType && channel.type !== filterType) return false
       if (filterProtocol && (channel.protocol || 'openai') !== filterProtocol) return false
       if (filterProvider && channel.model_provider?.trim() !== filterProvider) return false
@@ -422,8 +428,8 @@ export function UserModelsPage() {
       const keyword = filterName.toLowerCase()
       return [channel.name, channel.routing_model, channel.model_provider, channel.description]
         .some((value) => value?.toLowerCase().includes(keyword))
-    })
-  }, [displayChannels, filterName, filterProtocol, filterProvider, filterType])
+    }).sort((a,b) => Number(!!prefs.preferences.get(selectedModel(b))?.pinned) - Number(!!prefs.preferences.get(selectedModel(a))?.pinned))
+  }, [prefs.preferences, favoritesOnly, displayChannels, filterName, filterProtocol, filterProvider, filterType])
 
   function openDoc(channel: UserChannel) {
     setDocChannel(channel)
@@ -516,6 +522,8 @@ export function UserModelsPage() {
         ? [
             { label: t('models.successRate', { defaultValue: '成功率' }), value: `${item.availability_percent.toFixed(2)}%` },
             { label: t('models.requestCount', { defaultValue: '7 天请求' }), value: `${item.total.toLocaleString()} 次` },
+            { label: 'TTFT', value: formatTTFT(item.ttft_ms) },
+            { label: 'TPS', value: formatTPS(item.tps) },
             ...(item.p50_latency_ms ? [{ label: 'P50', value: `${item.p50_latency_ms}ms` }] : []),
           ]
         : [],
@@ -532,6 +540,8 @@ export function UserModelsPage() {
         description={t('models.description')}
         actions={
           <>
+            <Button variant="outline" aria-pressed={favoritesOnly} onClick={() => setFavoritesOnly(!favoritesOnly)}>只看收藏</Button>
+            {prefs.error && <Button onClick={prefs.retry}>重新加载模型偏好</Button>}
             {error ? <Button variant="outline" onClick={reload}>{t('common.retry')}</Button> : null}
             <Button variant="outline" onClick={openBalanceDocs} className="hidden sm:inline-flex">
               <TerminalSquare data-icon="inline-start" />
@@ -611,6 +621,16 @@ export function UserModelsPage() {
           <SheetHeader className="shrink-0 border-b px-6 py-5">
             <SheetTitle className="text-lg">{docTitle}</SheetTitle>
             <SheetDescription>{docMeta}</SheetDescription>
+            {docMode === 'channel' && docChannel && (
+              <div className="flex gap-2">
+                {(['favorite', 'pinned'] as const).map(field => {
+                  const id = selectedModel(docChannel)
+                  const active = !!prefs.preferences.get(id)?.[field]
+                  const label = field === 'favorite' ? '收藏' : '置顶'
+                  return <Button key={field} variant="outline" disabled={prefs.disabled(id)} aria-pressed={active} onClick={() => void prefs.toggle(id, field)}>{active ? '取消' : ''}{label}</Button>
+                })}
+              </div>
+            )}
           </SheetHeader>
           <div className="flex-1 overflow-y-auto">
             <div className="flex flex-col gap-7 px-6 py-6">

@@ -747,7 +747,15 @@ export type AdminKeyPoolStock = {
   channels_in_use?: number
 }
 
+export type AdminServerPing = { target: string; status: 'ok' | 'timeout' | 'error'; latency_ms: number | null; less_than: boolean; checked_at: string; message?: string }
+
 export const adminApi = {
+  getServerPing: (signal: AbortSignal) => http.get<AdminServerPing>('/admin/server-ping', { signal, timeout: 5000 }),
+  listBotKeys: () => http.get<{ lottery_admin_qqs?: string[]; keys: Array<{ id: string; name: string; is_active: string; created_at: string }> }>('/admin/bot-keys'),
+  addLotteryAdmin: (qq: string) => http.put(`/admin/lottery-admins/${qq}`, {}),
+  removeLotteryAdmin: (qq: string) => http.delete(`/admin/lottery-admins/${qq}`),
+  createBotKey: (name: string, lottery = false) => http.post<{ id: number; key: string }>('/admin/bot-keys', { name, lottery }),
+  revokeBotKey: (id: string) => http.delete<void>(`/admin/bot-keys/${id}`),
   getStats: () => http.get<AdminStatsResponse>('/admin/stats'),
   getStatsTrend: (days: 7 | 30, dim: 'revenue' | 'cost' | 'profit' | 'calls') =>
     http.get<{ points: AdminTrendPoint[]; dim: string; days: number }>('/admin/stats/trend', { params: { days, dim } }),

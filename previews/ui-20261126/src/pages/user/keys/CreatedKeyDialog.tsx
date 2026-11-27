@@ -1,3 +1,4 @@
+import { CCSwitchImport } from '../CCSwitchImport'
 import { TriangleAlertIcon } from 'lucide-react'
 
 import { CopyButton } from '@/components/shared/CopyButton'
@@ -39,6 +40,7 @@ export function CreatedKeyDialog({
           <AlertDescription>关闭此窗口后无法再查看完整密钥，如遗失只能删除后重新创建。</AlertDescription>
         </Alert>
         <DialogFooter>
+          <CCSwitchImport keys={[{ id: "new", name: "刚创建的密钥", key: createdKey }]} selectedId="new" />
           <Button variant='outline' onClick={onClose}>
             关闭
           </Button>

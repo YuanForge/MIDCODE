@@ -15,6 +15,7 @@ const PERMISSION_REQUIRED: Record<string, string> = {
   '/admin/users':         'users:read',
   '/admin/api-keys':      'users:read',
   // 账单 / 卡密 / 优惠券
+  '/admin/bot-keys': '*',
   '/admin/billing':       'billing:read',
   '/admin/payments':      'billing:read',
   '/admin/vip-groups':    'billing:read',

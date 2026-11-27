@@ -1,0 +1,62 @@
+.cc-switch-launch {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  height: 34px;
+  gap: 8px;
+  padding: 0 12px 0 6px;
+  border: 1px solid color-mix(in srgb, var(--primary) 65%, white);
+  border-radius: 10px;
+  color: var(--primary-foreground);
+  background: linear-gradient(115deg, var(--primary), color-mix(in srgb, var(--primary) 78%, #042f2e));
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--primary) 24%, transparent), inset 0 1px 0 #ffffff30;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+.cc-switch-launch::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  inset: -80% auto -80% -70%;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, #ffffff45, transparent);
+  transform: skewX(-20deg);
+  animation: cc-switch-shine 5s ease-in-out infinite;
+}
+.cc-switch-launch:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--primary) 38%, transparent), inset 0 1px 0 #ffffff40;
+}
+.cc-switch-launch img {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: white;
+  padding: 2px;
+}
+.cc-switch-launch-copy { display: flex; align-items: center; gap: 7px; }
+.cc-switch-launch-name { font-weight: 700; letter-spacing: .01em; }
+.cc-switch-launch-action { font-size: 11px; opacity: .85; border-left: 1px solid #ffffff45; padding-left: 7px; }
+.cc-switch-launch.cc-switch-launch-compact {
+  height: 28px;
+  gap: 4px;
+  padding: 0 10px;
+  border-radius: min(var(--radius-md), 12px);
+  font-size: .8rem;
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--primary) 20%, transparent), inset 0 1px 0 #ffffff30;
+}
+.cc-switch-launch-compact img { width: 16px; height: 16px; padding: 1px; border-radius: 4px; }
+.cc-switch-launch-compact .cc-switch-launch-name { font-weight: 500; letter-spacing: normal; }
+.cc-switch-launch-compact .cc-switch-launch-action { display: none; }
+@keyframes cc-switch-shine {
+  0%, 65% { left: -70%; }
+  90%, 100% { left: 150%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cc-switch-launch::after { animation: none; }
+  .cc-switch-launch { transition: none; }
+  .cc-switch-launch:hover { transform: none; }
+}
+@media (max-width: 640px) {
+  .cc-switch-launch-action { display: none; }
+  .cc-switch-launch { gap: 5px; padding-right: 8px; }
+}

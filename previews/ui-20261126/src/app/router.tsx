@@ -128,6 +128,10 @@ function PublicOnly({
   return <Outlet />
 }
 
+const VideoStudioLaunch = lazy(() => import('@/components/shared/VideoStudioLaunch').then(m => ({ default: m.VideoStudioLaunch })))
+
+const AdminBotKeysPage = lazy(() => import('@/pages/admin/AdminBotKeysPage').then(m => ({ default: m.AdminBotKeysPage })))
+
 export const router = createHashRouter([
   { path: '/', element: renderLazy(<PublicHomePage />), errorElement: renderLazy(<AppErrorPage />) },
   ...localizedHomeRoutes,
@@ -165,6 +169,7 @@ export const router = createHashRouter([
         element: renderLazy(<UserLayout />),
         children: [
           { path: '/playground', element: renderLazy(<UserPlaygroundPage />) },
+          { path: '/video-studio', element: renderLazy(<VideoStudioLaunch />) },
           { path: '/creation', element: renderLazy(<UserCreationPage />) },
           { path: '/image-gen', element: renderLazy(<UserImageGenPage />) },
           { path: '/video-gen', element: renderLazy(<UserVideoGenPage />) },
@@ -204,6 +209,7 @@ export const router = createHashRouter([
           { path: 'channels', element: renderLazy(<AdminChannelsPage />) },
           { path: 'channels/:id/token-stats', element: renderLazy(<AdminChannelTokenStatsPage />) },
           { path: 'users', element: renderLazy(<AdminUsersPage />) },
+          { path: 'bot-keys', element: renderLazy(<AdminBotKeysPage />) },
           { path: 'billing', element: renderLazy(<AdminBillingPage />) },
           { path: 'cards', element: renderLazy(<AdminCardsPage />) },
           { path: 'key-pools', element: renderLazy(<AdminKeyPoolsPage />) },

@@ -1,3 +1,4 @@
+import { ServerPingCard } from './ServerPingCard'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Stat, StatStrip } from '@/components/shared/Stat'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -83,6 +84,7 @@ export function AdminDashboardPage() {
         <TrendPanel />
         <TopPanel />
       </div>
+      <ServerPingCard />
     </>
   )
 }
