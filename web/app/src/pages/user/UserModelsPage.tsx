@@ -98,8 +98,8 @@ function availabilityState(item: ModelAvailability | undefined, unavailable: boo
   if (unavailable) return { label: '统计暂不可用', tone: 'neutral' }
   if (!item || item.total === 0) return { label: '暂无调用数据', tone: 'neutral' }
   if (item.total < 20) return { label: '数据较少', tone: 'warning' }
-  if (item.availability_percent >= 99) return { label: '正常', tone: 'success' }
-  if (item.availability_percent >= 95) return { label: '降级', tone: 'warning' }
+  if (item.availability_percent >= 90) return { label: '正常', tone: 'success' }
+  if (item.availability_percent >= 80) return { label: '降级', tone: 'warning' }
   return { label: '异常', tone: 'danger' }
 }
 
