@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { createHttpClient, getApiErrorMessage } from '@/lib/api/http'
 
@@ -12,6 +13,7 @@ const reviewer = createHttpClient('admin')
 export default function SkillsPage({ admin = false }: { admin?: boolean }) {
   const [mine, setMine] = useState(false)
   const [url, setUrl] = useState('')
+  const [uploadOpen, setUploadOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const endpoint = admin ? '/admin/skills' : mine ? '/user/skills/mine' : '/user/skills'
@@ -37,6 +39,7 @@ export default function SkillsPage({ admin = false }: { admin?: boolean }) {
         setMessage('审核结果已保存')
       } else {
         await user.post('/user/skills', { url })
+        setUploadOpen(false)
         setUrl('')
         setMine(true)
         setMessage('已提交，等待管理员审核')
@@ -50,15 +53,34 @@ export default function SkillsPage({ admin = false }: { admin?: boolean }) {
   }
 
   return <main className="space-y-5">
-    <h1 className="text-3xl font-semibold">{admin ? 'Skills 审核' : 'Skills 市场'}</h1>
-    {!admin && <form className="rounded-xl border bg-card p-5 space-y-3" onSubmit={event => { event.preventDefault(); void save() }}>
-      <label htmlFor="skill-url" className="font-medium">提交你的 Skill</label>
-      <div className="flex flex-wrap gap-2">
-        <Input className="min-w-48 flex-1" id="skill-url" aria-label="GitHub 地址" type="url" required maxLength={1024} placeholder="https://github.com/作者/仓库" value={url} onChange={event => setUrl(event.target.value)} />
-        <Button disabled={busy}>提交审核</Button>
-      </div>
-    </form>}
-    <p role="status">{message}</p>
+    <header className="flex flex-wrap items-center justify-between gap-3">
+      <h1 className="text-3xl font-semibold">{admin ? 'Skills 审核' : 'Skills 市场'}</h1>
+      {!admin && <Dialog open={uploadOpen} onOpenChange={open => {
+        if (busy) return
+        setUploadOpen(open)
+        setMessage('')
+      }}>
+        <DialogTrigger asChild><Button>上传我的 Skills</Button></DialogTrigger>
+        <DialogContent showCloseButton={!busy}>
+          <DialogHeader>
+            <DialogTitle>上传我的 Skills</DialogTitle>
+            <DialogDescription>提交 GitHub 地址，审核通过后即可在市场展示。</DialogDescription>
+          </DialogHeader>
+          <form className="space-y-4" onSubmit={event => { event.preventDefault(); void save() }}>
+            <div className="space-y-2">
+              <label htmlFor="skill-url" className="font-medium">GitHub 地址</label>
+              <Input id="skill-url" type="url" required maxLength={1024} placeholder="https://github.com/作者/仓库" value={url} onChange={event => setUrl(event.target.value)} />
+            </div>
+            {message && <p role="alert">{message}</p>}
+            <DialogFooter>
+              <Button type="button" variant="outline" disabled={busy} onClick={() => setUploadOpen(false)}>取消</Button>
+              <Button type="submit" disabled={busy}>{busy ? '提交中…' : '提交审核'}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>}
+    </header>
+    {!uploadOpen && message && <p role="status">{message}</p>}
     <section className="rounded-xl border bg-card p-5 space-y-4">
       {admin ? <h2 className="font-semibold">待审核</h2> : <div className="flex gap-2">
         <Button variant={mine ? 'outline' : 'default'} onClick={() => setMine(false)}>已上架</Button>
