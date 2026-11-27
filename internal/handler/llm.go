@@ -295,7 +295,7 @@ func ResponsesCompactProxy(c *gin.Context) {
 //   - 用户分组定价
 //   - 失败自动重试（最多 3 个不同渠道）
 func llmProxy(c *gin.Context) {
-	c.Set("model_performance_start", time.Now())
+	performance := &requestPerformance{started: time.Now()}
 	userID := c.MustGet("user_id").(int64)
 	apiKeyID, _ := c.Get("api_key_id")
 	var apiKeyIDVal int64
@@ -435,7 +435,7 @@ func llmProxy(c *gin.Context) {
 		}
 	}
 
-	llmProxyWithChannel(c, ch, reqData, userID, apiKeyIDVal, userGroup, triedIDs, stableChannels)
+	llmProxyWithChannel(c, ch, reqData, userID, apiKeyIDVal, userGroup, triedIDs, stableChannels, performance)
 }
 
 func getResponsesOperation(c *gin.Context) string {
@@ -521,7 +521,7 @@ func persistLLMUpstreamHeaders(corrID string, sentHeaders map[string]string) {
 // llmProxyWithChannel 执行实际的上游请求，支持失败重试（换渠道）。
 // stableChannels 非空时使用稳定模式（价格升序），否则使用正常负载均衡。
 func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]interface{},
-	userID, apiKeyIDVal int64, userGroup string, triedIDs []int64, stableChannels []model.Channel) {
+	userID, apiKeyIDVal int64, userGroup string, triedIDs []int64, stableChannels []model.Channel, performance *requestPerformance) {
 
 	const maxRetries = 3
 
@@ -576,7 +576,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 			service.RecordChannelError(c.Request.Context(), channelID)
 			if len(triedIDs) < maxRetries {
 				if nextCh := selectNextChannel(c.Request.Context(), routingKey, triedIDs, stableChannels, isResponsesCompact); nextCh != nil {
-					llmProxyWithChannel(c, nextCh, origReqData, userID, apiKeyIDVal, userGroup, triedIDs, stableChannels)
+					llmProxyWithChannel(c, nextCh, origReqData, userID, apiKeyIDVal, userGroup, triedIDs, stableChannels, performance)
 					return
 				}
 			}
@@ -699,8 +699,6 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 		Status:         "pending",
 	}
 	enqueueLLMLogInsert(*llmLog)
-	performance := installModelPerformance(c)
-	defer func() { c.Writer = performance.ResponseWriter }()
 
 	// 6. 号池 Key 已在步骤1分配，直接发送上游请求
 	// 7. 发送上游请求
@@ -773,7 +771,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 					return
 				}
 				enqueueLLMLogPatch(corrID, []string{"status", "error_msg"}, model.LLMLog{Status: "error", ErrorMsg: "channel retry"})
-				llmProxyWithChannel(c, nextCh, origReqData, userID, apiKeyIDVal, userGroup, triedIDs, stableChannels)
+				llmProxyWithChannel(c, nextCh, origReqData, userID, apiKeyIDVal, userGroup, triedIDs, stableChannels, performance)
 				return
 			}
 		}
@@ -835,7 +833,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 					retryMsg = fmt.Sprintf("channel retry: pool key returned %d", resp.StatusCode)
 				}
 				enqueueLLMLogPatch(corrID, []string{"status", "error_msg"}, model.LLMLog{Status: "error", ErrorMsg: retryMsg})
-				llmProxyWithChannel(c, nextCh, origReqData, userID, apiKeyIDVal, userGroup, triedIDs, stableChannels)
+				llmProxyWithChannel(c, nextCh, origReqData, userID, apiKeyIDVal, userGroup, triedIDs, stableChannels, performance)
 				return
 			}
 		}
@@ -905,7 +903,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 							return
 						}
 						enqueueLLMLogPatch(corrID, []string{"status", "error_msg"}, model.LLMLog{Status: "error", ErrorMsg: "channel retry: " + bizErr})
-						llmProxyWithChannel(c, nextCh, origReqData, userID, apiKeyIDVal, userGroup, triedIDs, stableChannels)
+						llmProxyWithChannel(c, nextCh, origReqData, userID, apiKeyIDVal, userGroup, triedIDs, stableChannels, performance)
 						return
 					}
 				}
@@ -946,6 +944,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 
 		enqueueLLMLogPatch(corrID, []string{"upstream_status"}, model.LLMLog{UpstreamStatus: http.StatusOK})
 
+		performance.addUsage(syncUsage, time.Now())
 		llmSettle(c, ch, origReqData, syncUsage, totalHold, userID, channelID, apiKeyIDVal, poolKeyIDVal, corrID, userGroup)
 		return
 	}
@@ -985,7 +984,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 									return
 								}
 								enqueueLLMLogPatch(corrID, []string{"status", "error_msg"}, model.LLMLog{Status: "error", ErrorMsg: "channel retry: " + bizErr})
-								llmProxyWithChannel(c, nextCh, origReqData, userID, apiKeyIDVal, userGroup, triedIDs, stableChannels)
+								llmProxyWithChannel(c, nextCh, origReqData, userID, apiKeyIDVal, userGroup, triedIDs, stableChannels, performance)
 								return
 							}
 						}
@@ -1014,7 +1013,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 									return
 								}
 								enqueueLLMLogPatch(corrID, []string{"status", "error_msg"}, model.LLMLog{Status: "error", ErrorMsg: "channel retry: " + bizErr})
-								llmProxyWithChannel(c, nextCh, origReqData, userID, apiKeyIDVal, userGroup, triedIDs, stableChannels)
+								llmProxyWithChannel(c, nextCh, origReqData, userID, apiKeyIDVal, userGroup, triedIDs, stableChannels, performance)
 								return
 							}
 						}
@@ -1031,7 +1030,7 @@ func llmProxyWithChannel(c *gin.Context, ch *model.Channel, reqData map[string]i
 	c.Header("Cache-Control", "no-cache")
 	c.Header("X-Accel-Buffering", "no")
 
-	usage := &usageState{protocol: proto}
+	usage := &usageState{protocol: proto, performance: performance}
 	// SSE 格式转换器：客户端格式 != 渠道格式时需要转换 SSE 流
 	var sseConv protocol.SSEConverter
 	if clientProto != proto {

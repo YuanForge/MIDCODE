@@ -15,6 +15,7 @@ import (
 // （约 4 字节 ≈ 1 token）。
 // imageCount 统计 delta content 中出现的 markdown 图片数量（![ 语法），用于多模态图片计费。
 type usageState struct {
+	performance         *requestPerformance
 	protocol            string
 	promptTokens        int64
 	completTokens       int64
@@ -29,6 +30,12 @@ type usageState struct {
 }
 
 func (u *usageState) processLine(line string) {
+	if u.performance != nil && u.performance.first.IsZero() && strings.HasPrefix(line, "data:") {
+		payload := strings.TrimSpace(line[5:])
+		if payload != "" && payload != "[DONE]" {
+			u.performance.observe()
+		}
+	}
 	switch u.protocol {
 	case protocolClaude:
 		if strings.HasPrefix(line, "event: ") {

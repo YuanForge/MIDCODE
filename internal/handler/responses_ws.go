@@ -114,6 +114,7 @@ func ResponsesWSProxy(c *gin.Context) {
 //   - SSE → Responses API WS 事件推送
 //   - 结算
 func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData map[string]interface{}, upstreamSession *responsesWSUpstreamSession) error {
+	performance := requestPerformance{started: time.Now()}
 	userID := c.MustGet("user_id").(int64)
 	var apiKeyIDVal int64
 	if apiKeyID, ok := c.Get("api_key_id"); ok && apiKeyID != nil {
@@ -287,7 +288,7 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 	var usageForSettle map[string]interface{}
 	var settlementErr error
 	if useUpstreamWS {
-		usageWS, _, _, wsErr := forwardResponsesWSWithSession(c.Request.Context(), upstreamSession, conn, c, ch, poolKey, upstreamWSURL, openAIReq)
+		usageWS, _, _, wsErr := forwardResponsesWSWithSession(c.Request.Context(), upstreamSession, conn, c, ch, poolKey, upstreamWSURL, openAIReq, &performance)
 		if wsErr != nil {
 			service.RecordChannelError(c.Request.Context(), ch.ID)
 			refunded, mcRefunded := refundHold("upstream_error")
@@ -329,7 +330,7 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 		service.RecordChannelSuccess(c.Request.Context(), ch.ID)
 
 		// 流式 SSE → Responses API WS 事件
-		usg := &usageState{protocol: proto}
+		usg := &usageState{protocol: proto, performance: &performance}
 		sseConv := protocol.NewSSEConverter(proto, protocol.ProtocolResponses)
 
 		scanner := bufio.NewScanner(resp.Body)
@@ -399,6 +400,7 @@ func handleWSResponseCreate(c *gin.Context, conn *websocket.Conn, responseData m
 		usageForSettle = usg.normalized(origReqData)
 	}
 
+	performance.addUsage(usageForSettle, time.Now())
 	llmSettle(c, ch, origReqData, usageForSettle, totalHold, userID, ch.ID, apiKeyIDVal, poolKeyIDVal, corrID, userGroup, settlementErr)
 	if settlementErr != nil {
 		return settlementErr
@@ -655,7 +657,7 @@ func (s *responsesWSUpstreamSession) ensure(ctx context.Context, c *gin.Context,
 	return s.conn, s.targetURL, s.sentHeaders, nil
 }
 
-func forwardResponsesWSWithSession(ctx context.Context, session *responsesWSUpstreamSession, clientConn *websocket.Conn, c *gin.Context, ch *model.Channel, poolKey *model.PoolKey, upstreamWSURL string, responseReq map[string]interface{}) (map[string]interface{}, []string, model.JSON, error) {
+func forwardResponsesWSWithSession(ctx context.Context, session *responsesWSUpstreamSession, clientConn *websocket.Conn, c *gin.Context, ch *model.Channel, poolKey *model.PoolKey, upstreamWSURL string, responseReq map[string]interface{}, performance *requestPerformance) (map[string]interface{}, []string, model.JSON, error) {
 	timeout := time.Duration(ch.TimeoutMs) * time.Millisecond
 	if timeout <= 0 {
 		timeout = 60 * time.Second
@@ -698,6 +700,7 @@ func forwardResponsesWSWithSession(ctx context.Context, session *responsesWSUpst
 
 		var event map[string]interface{}
 		if json.Unmarshal(msgBytes, &event) == nil {
+			performance.observe()
 			typeVal, _ := event["type"].(string)
 			switch typeVal {
 			case "response.output_text.delta":

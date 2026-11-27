@@ -20,7 +20,23 @@ type tokenPriceMeta struct {
 	OutputPricePer1MTokens *int64 `json:"output_price_per_1m_tokens,omitempty"`
 }
 
+func logLatencyMS(l model.LLMLog) *int64 {
+	if l.Status == "pending" {
+		return nil
+	}
+	if ms, ok := numberToFloat64(l.Usage["performance_duration_ms"]); ok && ms >= 0 {
+		v := int64(ms)
+		return &v
+	}
+	if l.CreatedAt.IsZero() || l.UpdatedAt.Before(l.CreatedAt) {
+		return nil
+	}
+	v := l.UpdatedAt.Sub(l.CreatedAt).Milliseconds()
+	return &v
+}
+
 type userLogDetail struct {
+	LatencyMS              *int64     `json:"latency_ms"`
 	CacheHitPercent        *float64   `json:"cache_hit_percent"`
 	ID                     int64      `json:"id"`
 	CorrID                 string     `json:"corr_id"`
@@ -275,7 +291,7 @@ func AdminListLLMLogs(c *gin.Context) {
 	var logs []model.LLMLog
 	err = listSess.Cols("id", "user_id", "channel_id", "api_key_id", "corr_id",
 		"model", "is_stream", "transport", "upstream_url", "upstream_method",
-		"upstream_status", "usage", "status", "error_msg", "created_at").
+		"upstream_status", "usage", "status", "error_msg", "created_at", "updated_at").
 		OrderBy("id DESC").Limit(pageSize, offset).Find(&logs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败，请稍后重试"})
@@ -351,6 +367,7 @@ func AdminListLLMLogs(c *gin.Context) {
 	}
 
 	type logWithCredits struct {
+		LatencyMS *int64 `json:"latency_ms"`
 		model.LLMLog
 		CreditsCharged int64  `json:"credits_charged"`
 		CostCharged    int64  `json:"cost_charged"`
@@ -364,6 +381,7 @@ func AdminListLLMLogs(c *gin.Context) {
 			upstreamAPIKey = upstreamKeyMap[poolKeyID]
 		}
 		result[i] = logWithCredits{
+			LatencyMS:      logLatencyMS(l),
 			LLMLog:         l,
 			CreditsCharged: creditsMap[l.CorrID],
 			CostCharged:    costMap[l.CorrID],
@@ -508,7 +526,7 @@ func UserListLLMLogs(c *gin.Context) {
 	defer listSess.Close()
 	err = listSess.Cols("id", "api_key_id", "channel_id", "corr_id", "model",
 		"input_price_per_1m_tokens", "output_price_per_1m_tokens", "is_stream",
-		"upstream_status", "usage", "status", "error_msg", "created_at").
+		"upstream_status", "usage", "status", "error_msg", "created_at", "updated_at").
 		OrderBy("id DESC").Limit(pageSize, offset).Find(&logs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败，请稍后重试"})
@@ -542,6 +560,7 @@ func UserListLLMLogs(c *gin.Context) {
 	}
 
 	type logWithCredits struct {
+		LatencyMS *int64 `json:"latency_ms"`
 		model.LLMLog
 		CreditsCharged  int64    `json:"credits_charged"`
 		CacheHitPercent *float64 `json:"cache_hit_percent"`
@@ -559,6 +578,7 @@ func UserListLLMLogs(c *gin.Context) {
 		l.InputPricePer1MTokens = displayPrice.InputPricePer1MTokens
 		l.OutputPricePer1MTokens = displayPrice.OutputPricePer1MTokens
 		result[i] = logWithCredits{
+			LatencyMS:       logLatencyMS(l),
 			LLMLog:          l,
 			CreditsCharged:  creditsMap[l.CorrID],
 			CacheHitPercent: logCacheHitPercent(l.Usage, ch),
@@ -606,6 +626,7 @@ func UserGetLLMLog(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, userLogDetail{
+		LatencyMS:      logLatencyMS(log),
 		ID:             log.ID,
 		CorrID:         log.CorrID,
 		Model:          log.Model,
