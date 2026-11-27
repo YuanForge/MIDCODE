@@ -294,7 +294,7 @@ export type UsageStatsResponse = {
 
 export const userApi = {
   getUsageStats: (params: { start_at: string; end_at: string; bucket: 'hour' | 'day'; model?: string; compare?: false }, signal?: AbortSignal) =>
-    http.get<UsageStatsResponse>('/user/stats/usage', { params, signal }),
+    http.get<UsageStatsResponse>('/user/stats/usage', { params, signal, timeout: 65000 }),
 
   getTransferBalance: () => http.get<{ credits: number }>('/user/credits/transfer-balance'),
   transferCredits: (data: { recipient_id: number; credits: number; request_id: string }) => http.post('/user/credits/transfer', data),

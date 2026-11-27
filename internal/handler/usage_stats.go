@@ -16,7 +16,10 @@ import (
 // refunds (including later refunds), attributed to the original request time.
 // The same correlation ID's charge is counted once even if it has multiple logs.
 const usageStatsQuery = `WITH scoped AS MATERIALIZED (
- SELECT ll.id, ll.model, ll.corr_id, ll.status, ll.created_at, jsonb_build_object('prompt_tokens',ll.usage->'prompt_tokens','cache_read_tokens',ll.usage->'cache_read_tokens','cache_creation_tokens',ll.usage->'cache_creation_tokens','completion_tokens',ll.usage->'completion_tokens') AS usage,
+ SELECT ll.id, ll.model, ll.corr_id, ll.status, ll.created_at, CASE WHEN ll.status = 'ok' THEN COALESCE((ll.usage->>'prompt_tokens')::bigint,0) ELSE 0 END AS prompt_tokens,
+ CASE WHEN ll.status = 'ok' THEN COALESCE((ll.usage->>'cache_read_tokens')::bigint,0) ELSE 0 END AS cache_read_tokens,
+ CASE WHEN ll.status = 'ok' THEN COALESCE((ll.usage->>'cache_creation_tokens')::bigint,0) ELSE 0 END AS cache_creation_tokens,
+ CASE WHEN ll.status = 'ok' THEN COALESCE((ll.usage->>'completion_tokens')::bigint,0) ELSE 0 END AS completion_tokens,
  COALESCE(c.protocol, 'openai') AS protocol,
  ROW_NUMBER() OVER (PARTITION BY NULLIF(ll.corr_id, '') ORDER BY ll.id DESC) AS corr_rank
  FROM llm_logs ll LEFT JOIN channels c ON c.id = ll.channel_id
@@ -30,12 +33,12 @@ const usageStatsQuery = `WITH scoped AS MATERIALIZED (
  GROUP BY b.corr_id
 ), normalized AS (
  SELECT s.*, CASE WHEN status = 'ok' THEN
- CASE WHEN LOWER(protocol) = 'claude' THEN COALESCE((usage->>'prompt_tokens')::bigint,0)
- ELSE GREATEST(COALESCE((usage->>'prompt_tokens')::bigint,0)-COALESCE((usage->>'cache_read_tokens')::bigint,0),0) END
+ CASE WHEN LOWER(protocol) = 'claude' THEN prompt_tokens
+ ELSE GREATEST(prompt_tokens-cache_read_tokens,0) END
  ELSE 0 END AS input,
- CASE WHEN status = 'ok' THEN COALESCE((usage->>'cache_read_tokens')::bigint,0) ELSE 0 END AS cache_read,
- CASE WHEN status = 'ok' THEN COALESCE((usage->>'cache_creation_tokens')::bigint,0) ELSE 0 END AS cache_write,
- CASE WHEN status = 'ok' THEN COALESCE((usage->>'completion_tokens')::bigint,0) ELSE 0 END AS output,
+ CASE WHEN status = 'ok' THEN cache_read_tokens ELSE 0 END AS cache_read,
+ CASE WHEN status = 'ok' THEN cache_creation_tokens ELSE 0 END AS cache_write,
+ CASE WHEN status = 'ok' THEN completion_tokens ELSE 0 END AS output,
  CASE WHEN status IN ('ok','error') AND corr_rank = 1 THEN COALESCE(l.credits,0) ELSE 0 END AS credits
  FROM scoped s LEFT JOIN ledger l ON l.corr_id = s.corr_id
 )
@@ -160,7 +163,7 @@ func GetUserUsageStats(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "按小时统计最多支持 7 天，请改为按天"})
 		return
 	}
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 60*time.Second)
 	defer cancel()
 	// Existing PostgreSQL timestamps store Beijing wall time without an offset.
 	// Bind explicit wall-time strings so browser offsets/session TZ cannot shift them.

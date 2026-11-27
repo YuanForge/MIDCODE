@@ -261,7 +261,7 @@ export function UserStatsPage() {
           刷新
         </Button>
       </header>
-      <UsageCalendar revision={calendarRevision} />
+      <UsageCalendar revision={calendarRevision} paused={loading} />
       <Card className="py-3">
         <CardContent className="flex flex-wrap items-center gap-3">
           <TogglePrimitive.Root

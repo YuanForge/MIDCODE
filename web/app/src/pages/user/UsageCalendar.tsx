@@ -23,7 +23,7 @@ function emptyYear(): CalendarDay[] {
   return Array.from({length:365}, (_, i) => ({ at: new Date(today - (364-i)*day).toISOString().slice(0,10) }))
 }
 
-function Calendar() {
+function Calendar({ paused }: { paused: boolean }) {
   const [data, setData] = useState(emptyYear)
   const [attempt, retry] = useState(0)
   const [busy, setBusy] = useState(true)
@@ -32,6 +32,7 @@ function Calendar() {
   const [completed] = useState(() => new Map<string, UsagePoint>())
   const [start] = useState(() => Date.parse(data[0].at+'T00:00:00+08:00'))
   useEffect(() => {
+    if (paused) return
     const controller = new AbortController()
     const { signal } = controller
     setBusy(true)
@@ -65,14 +66,15 @@ function Calendar() {
         const known = (i:number) => completed.has(new Date(start+i*day+beijing).toISOString().slice(0,10))
         if (known(hi-1)) { hi--; continue }
         let lo=hi-1
-        while(lo>0 && hi-lo<7 && !known(lo-1)) lo--
+        const maxDays = hi > 351 ? 1 : 7
+        while(lo>0 && hi-lo<maxDays && !known(lo-1)) lo--
         await fetchBlock(lo,hi)
         hi=lo
       }
     }
     run().catch(()=>{ if (!signal.aborted) setError('加载中断') }).finally(()=>{ if (!signal.aborted) setBusy(false) })
     return () => controller.abort()
-  }, [attempt, completed, start])
+  }, [attempt, completed, start, paused])
   const loaded = data.filter(d=>d.point).length
   const complete = loaded === 365
   const [metric, setMetric] = useState<Metric>('requests')
@@ -122,6 +124,6 @@ function Calendar() {
   </section>
 }
 
-export function UsageCalendar({revision}: {revision:number}) {
-  return <Calendar key={revision}/>
+export function UsageCalendar({revision, paused}: {revision:number; paused:boolean}) {
+  return <Calendar key={revision} paused={paused}/>
 }
