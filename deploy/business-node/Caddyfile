@@ -56,7 +56,7 @@ midcode.cc, www.midcode.cc, ai.midcode.cc, origin-hk.midcode.cc, ai.midaccs.com,
 				header_up X-Real-IP {vars.client_ip}
 				header_up X-Forwarded-For {vars.client_ip}
 				header_up X-Midcode-Client-IP {vars.client_ip}
-				header_up CF-Connecting-IP {vars.client_ip}
+				header_up -CF-Connecting-IP
 				header_up REMOTE-HOST {vars.client_ip}
 				header_up X-Forwarded-Port 443
 				import midcode_stream
