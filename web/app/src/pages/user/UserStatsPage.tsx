@@ -271,12 +271,13 @@ export function UserStatsPage() {
               if (v) choosePreset(v as UsagePreset);
             }}
             aria-label="统计时间范围"
-            className="usage-presets"
+            className="flex max-w-full flex-wrap items-center gap-2"
           >
             {presets.map((p) => (
               <TogglePrimitive.Item
                 key={p.key}
                 value={p.key}
+                className="inline-flex min-h-9 shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring data-[state=on]:border-primary data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
                 onClick={() => {
                   if (p.key === "custom" && preset === "custom")
                     choosePreset("custom");
