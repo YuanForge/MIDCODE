@@ -1,4 +1,4 @@
--- The existing detail aggregation is inserted at RAW_QUERY. Cached and raw
+-- Cached and raw
 -- ranges are disjoint. Rank all uncovered logs together to preserve deduplication.
 WITH days AS MATERIALIZED (
  SELECT s.*,s.day::timestamp AS lo,s.day+interval '1 day' AS hi
