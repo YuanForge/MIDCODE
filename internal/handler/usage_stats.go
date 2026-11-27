@@ -167,7 +167,11 @@ func GetUserUsageStats(c *gin.Context) {
 	wall := func(t time.Time) string {
 		return t.In(time.FixedZone("CST", 8*3600)).Format("2006-01-02 15:04:05.999999")
 	}
-	rows, err := db.Engine.DB().QueryContext(ctx, usageStatsQuery, c.MustGet("user_id").(int64), wall(start.Add(-end.Sub(start))), wall(end), wall(start), bucket)
+	scanStart := start.Add(-end.Sub(start))
+	if c.Query("compare") == "false" {
+		scanStart = start
+	}
+	rows, err := db.Engine.DB().QueryContext(ctx, usageStatsQuery, c.MustGet("user_id").(int64), wall(scanStart), wall(end), wall(start), bucket)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "统计暂时不可用，请稍后重试"})
 		return
