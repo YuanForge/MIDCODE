@@ -118,8 +118,8 @@ export function ModelCards({ models, labels }: { models: ModelCardData[]; labels
               ) : null}
             </div>
 
-            <div className='mt-auto flex items-baseline justify-between gap-3 text-xs tabular-nums'>
-              <span className={cn('inline-flex min-w-0 items-baseline gap-1.5 font-medium', toneText[model.status.tone])}>
+            <div className='mt-auto flex flex-wrap items-baseline gap-x-2.5 gap-y-1 text-xs tabular-nums'>
+              <span className={cn('inline-flex items-baseline whitespace-nowrap gap-1.5 font-medium', toneText[model.status.tone])}>
                 <span aria-hidden className='size-1.5 shrink-0 translate-y-[-1px] rounded-full bg-current' />
                 <span className='truncate'>{model.status.label}</span>
                 {rate ? (
@@ -130,9 +130,9 @@ export function ModelCards({ models, labels }: { models: ModelCardData[]; labels
                 ) : null}
               </span>
               {rest.length ? (
-                <span className='flex shrink-0 items-baseline gap-2.5 text-muted-foreground'>
+                <span className='contents text-muted-foreground'>
                   {rest.map((reading) => (
-                    <span key={reading.label} title={reading.label}>
+                    <span key={reading.label} title={reading.label} className='whitespace-nowrap'>
                       <span className='sr-only'>{reading.label} </span>
                       {reading.value}
                     </span>
