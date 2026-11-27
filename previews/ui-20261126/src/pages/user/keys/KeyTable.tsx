@@ -1,3 +1,4 @@
+import { Popover } from 'radix-ui'
 import { CCSwitchImport } from '../CCSwitchImport'
 import { KeyRoundIcon, PencilIcon, Trash2Icon } from 'lucide-react'
 
@@ -131,18 +132,8 @@ export function KeyTable({
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className='flex max-w-80 flex-wrap items-center gap-1.5'>
-                          {byPriority(item).map((binding, order) => (
-                            <Badge key={binding.group_id} variant='outline' className='h-6 gap-1.5 rounded-md pl-1 font-normal'>
-                              <span className='flex size-4 items-center justify-center rounded-[4px] bg-glass-strong text-[10px] font-semibold text-muted-foreground tabular-nums'>
-                                {order + 1}
-                              </span>
-                              {binding.group?.model_provider ? (
-                                <span className='text-muted-foreground'>{binding.group.model_provider} ·</span>
-                              ) : null}
-                              {binding.group?.name || binding.group?.code || binding.group_id}
-                            </Badge>
-                          ))}
+                        <div className='flex items-center gap-2 whitespace-nowrap'>
+                          <GroupSummary item={item} />
                           {item.needs_group_binding ? <StatusBadge tone='danger'>需要配置分组</StatusBadge> : null}
                           <Button variant='ghost' size='sm' className='text-muted-foreground hover:text-foreground' onClick={() => onBind(item)}>
                             <PencilIcon data-icon='inline-start' />
@@ -185,4 +176,26 @@ export function KeyTable({
       </div>
     </div>
   )
+}
+
+function GroupSummary({ item }: { item: ApiKeyRecord }) {
+  const labels = byPriority(item).map(({ group, group_id }) =>
+    [group?.model_provider, group?.name || group?.code || group_id].filter(Boolean).join(' · ')
+  )
+  if (!labels.length) return null
+  const first = <Badge variant="outline" className="max-w-44"><span className="truncate">{labels[0]}</span></Badge>
+  if (labels.length === 1) return <span title={labels[0]}>{first}</span>
+  return <Popover.Root>
+    <Popover.Trigger className="flex items-center gap-1.5 rounded-sm focus-visible:ring-2" aria-label={`查看全部 ${labels.length} 个分组`}>
+      {first}<span className="text-xs font-medium text-primary">+{labels.length - 1}</span>
+    </Popover.Trigger>
+    <Popover.Portal>
+      <Popover.Content align="start" sideOffset={6} collisionPadding={12} aria-label="模型分组优先顺序" className="z-50 max-w-[min(22rem,90vw)] rounded-lg border bg-popover p-3 text-sm text-popover-foreground shadow-lg">
+        <p className="mb-2 font-semibold">模型分组 · 优先顺序</p>
+        <ol className="max-h-64 list-decimal space-y-1 overflow-y-auto pl-6">
+          {labels.map((label,i) => <li key={i} className="break-words">{label}</li>)}
+        </ol>
+      </Popover.Content>
+    </Popover.Portal>
+  </Popover.Root>
 }
