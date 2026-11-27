@@ -2,8 +2,9 @@ import type { FormEvent } from 'react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import { AuthField, AuthPanel } from '@/components/shared/AuthPanel'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { resellerAuthApi } from '@/lib/api/reseller'
 import { getApiErrorMessage } from '@/lib/api/http'
@@ -33,31 +34,36 @@ export function ResellerLoginPage() {
   }
 
   return (
-    <Card className="w-full max-w-xl border-border/70 bg-card/92 shadow-lg">
-      <CardHeader>
-        <CardTitle>登录代理商后台</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+    <AuthPanel title='登录代理商后台'>
+      <form className='flex flex-col gap-5' onSubmit={handleSubmit}>
+        <AuthField label='用户名或邮箱' htmlFor='reseller-login-username'>
           <Input
+            id='reseller-login-username'
             value={username}
             onChange={(event) => setUsername(event.target.value)}
-            placeholder="用户名或邮箱"
-            autoComplete="username"
+            placeholder='用户名或邮箱'
+            autoComplete='username'
           />
+        </AuthField>
+        <AuthField label='密码' htmlFor='reseller-login-password'>
           <Input
-            type="password"
+            id='reseller-login-password'
+            type='password'
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            placeholder="密码"
-            autoComplete="current-password"
+            placeholder='密码'
+            autoComplete='current-password'
           />
-          {error ? <div className="text-sm text-destructive">{error}</div> : null}
-          <Button className="w-full" type="submit" disabled={submitting}>
-            {submitting ? '登录中...' : '进入代理商后台'}
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
+        </AuthField>
+        {error ? (
+          <Alert variant='destructive'>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : null}
+        <Button className='w-full' size='lg' type='submit' disabled={submitting}>
+          {submitting ? '登录中...' : '进入代理商后台'}
+        </Button>
+      </form>
+    </AuthPanel>
   )
 }

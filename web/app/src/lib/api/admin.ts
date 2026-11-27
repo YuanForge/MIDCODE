@@ -3,8 +3,6 @@ import { uploadAuthedImage, uploadAuthedVideo, type UploadImageCategory, type Up
 
 const http = createHttpClient('admin')
 
-export type AdminServerPing = { target: string; status: 'ok' | 'timeout' | 'error'; latency_ms: number | null; less_than: boolean; checked_at: string; message?: string }
-
 export type AdminLoginResponse = {
   token: string
 }
@@ -25,6 +23,11 @@ export type AdminStatsResponse = {
     cost?: number
     profit?: number
     count?: number
+    /** Calls that ended today, and how many of them did not end as ok. Left out when the server could not count them. */
+    calls?: number
+    failed_calls?: number
+    /** Ordinary accounts registered today. Left out when the server could not count them. */
+    new_users?: number
   }
   total?: {
     revenue?: number
@@ -265,6 +268,8 @@ export type AdminLog = {
   model?: string
   created_at?: string
   updated_at?: string
+  /** How long the call took. In milliseconds, but measured in whole seconds. Absent while the call is still pending. */
+  latency_ms?: number
   corr_id?: string
   credits_charged?: number
   cost_charged?: number
@@ -372,8 +377,6 @@ export type AdminCard = {
   used_by?: number
   used_at?: string
   created_at?: string
-  used_username?: string | null
-  used_email?: string | null
 }
 
 export type AdminCardBatch = {
@@ -719,12 +722,47 @@ export const adminAuthApi = {
     http.post<AdminLoginResponse>('/auth/login', payload),
 }
 
+/** One channel's finished calls over the last while (GET /admin/stats/channel-health). A channel with no calls is not listed. */
+export type AdminChannelHealthRow = {
+  channel_id?: number
+  name?: string
+  model?: string
+  is_active?: boolean
+  total?: number
+  failed?: number
+  /** Percent of the finished calls that did not end as ok. */
+  failure_rate?: number
+  p50_ms?: number
+}
+
+/** One key pool's stock (GET /admin/stats/key-pools). */
+export type AdminKeyPoolStock = {
+  id?: number
+  name?: string
+  is_active?: boolean
+  total_keys?: number
+  /** Keys whose own switch is on. */
+  active_keys?: number
+  /** Active channels that draw from this pool. */
+  channels_in_use?: number
+}
+
+export type AdminServerPing = { target: string; status: 'ok' | 'timeout' | 'error'; latency_ms: number | null; less_than: boolean; checked_at: string; message?: string }
+
 export const adminApi = {
   getServerPing: (signal: AbortSignal) => http.get<AdminServerPing>('/admin/server-ping', { signal, timeout: 5000 }),
+  listBotKeys: () => http.get<{ lottery_admin_qqs?: string[]; keys: Array<{ id: string; name: string; is_active: string; created_at: string }> }>('/admin/bot-keys'),
+  addLotteryAdmin: (qq: string) => http.put(`/admin/lottery-admins/${qq}`, {}),
+  removeLotteryAdmin: (qq: string) => http.delete(`/admin/lottery-admins/${qq}`),
+  createBotKey: (name: string, lottery = false) => http.post<{ id: number; key: string }>('/admin/bot-keys', { name, lottery }),
+  revokeBotKey: (id: string) => http.delete<void>(`/admin/bot-keys/${id}`),
   getStats: () => http.get<AdminStatsResponse>('/admin/stats'),
   getStatsTrend: (days: 7 | 30, dim: 'revenue' | 'cost' | 'profit' | 'calls') =>
     http.get<{ points: AdminTrendPoint[]; dim: string; days: number }>('/admin/stats/trend', { params: { days, dim } }),
   getStatsTop: () => http.get<AdminTopStats>('/admin/stats/top'),
+  getChannelHealthSummary: (windowMinutes: number) =>
+    http.get<{ window_minutes?: number; channels?: AdminChannelHealthRow[] }>('/admin/stats/channel-health', { params: { window_minutes: windowMinutes } }),
+  getKeyPoolSummary: () => http.get<{ pools?: AdminKeyPoolStock[] }>('/admin/stats/key-pools'),
   listChannels: (params: Record<string, unknown> = {}) =>
     http.get<{ channels?: AdminChannel[]; items?: AdminChannel[]; total?: number; page?: number; size?: number } | AdminChannel[]>(
       '/admin/channels',
@@ -930,8 +968,9 @@ export const adminApi = {
     http.get<{ records?: AdminWithdrawal[]; total?: number }>('/admin/withdrawals', {
       params,
     }),
+  /** `total_amount` (micro-credits) and `oldest_at` are extras: the server leaves out whichever it could not read. */
   getPendingWithdrawCount: () =>
-    http.get<{ count?: number }>('/admin/withdrawals/pending-count'),
+    http.get<{ count?: number; total_amount?: number; oldest_at?: string }>('/admin/withdrawals/pending-count'),
   approveWithdrawal: (id: number, remark = '') =>
     http.post<Record<string, unknown>>(`/admin/withdrawals/${id}/approve`, { remark }),
   csApproveWithdrawal: (id: number) =>
@@ -961,11 +1000,6 @@ export const adminApi = {
   deleteRiskLabel: (id: number) =>
     http.delete<Record<string, unknown>>(`/admin/risk-labels/${id}`),
   // API Key 总览
-  listBotKeys: () => http.get<{ lottery_admin_qqs?: string[]; keys: Array<{ id: string; name: string; is_active: string; created_at: string }> }>('/admin/bot-keys'),
-  addLotteryAdmin: (qq: string) => http.put(`/admin/lottery-admins/${qq}`, {}),
-  removeLotteryAdmin: (qq: string) => http.delete(`/admin/lottery-admins/${qq}`),
-  createBotKey: (name: string, lottery = false) => http.post<{ id: number; key: string }>('/admin/bot-keys', { name, lottery }),
-  revokeBotKey: (id: string) => http.delete<void>(`/admin/bot-keys/${id}`),
   listApiKeys: (params: Record<string, unknown> = {}) =>
     http.get<{ keys: AdminAPIKey[]; total: number }>('/admin/api-keys', { params }),
   revokeApiKey: (id: number) =>
@@ -973,8 +1007,9 @@ export const adminApi = {
   // 账单扩展
   getTransactionAggregate: (params: Record<string, unknown> = {}) =>
     http.get<{ rows: { key: string; revenue: number; cost: number; profit: number; calls: number }[]; dim: string }>('/admin/transactions/aggregate', { params }),
+  /** `credits` is in micro-credits and signed: positive adds to the balance, negative takes from it. */
   adjustTransaction: (payload: { user_id: number; type: string; credits: number; reason: string }) =>
-    http.post<{ ok: boolean; balance_after: number; transaction_id: number }>('/admin/transactions/adjust', payload),
+    http.post<{ ok?: boolean; balance_after?: number }>('/admin/transactions/adjust', payload),
   // 卡密批次
   listCardBatches: () =>
     http.get<{ batches: AdminCardBatch[] }>('/admin/cards/batches'),

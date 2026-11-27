@@ -160,9 +160,9 @@ export function LanguageSwitcher({ className }: { className?: string }) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-          variant="outline"
+          variant="ghost"
           size="sm"
-          className={cn('gap-1.5 px-2.5', className)}
+          className={cn('gap-1.5 px-2.5 text-muted-foreground hover:text-foreground', className)}
           aria-label={t('common.language')}
         >
           <LanguagesIcon className="size-4" />

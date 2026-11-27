@@ -3,7 +3,7 @@ import { TableBody, TableCell, TableRow } from '@/components/ui/table'
 
 export function TableSkeleton({ cols = 4, rows = 6 }: { cols?: number; rows?: number }) {
   return (
-    <TableBody aria-busy="true">
+    <TableBody aria-busy="true" className="animate-none!">
       {Array.from({ length: rows }).map((_, rowIndex) => (
         <TableRow key={rowIndex}>
           {Array.from({ length: cols }).map((_, colIndex) => (

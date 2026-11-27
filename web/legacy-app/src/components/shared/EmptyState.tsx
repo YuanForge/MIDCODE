@@ -1,0 +1,25 @@
+import type { ReactNode } from 'react'
+
+import { Card, CardContent } from '@/components/ui/card'
+
+export function EmptyState({
+  title,
+  description,
+  icon,
+}: {
+  title: string
+  description: string
+  icon?: ReactNode
+}) {
+  return (
+    <Card className="min-h-50 border-dashed">
+      <CardContent className="flex flex-1 flex-col items-center justify-center gap-3 px-5 py-6 text-center">
+        {icon}
+        <div className="flex flex-col gap-1">
+          <h2 className="text-base font-medium">{title}</h2>
+          <p className="max-w-md text-sm text-muted-foreground">{description}</p>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}

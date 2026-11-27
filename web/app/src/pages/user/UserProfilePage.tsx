@@ -1,21 +1,19 @@
-import { QQBindingCard } from './QQBindingCard'
-import { CreditTransferCard } from './CreditTransferCard'
-import { useEffect, useRef, useState } from 'react'
-import { toast } from 'sonner'
-
-import { KeyRound, Mail, User, UserPlus, Wallet } from 'lucide-react'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { PageSection } from '@/components/shared/PageSection'
+import { Readout } from '@/components/shared/Readout'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import { copyToClipboard } from '@/lib/clipboard'
-import { authApi } from '@/lib/api/public'
-import { userApi, type InviteInfo, type UserProfileResponse } from '@/lib/api/user'
 import { useAsync } from '@/hooks/use-async'
+import { userApi, type UserProfileResponse } from '@/lib/api/user'
+import { copyToClipboard } from '@/lib/clipboard'
+import { EmailBinding } from '@/pages/user/profile/EmailBinding'
+import { InviteBinding } from '@/pages/user/profile/InviteBinding'
+import { PasswordForm } from '@/pages/user/profile/PasswordForm'
+
+import { PageSection } from '@/components/shared/PageSection'
+import { QQBindingCard } from './QQBindingCard'
+import { CreditTransferCard } from './CreditTransferCard'
 
 const yuan = (credits: number) => (credits / 1_000_000).toLocaleString('zh-CN', { maximumFractionDigits: 6 })
 
@@ -42,339 +40,86 @@ function VIPCard() {
   )
 }
 
+/**
+ * Profile (ledger): an account header with the balance as a reading, then each setting as a ruled row.
+ * The stamp is the same ink initial the brand lockup uses.
+ */
 export function UserProfilePage() {
   const { data: profile, loading, error: loadError, reload } = useAsync(
     () => userApi.getProfile(),
     null as UserProfileResponse | null,
   )
-
-  const { data: balanceCredits, reload: reloadBalance } = useAsync(async () => {
+  const { data: balanceCredits, loading: balanceLoading, reload: reloadBalance } = useAsync(async () => {
     const res = await userApi.getBalance()
     return res.balance_credits ?? 0
   }, 0)
 
-  const { data: inviteInfo, loading: inviteLoading, error: inviteLoadError, reload: reloadInvite } = useAsync(
-    () => userApi.getInviteInfo(),
-    {} as InviteInfo,
-  )
-  const [inviteCodeInput, setInviteCodeInput] = useState('')
-  const [inviteBindError, setInviteBindError] = useState('')
-  const [inviteBindLoading, setInviteBindLoading] = useState(false)
-
-  async function bindInviteCode() {
-    const code = inviteCodeInput.trim()
-    if (!code) {
-      setInviteBindError('请输入邀请码')
-      return
-    }
-    setInviteBindError('')
-    setInviteBindLoading(true)
-    try {
-      await userApi.bindInviteCode(code)
-      toast.success('邀请码绑定成功')
-      setInviteCodeInput('')
-      reloadInvite()
-    } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      const message = getApiErrorMessage(err)
-      setInviteBindError(message)
-      toast.error(message)
-    } finally {
-      setInviteBindLoading(false)
-    }
-  }
-
-  // 修改密码
-  const [pwdForm, setPwdForm] = useState({ new_password: '', confirm: '' })
-  const [pwdError, setPwdError] = useState('')
-  const [pwdLoading, setPwdLoading] = useState(false)
-
-  async function changePassword() {
-    setPwdError('')
-    if (pwdForm.new_password.length < 8) {
-      setPwdError('新密码不少于 8 位')
-      toast.error('新密码不少于 8 位')
-      return
-    }
-    if (pwdForm.new_password !== pwdForm.confirm) {
-      setPwdError('两次密码不一致')
-      toast.error('两次密码不一致')
-      return
-    }
-    setPwdLoading(true)
-    try {
-      await userApi.changePassword({ new_password: pwdForm.new_password })
-      toast.success('密码修改成功')
-      setPwdForm({ new_password: '', confirm: '' })
-    } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      const msg = getApiErrorMessage(err)
-      setPwdError(msg)
-      toast.error(msg)
-    } finally {
-      setPwdLoading(false)
-    }
-  }
-
-  // 邮箱绑定
-  const isEmailUsername = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile?.username ?? '')
-  const [emailInput, setEmailInput] = useState('')
-  const [codeInput, setCodeInput] = useState('')
-  const [emailError, setEmailError] = useState('')
-  const [emailLoading, setEmailLoading] = useState(false)
-  const [countdown, setCountdown] = useState(0)
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  useEffect(() => { if (isEmailUsername) setEmailInput(profile?.username ?? '') }, [isEmailUsername, profile?.username])
-  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current) }, [])
-
-  async function sendCode() {
-    if (!emailInput) {
-      setEmailError('请填写邮箱')
-      toast.error('请填写邮箱')
-      return
-    }
-    setEmailError('')
-    try {
-      await authApi.sendCode(emailInput)
-      toast.success('验证码已发送，请注意查收邮箱')
-      setCountdown(60)
-      timerRef.current = setInterval(() => {
-        setCountdown((c) => {
-          if (c <= 1) { clearInterval(timerRef.current!); timerRef.current = null; return 0 }
-          return c - 1
-        })
-      }, 1000)
-    } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      const msg = getApiErrorMessage(err)
-      setEmailError(msg)
-      toast.error(msg)
-    }
-  }
-
-  async function bindEmail() {
-    if (!emailInput || !codeInput) {
-      setEmailError('请填写邮箱和验证码')
-      toast.error('请填写邮箱和验证码')
-      return
-    }
-    setEmailError('')
-    setEmailLoading(true)
-    try {
-      await userApi.bindEmail({ email: emailInput, code: codeInput })
-      toast.success('邮箱绑定成功')
-      setEmailInput('')
-      setCodeInput('')
-      reload()
-    } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      const msg = getApiErrorMessage(err)
-      setEmailError(msg)
-      toast.error(msg)
-    } finally {
-      setEmailLoading(false)
-    }
-  }
-
-  const initial = profile?.username?.[0] ?? profile?.email?.[0] ?? '?'
-  const balanceYuan = balanceCredits != null ? (balanceCredits / 1e6).toFixed(4) : '--'
+  const initial = (profile?.username?.[0] ?? profile?.email?.[0] ?? '?').toUpperCase()
+  const balanceYuan = (balanceCredits / 1e6).toFixed(4)
 
   return (
     <>
       <PageHeader
-        eyebrow="Identity"
-        title="个人中心"
-        description="账号基本信息与安全设置。"
-        actions={
-          loadError ? (
-            <Button size="sm" variant="outline" onClick={reload}>
-              重试
-            </Button>
-          ) : null
-        }
+        title='个人中心'
+        description='账号基本信息与安全设置。'
+        actions={loadError ? <Button variant='outline' onClick={reload}>重试</Button> : null}
       />
       {loadError ? (
-        <Alert variant="destructive">
+        <Alert variant='destructive'>
           <AlertDescription>{loadError}</AlertDescription>
         </Alert>
       ) : null}
 
-      {/* 个人信息卡 */}
-      <PageSection title="账户概览" description="查看当前身份、用户编号、邮箱和可用余额。">
-          <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
-            {/* 头像 */}
-            <div className="flex size-20 shrink-0 items-center justify-center rounded-full bg-primary text-3xl font-semibold text-primary-foreground">
-              {loading ? '?' : initial.toUpperCase()}
-            </div>
-
-            {/* 基本信息 */}
-            <div className="flex-1 space-y-1.5">
-              {loading ? (
-                <>
-                  <Skeleton className="h-7 w-40" />
-                  <Skeleton className="h-4 w-24" />
-                  <Skeleton className="h-4 w-32" />
-                </>
-              ) : (
-                <>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-2xl font-bold tracking-tight">{profile?.username ?? '-'}</span>
-                    {profile?.group ? <Badge variant="secondary">{profile.group}</Badge> : null}
-                  </div>
-                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <User className="h-3.5 w-3.5" />
-                    <button
-                      type="button"
-                      className="transition hover:text-foreground"
-                      onClick={() => {
-                        void copyToClipboard(String(profile?.id ?? ''), { successMessage: '用户 ID 已复制' })
-                      }}
-                      disabled={!profile?.id}
-                    >
-                      UID #{profile?.id ?? '-'}
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <Mail className="h-3.5 w-3.5" />
-                    <span>{profile?.email ?? '未绑定邮箱'}</span>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* 余额 */}
-            <div className="flex flex-col gap-1 rounded-lg border bg-muted/40 px-5 py-4">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Wallet className="h-3.5 w-3.5" />
-                <span>当前余额</span>
-              </div>
-              {loading
-                ? <Skeleton className="h-8 w-28" />
-                : <span className="text-2xl font-bold tabular-nums tracking-tight">¥{balanceYuan}</span>
-              }
-            </div>
+      <section
+        aria-label='账户概览'
+        className='glass grid gap-8 p-5 sm:p-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:items-center'
+      >
+        <div className='flex min-w-0 items-center gap-4'>
+          <div
+            aria-hidden
+            className='flex size-14 shrink-0 items-center justify-center rounded-md bg-foreground text-xl font-semibold text-background'
+          >
+            {loading ? '?' : initial}
           </div>
-      </PageSection>
-
-      <div className="grid gap-5 lg:grid-cols-2">
-        <div className="grid min-w-0 content-start gap-5">
-          <QQBindingCard />
-          <CreditTransferCard userId={profile?.id} onSuccess={reloadBalance} />
-        </div>
-        <VIPCard />
-      </div>
-      <PageSection title="邀请关系" description="注册七天内且尚未绑定上级时，可以补填邀请码。">
-        <div className="space-y-4">
-          {inviteLoadError ? <Alert variant="destructive"><AlertDescription>{inviteLoadError}</AlertDescription></Alert> : null}
-          {inviteBindError ? <Alert variant="destructive"><AlertDescription>{inviteBindError}</AlertDescription></Alert> : null}
-          {inviteLoading ? (
-            <Skeleton className="h-10 w-full" />
-          ) : inviteInfo.inviter_id ? (
-            <Alert>
-              <UserPlus className="h-4 w-4" />
-              <AlertDescription>已绑定上级用户 UID #{inviteInfo.inviter_id}，邀请关系不可重复修改。</AlertDescription>
-            </Alert>
-          ) : inviteInfo.can_bind ? (
-            <>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input
-                  value={inviteCodeInput}
-                  onChange={(event) => setInviteCodeInput(event.target.value)}
-                  onKeyDown={(event) => event.key === 'Enter' && void bindInviteCode()}
-                  placeholder="请输入上级邀请码"
-                  aria-label="上级邀请码"
-                />
-                <Button onClick={() => void bindInviteCode()} disabled={inviteBindLoading} className="shrink-0">
-                  <UserPlus data-icon="inline-start" />
-                  {inviteBindLoading ? '绑定中…' : '绑定邀请码'}
-                </Button>
-              </div>
-              {inviteInfo.binding_deadline ? (
-                <p className="text-xs text-muted-foreground">
-                  绑定截止：{new Date(inviteInfo.binding_deadline).toLocaleString()}
-                </p>
-              ) : null}
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">当前账号已超过绑定期限，或暂时无法补填邀请码。</p>
-          )}
-        </div>
-      </PageSection>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        {/* 修改密码 */}
-        <PageSection title="修改密码" description="设置至少 8 位的新密码。">
-          <div className="space-y-4">
-            {pwdError ? <Alert variant="destructive"><AlertDescription>{pwdError}</AlertDescription></Alert> : null}
-            <div className="space-y-1.5">
-              <Label htmlFor="new-password">新密码</Label>
-              <Input
-                id="new-password"
-                type="password"
-                value={pwdForm.new_password}
-                onChange={(e) => setPwdForm((f) => ({ ...f, new_password: e.target.value }))}
-                placeholder="至少 8 位"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="confirm-password">确认新密码</Label>
-              <Input
-                id="confirm-password"
-                type="password"
-                value={pwdForm.confirm}
-                onChange={(e) => setPwdForm((f) => ({ ...f, confirm: e.target.value }))}
-                onKeyDown={(e) => e.key === 'Enter' && changePassword()}
-              />
-            </div>
-            <Button className="w-full" onClick={changePassword} disabled={pwdLoading}>
-              <KeyRound data-icon="inline-start" />
-              {pwdLoading ? '保存中…' : '保存密码'}
-            </Button>
-          </div>
-        </PageSection>
-
-        {/* 邮箱绑定 */}
-        <PageSection title="邮箱绑定" description="绑定邮箱后可用于账户验证和找回密码。">
-          <div className="space-y-4">
-            {emailError ? <Alert variant="destructive"><AlertDescription>{emailError}</AlertDescription></Alert> : null}
-            {profile?.email ? (
-              <Alert>
-                <Mail className="h-4 w-4" />
-                <AlertDescription className="flex flex-wrap items-center gap-2">
-                <span className="font-medium text-foreground">{profile.email}</span>
-                <span className="text-muted-foreground">已绑定，可用于找回密码</span>
-                </AlertDescription>
-              </Alert>
+          <div className='flex min-w-0 flex-col gap-1'>
+            {loading ? (
+              <>
+                <Skeleton className='h-7 w-40' />
+                <Skeleton className='h-4 w-24' />
+                <Skeleton className='h-4 w-32' />
+              </>
             ) : (
               <>
-                {isEmailUsername ? (
-                  <div className="rounded-lg bg-muted/60 px-4 py-3 text-sm text-muted-foreground">
-                    将向 <span className="font-medium text-foreground">{profile?.username}</span> 发送验证码
-                  </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="email-address">邮箱地址</Label>
-                    <Input id="email-address" type="email" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} placeholder="example@email.com" />
-                  </div>
-                )}
-                <div className="space-y-1.5">
-                  <Label htmlFor="email-code">验证码</Label>
-                  <div className="flex gap-2">
-                    <Input id="email-code" value={codeInput} onChange={(e) => setCodeInput(e.target.value)} placeholder="6 位验证码" className="flex-1" />
-                    <Button variant="outline" disabled={countdown > 0} onClick={sendCode} className="shrink-0">
-                      {countdown > 0 ? `${countdown}s` : '发送验证码'}
-                    </Button>
-                  </div>
+                <div className='flex flex-wrap items-center gap-2'>
+                  <span className='truncate text-xl font-semibold tracking-tight'>{profile?.username ?? '-'}</span>
+                  {profile?.group ? <Badge variant='secondary'>{profile.group}</Badge> : null}
                 </div>
-                <Button className="w-full" onClick={bindEmail} disabled={emailLoading}>
-                  <Mail data-icon="inline-start" />
-                  {emailLoading ? '绑定中…' : '绑定邮箱'}
-                </Button>
+                <button
+                  type='button'
+                  title='点击复制用户 ID'
+                  disabled={!profile?.id}
+                  onClick={() => void copyToClipboard(String(profile?.id ?? ''), { successMessage: '用户 ID 已复制' })}
+                  className='w-fit rounded-sm text-sm text-muted-foreground tabular-nums outline-none transition-colors duration-140 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none'
+                >
+                  UID #{profile?.id ?? '-'}
+                </button>
+                <span className='truncate text-sm text-muted-foreground'>{profile?.email ?? '未绑定邮箱'}</span>
               </>
             )}
           </div>
-        </PageSection>
+        </div>
+        <Readout label='当前余额' value={`¥${balanceYuan}`} loading={balanceLoading} />
+      </section>
+
+      <div className='grid gap-4 lg:grid-cols-2'>
+        <div className='grid gap-4'><QQBindingCard /><CreditTransferCard userId={profile?.id} onSuccess={reloadBalance} /></div>
+        <VIPCard />
+      </div>
+
+      <div className='glass divide-y divide-glass-border overflow-hidden'>
+        <InviteBinding />
+        <PasswordForm />
+        <EmailBinding profile={profile} loading={loading} onBound={reload} />
       </div>
     </>
   )

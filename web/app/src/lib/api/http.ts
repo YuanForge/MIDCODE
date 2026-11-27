@@ -1,9 +1,9 @@
-import axios from 'axios'
-import type { AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios'
 import { requestCaptcha, type CaptchaPurpose } from '@/lib/auth/captcha'
+import type { InternalAxiosRequestConfig } from 'axios'
+import axios from 'axios'
+import type { AxiosRequestConfig } from 'axios'
 
 import { clearRoleToken, getRoleToken } from '@/lib/auth/storage'
-import { notifyAuthChange, requestLogin } from '@/lib/auth/events'
 
 type Role = 'user' | 'admin' | 'vendor' | 'reseller'
 
@@ -48,14 +48,7 @@ export function createHttpClient(role?: Role): HttpClient {
         }
       }
       if (error.response?.status === 401 && role) {
-        const rejectedToken = error.config?.headers?.Authorization
-        if (rejectedToken !== `Bearer ${getRoleToken(role)}`) return Promise.reject(error)
         clearRoleToken(role)
-        notifyAuthChange()
-        if (role === 'user' && !/^\/(admin|vendor|reseller|login|register|forgot-password)(\/|$)/.test(window.location.pathname)) {
-          requestLogin()
-          return Promise.reject(error)
-        }
         const loginPaths: Record<string, string> = {
           user: '/login',
           admin: '/admin/login',
@@ -92,4 +85,14 @@ export function getApiErrorMessage(error: unknown) {
   }
   if (error instanceof Error) return error.message
   return '请求失败'
+}
+
+/**
+ * True when a request may have reached the server although no answer came back from it: the connection dropped,
+ * the request timed out, or a gateway in between answered in the server's place. After a write, the caller cannot
+ * tell whether it was applied.
+ */
+export function isOutcomeUnknown(error: unknown) {
+  if (!axios.isAxiosError(error)) return false
+  return !error.response || [502, 503, 504].includes(error.response.status)
 }

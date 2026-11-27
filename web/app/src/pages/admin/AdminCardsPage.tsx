@@ -1,65 +1,30 @@
 import { useState } from 'react'
-import { CreditCardIcon, RefreshCwIcon } from 'lucide-react'
+import { toast } from 'sonner'
 
+import { ConfirmAction } from '@/components/shared/ConfirmAction'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { FilterBar } from '@/components/shared/FilterBar'
-import { TableEmpty } from '@/components/shared/TableEmpty'
-import { TablePagination } from '@/components/shared/TablePagination'
-import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { copyToClipboard } from '@/lib/clipboard'
-import { adminApi, type AdminCard, type AdminCardBatch, type AdminVendor } from '@/lib/api/admin'
 import { useAsync } from '@/hooks/use-async'
+import { adminApi, type AdminCard, type AdminCardBatch, type AdminVendor } from '@/lib/api/admin'
+import { getApiErrorMessage } from '@/lib/api/http'
+import { BatchesTable } from '@/pages/admin/cards/BatchesTable'
+import { CardFilters } from '@/pages/admin/cards/CardFilters'
+import { CardsTable } from '@/pages/admin/cards/CardsTable'
+import { ExportUnused } from '@/pages/admin/cards/ExportUnused'
+import { GenerateCards } from '@/pages/admin/cards/GenerateCards'
+import { UsesTable } from '@/pages/admin/cards/UsesTable'
+import { CARD_PAGE_SIZE } from '@/pages/admin/cards/cardFormat'
 
 type TabView = 'batches' | 'cards' | 'uses'
 
+/** Cards by batch, by card, and by redemption. Generating and exporting are flows of their own; voiding and deleting ask first. */
 export function AdminCardsPage() {
   const [tab, setTab] = useState<TabView>('batches')
   const [statusFilter, setStatusFilter] = useState('')
-  const [usedBy, setUsedBy] = useState('')
-  const [usedEmail, setUsedEmail] = useState('')
-  const [useQuery, setUseQuery] = useState<Record<string, unknown>>({ page: 1, size: 50 })
   const [cardPage, setCardPage] = useState(1)
-  const cardPageSize = 50
-  const [queryParams, setQueryParams] = useState<Record<string, unknown>>({ page: 1, size: cardPageSize })
+  const [queryParams, setQueryParams] = useState<Record<string, unknown>>({ page: 1, size: CARD_PAGE_SIZE })
 
   const { data: batchRows, loading: batchLoading, error: batchError, reload: reloadBatches } = useAsync(async () => {
     const res = await adminApi.listCardBatches()
@@ -71,530 +36,174 @@ export function AdminCardsPage() {
     return { cards: response.cards ?? [], total: response.total ?? 0 }
   }, { cards: [] as AdminCard[], total: 0 }, [queryParams])
 
-  const rows = cardData.cards
-  const cardTotal = cardData.total
-  const { data: usedData, loading: usedLoading, error: usedError } = useAsync(async () => {
-    if (tab !== 'uses') return { cards: [] as AdminCard[], total: 0 }
-    const response = await adminApi.listCards({ ...useQuery, status: 'used' })
-    return { cards: response.cards ?? [], total: response.total ?? 0 }
-  }, { cards: [] as AdminCard[], total: 0 }, [tab, useQuery])
-  const usedRows = usedData.cards
-
-  const [mutError, setMutError] = useState('')
-  const [exportingUnused, setExportingUnused] = useState(false)
-  const [exportDialogOpen, setExportDialogOpen] = useState(false)
-  const [exportBatchId, setExportBatchId] = useState('__all__')
-  const [exportPassword, setExportPassword] = useState('')
-  const [generateOpen, setGenerateOpen] = useState(false)
-  const [resultOpen, setResultOpen] = useState(false)
-  const [generatedCards, setGeneratedCards] = useState<AdminCard[]>([])
-  const [count, setCount] = useState('10')
-  const [amount, setAmount] = useState('10')
-  const [note, setNote] = useState('')
-  const [vendorId, setVendorId] = useState<string>('')
-  const [pendingDeleteCard, setPendingDeleteCard] = useState<AdminCard | undefined>()
-  const [pendingVoidCardId, setPendingVoidCardId] = useState<number | null>(null)
-  const [pendingVoidBatchId, setPendingVoidBatchId] = useState<string | null>(null)
+  const { data: usedRows, loading: usedLoading, error: usedError } = useAsync(async () => {
+    const response = await adminApi.listCards({ status: 'used', page: 1, size: 500 })
+    return response.cards ?? []
+  }, [] as AdminCard[], [tab === 'uses' ? 1 : 0])
 
   const { data: vendors } = useAsync(async () => {
     const res = await adminApi.listVendors({})
     return (Array.isArray(res) ? res : (res as { vendors?: AdminVendor[]; items?: AdminVendor[] }).vendors ?? (res as { items?: AdminVendor[] }).items ?? []) as AdminVendor[]
   }, [] as AdminVendor[], [])
 
-  const error = loadError || mutError
+  const [mutError, setMutError] = useState('')
+  const [pendingDeleteCard, setPendingDeleteCard] = useState<AdminCard | null>(null)
+  const [pendingVoidCardId, setPendingVoidCardId] = useState<number | null>(null)
+  const [pendingVoidBatchId, setPendingVoidBatchId] = useState<string | null>(null)
 
-  async function generateCards() {
+  const shownError = loadError || mutError
+
+  async function run(action: () => Promise<void>) {
     setMutError('')
     try {
-      const response = await adminApi.generateCards({
-        count: Number(count),
-        credits: Math.round(Number(amount) * 1_000_000),
-        note,
-        vendor_id: vendorId ? Number(vendorId) : null,
-      })
-      setGeneratedCards(response.cards ?? [])
-      setGenerateOpen(false)
-      setResultOpen(true)
-      reload()
+      await action()
     } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
       setMutError(getApiErrorMessage(err))
     }
-  }
-
-  async function handleVoidCard(id: number) {
-    setPendingVoidCardId(id)
   }
 
   async function executeVoidCard() {
-    if (pendingVoidCardId == null) return
-    setMutError('')
-    try {
-      await adminApi.voidCard(pendingVoidCardId)
+    const id = pendingVoidCardId
+    setPendingVoidCardId(null)
+    if (id == null) return
+    await run(async () => {
+      await adminApi.voidCard(id)
       reload()
-    } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      setMutError(getApiErrorMessage(err))
-    } finally {
-      setPendingVoidCardId(null)
-    }
-  }
-
-  async function handleVoidBatch(batchId: string) {
-    setPendingVoidBatchId(batchId)
+    })
   }
 
   async function executeVoidBatch() {
-    if (!pendingVoidBatchId) return
-    setMutError('')
-    try {
-      const res = await adminApi.voidCardBatch(pendingVoidBatchId)
-      const voided = (res as { voided?: number }).voided ?? 0
-      window.alert(`已作废 ${voided} 张未使用卡密`)
+    const batchId = pendingVoidBatchId
+    setPendingVoidBatchId(null)
+    if (!batchId) return
+    await run(async () => {
+      const res = await adminApi.voidCardBatch(batchId)
+      toast.success(`已作废 ${(res as { voided?: number }).voided ?? 0} 张未使用卡密`)
       reloadBatches()
       reload()
-    } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      setMutError(getApiErrorMessage(err))
-    } finally {
-      setPendingVoidBatchId(null)
-    }
+    })
   }
 
   async function executeDeleteCard() {
-    if (!pendingDeleteCard?.id) return
-    setMutError('')
-    try {
-      await adminApi.deleteCard(pendingDeleteCard.id)
+    const card = pendingDeleteCard
+    setPendingDeleteCard(null)
+    if (!card?.id) return
+    await run(async () => {
+      await adminApi.deleteCard(card.id!)
       reload()
-    } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      setMutError(getApiErrorMessage(err))
-    } finally {
-      setPendingDeleteCard(undefined)
-    }
+    })
   }
 
-  async function exportUnusedCards() {
-    setExportingUnused(true)
-    setMutError('')
-    try {
-      // Verify password first
-      await adminApi.verifyAdminPassword(exportPassword)
-      const params: Record<string, unknown> = { status: 'unused', limit: 10000 }
-      if (exportBatchId && exportBatchId !== '__all__') {
-        params.batch_id = exportBatchId
-      }
-      const response = await adminApi.listCards(params)
-      const cards = response.cards ?? []
-      const lines = ['兑换码,面值(元),批次号,备注,生成时间', ...cards.map(c =>
-        `${c.code},${((c.credits ?? 0) / 1_000_000).toFixed(4)},${c.batch_id ?? ''},${c.note ?? ''},${c.created_at ? new Date(c.created_at).toLocaleString('zh-CN') : ''}`
-      )]
-      const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `unused_cards_${new Date().toISOString().slice(0, 10)}.csv`
-      a.click()
-      URL.revokeObjectURL(url)
-      setExportDialogOpen(false)
-      setExportPassword('')
-    } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      setMutError(getApiErrorMessage(err))
-    } finally {
-      setExportingUnused(false)
-    }
+  function search() {
+    setCardPage(1)
+    setQueryParams({ page: 1, size: CARD_PAGE_SIZE, ...(statusFilter ? { status: statusFilter } : {}) })
+  }
+
+  function reset() {
+    setStatusFilter('')
+    setCardPage(1)
+    setQueryParams({ page: 1, size: CARD_PAGE_SIZE })
+  }
+
+  function changePage(next: number) {
+    setCardPage(next)
+    setQueryParams((prev) => ({ ...prev, page: next }))
   }
 
   return (
     <>
       <PageHeader
-        eyebrow="Cards"
-        title="卡密管理"
-        description="批量生成、作废卡密，按批次或明细查看。"
+        title='卡密管理'
+        description='批量生成、作废卡密，按批次或明细查看。'
         actions={
           <>
-            {error ? (
-              <Button size="sm" variant="outline" onClick={reload}>
+            {shownError ? (
+              <Button variant='outline' onClick={reload}>
                 重试
               </Button>
             ) : null}
-            <Button size="sm" variant="outline" onClick={() => { setExportDialogOpen(true); setExportPassword(''); setMutError('') }} disabled={exportingUnused}>
-              导出未用卡密
-            </Button>
-            <Button onClick={() => setGenerateOpen(true)}>生成卡密</Button>
+            <ExportUnused batches={batchRows} />
+            <GenerateCards
+              vendors={vendors}
+              onGenerated={() => {
+                reload()
+                reloadBatches()
+              }}
+            />
           </>
         }
       />
-      {error ? (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
+      {shownError ? (
+        <Alert variant='destructive'>
+          <AlertDescription>{shownError}</AlertDescription>
         </Alert>
       ) : null}
 
-      <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
+      <Tabs value={tab} onValueChange={(value) => setTab(value as TabView)}>
         <TabsList>
-          <TabsTrigger value="batches">批次管理</TabsTrigger>
-          <TabsTrigger value="cards">卡密列表</TabsTrigger>
-          <TabsTrigger value="uses">使用记录</TabsTrigger>
+          <TabsTrigger value='batches'>批次管理</TabsTrigger>
+          <TabsTrigger value='cards'>卡密列表</TabsTrigger>
+          <TabsTrigger value='uses'>使用记录</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="batches" className="mt-4">
-        {
-        batchError ? (
-          <Alert variant="destructive"><AlertDescription>{batchError}</AlertDescription></Alert>
-        ) : (
-          <Card className="overflow-hidden">
-          <Table className="min-w-[860px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead>批次 ID</TableHead>
-                <TableHead>备注</TableHead>
-                <TableHead className="w-28 text-right">面值（¥）</TableHead>
-                <TableHead className="w-20 text-right">总数</TableHead>
-                <TableHead className="w-20 text-right">已用</TableHead>
-                <TableHead className="w-40">生成时间</TableHead>
-                <TableHead className="text-right">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            {batchLoading ? <TableSkeleton cols={7} /> : (
-              <TableBody>
-                {batchRows.length === 0 ? (
-                  <TableEmpty cols={7} Icon={CreditCardIcon} title="暂无批次" description="生成卡密后批次会显示在这里。" />
-                ) : batchRows.map((row) => (
-                  <TableRow key={row.id ?? row.batch_id}>
-                    <TableCell className="font-mono text-xs">{row.batch_id}</TableCell>
-                    <TableCell>{row.note || '-'}</TableCell>
-                    <TableCell className="text-right font-mono tabular-nums">¥{((row.credits ?? 0) / 1e6).toFixed(2)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{row.count}</TableCell>
-                    <TableCell className="text-right tabular-nums text-emerald-600">{row.used ?? 0}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {row.created_at ? new Date(row.created_at).toLocaleString('zh-CN') : '-'}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button size="sm" variant="destructive" onClick={() => row.batch_id && handleVoidBatch(row.batch_id)}>
-                        整批作废未用
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            )}
-          </Table>
-          </Card>
-        )}
-        </TabsContent>
-
-        <TabsContent value="cards" className="mt-4">
-      <FilterBar
-        filters={
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">状态过滤</label>
-            <Select value={statusFilter || '_all'} onValueChange={(v) => setStatusFilter(v === '_all' ? '' : v)}>
-              <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_all">全部</SelectItem>
-                <SelectItem value="unused">未使用</SelectItem>
-                <SelectItem value="used">已使用</SelectItem>
-                <SelectItem value="voided">已作废</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        }
-        actions={
-          <>
-            <Button onClick={() => { setCardPage(1); setQueryParams(statusFilter ? { status: statusFilter, page: 1, size: cardPageSize } : { page: 1, size: cardPageSize }) }}>查询</Button>
-            <Button variant="outline" onClick={() => { setStatusFilter(''); setCardPage(1); setQueryParams({ page: 1, size: cardPageSize }) }}>重置</Button>
-          </>
-        }
-      />
-
-      <Card className="overflow-hidden">
-        <Table className="min-w-[960px]">
-          <TableHeader>
-            <TableRow>
-              <TableHead>兑换码</TableHead>
-              <TableHead className="text-right">面值</TableHead>
-              <TableHead>状态</TableHead>
-              <TableHead>备注</TableHead>
-              <TableHead>生成时间</TableHead>
-              <TableHead>使用时间</TableHead>
-              <TableHead className="text-right">操作</TableHead>
-            </TableRow>
-          </TableHeader>
-          {loading ? (
-            <TableSkeleton cols={7} />
+        <TabsContent value='batches' className='mt-4'>
+          {batchError ? (
+            <Alert variant='destructive'>
+              <AlertDescription>{batchError}</AlertDescription>
+            </Alert>
           ) : (
-            <TableBody>
-              {rows.length === 0 ? (
-                <TableEmpty
-                  cols={7}
-                  Icon={CreditCardIcon}
-                  title="还没有卡密"
-                  description="使用上方「批量生成」创建卡密后会显示在这里。"
-                />
-              ) : (
-                rows.map((row, index) => (
-                  <TableRow key={row.id ?? index}>
-                    <TableCell>
-                      <button
-                        type="button"
-                        className="font-mono text-xs hover:text-primary focus-visible:text-primary focus-visible:outline-none"
-                        onClick={() => void copyToClipboard(row.code ?? '', { successMessage: '兑换码已复制' })}
-                        aria-label={`复制兑换码 ${row.code ?? ''}`}
-                      >
-                        {row.code ?? '-'}
-                      </button>
-                    </TableCell>
-                    <TableCell className="text-right font-mono tabular-nums">¥{((row.credits ?? 0) / 1_000_000).toFixed(4)}</TableCell>
-                    <TableCell>
-                      <Badge variant={row.status === 'unused' ? 'default' : row.status === 'voided' ? 'destructive' : 'secondary'}>
-                        {row.status === 'unused' ? '未使用' : row.status === 'voided' ? '已作废' : '已使用'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{row.note ?? '-'}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {row.created_at ? new Date(row.created_at).toLocaleString('zh-CN') : '-'}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {row.used_at ? new Date(row.used_at).toLocaleString('zh-CN') : '—'}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {row.status === 'unused' && row.id != null ? (
-                        <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="destructive" onClick={() => handleVoidCard(row.id!)}>
-                            作废
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => setPendingDeleteCard(row)}>
-                            删除
-                          </Button>
-                        </div>
-                      ) : null}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
+            <BatchesTable rows={batchRows} loading={batchLoading} onVoid={setPendingVoidBatchId} />
           )}
-        </Table>
-        {cardTotal > 0 ? (
-          <TablePagination
-            current={cardPage}
-            total={cardTotal}
-            pageSize={cardPageSize}
-            onChange={(next) => { setCardPage(next); setQueryParams((prev) => ({ ...prev, page: next })) }}
-            className="rounded-none border-x-0 border-b-0"
-          />
-        ) : null}
-      </Card>
         </TabsContent>
 
-        <TabsContent value="uses" className="mt-4">
-        <form className="mb-4 flex flex-wrap items-end gap-3" onSubmit={(event) => {
-          event.preventDefault()
-          setUseQuery({ page: 1, size: 50, used_by: usedBy.trim() || undefined, used_email: usedEmail.trim() || undefined })
-        }}>
-          <div className="space-y-1.5">
-            <Label htmlFor="card-used-by">兑换用户 ID</Label>
-            <Input id="card-used-by" type="number" min="1" step="1" value={usedBy} onChange={(event) => setUsedBy(event.target.value)} placeholder="例如 123" />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="card-used-email">兑换用户邮箱</Label>
-            <Input id="card-used-email" type="email" value={usedEmail} onChange={(event) => setUsedEmail(event.target.value)} placeholder="完整邮箱（不区分大小写）" className="w-72 max-w-full" />
-          </div>
-          <Button type="submit">查询</Button>
-          <Button type="button" variant="outline" onClick={() => { setUsedBy(''); setUsedEmail(''); setUseQuery({ page: 1, size: 50 }) }}>重置</Button>
-          <span className="text-sm text-muted-foreground">共 {usedData.total} 条兑换记录</span>
-        </form>
-        {
-        usedError ? (
-          <Alert variant="destructive"><AlertDescription>{usedError}</AlertDescription></Alert>
-        ) : (
-          <Card className="overflow-hidden">
-          <Table className="min-w-[760px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead>兑换码</TableHead>
-                <TableHead className="text-right">面值</TableHead>
-                <TableHead>兑换用户</TableHead>
-                <TableHead>兑换时间</TableHead>
-                <TableHead>备注</TableHead>
-              </TableRow>
-            </TableHeader>
-            {usedLoading ? <TableSkeleton cols={5} /> : (
-              <TableBody>
-                {usedRows.length === 0 ? (
-                  <TableEmpty cols={5} Icon={CreditCardIcon} title="暂无兑换记录" description="有用户兑换卡密后将显示在此。" />
-                ) : usedRows.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell className="font-mono text-xs">{row.code ?? '-'}</TableCell>
-                    <TableCell className="text-right font-mono tabular-nums">¥{((row.credits ?? 0) / 1_000_000).toFixed(4)}</TableCell>
-                    <TableCell>
-                      <div>{row.used_by ? `#${row.used_by}` : '-'} {row.used_username}</div>
-                      <div className="text-xs text-muted-foreground">{row.used_email || '无邮箱或用户已删除'}</div>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {row.used_at ? new Date(row.used_at).toLocaleString('zh-CN') : '-'}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{row.note ?? '-'}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            )}
-          </Table>
-          {usedData.total > 0 && <TablePagination current={Number(useQuery.page)} total={usedData.total} pageSize={50} onChange={(page) => setUseQuery((previous) => ({ ...previous, page }))} />}
-          </Card>
-        )}
+        <TabsContent value='cards' className='mt-4 flex flex-col gap-6'>
+          <CardFilters status={statusFilter} onStatus={setStatusFilter} onSearch={search} onReset={reset} />
+          <CardsTable
+            rows={cardData.cards}
+            loading={loading}
+            page={cardPage}
+            total={cardData.total}
+            onPage={changePage}
+            onVoid={setPendingVoidCardId}
+            onDelete={setPendingDeleteCard}
+          />
+        </TabsContent>
+
+        <TabsContent value='uses' className='mt-4'>
+          {usedError ? (
+            <Alert variant='destructive'>
+              <AlertDescription>{usedError}</AlertDescription>
+            </Alert>
+          ) : (
+            <UsesTable rows={usedRows} loading={usedLoading} />
+          )}
         </TabsContent>
       </Tabs>
 
-      <Dialog open={generateOpen} onOpenChange={setGenerateOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>批量生成卡密</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4">
-            <Input value={count} onChange={(event) => setCount(event.target.value)} placeholder="数量" />
-            <Input value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="面值（元）" />
-            <Input value={note} onChange={(event) => setNote(event.target.value)} placeholder="备注" />
-            <div className="space-y-1.5">
-              <Label>来源分销（可选）</Label>
-              <Select value={vendorId || '__none__'} onValueChange={(v) => setVendorId(v === '__none__' ? '' : v)}>
-                <SelectTrigger><SelectValue placeholder="不绑定分销" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">不绑定分销</SelectItem>
-                  {vendors.map((v) => (
-                    <SelectItem key={v.id} value={String(v.id)}>
-                      #{v.id} {v.username ?? v.name ?? ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setGenerateOpen(false)}>取消</Button>
-            <Button onClick={generateCards}>生成</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={resultOpen} onOpenChange={setResultOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>生成结果</DialogTitle>
-          </DialogHeader>
-          <div className="max-h-96 overflow-auto rounded-xl border border-border/70 bg-muted/25 p-4 font-mono text-xs">
-            {generatedCards.map((card) => `${card.code} ${(card.credits ?? 0) / 1_000_000}元`).join('\n')}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setResultOpen(false)}>关闭</Button>
-            <Button
-              onClick={() => {
-                void copyToClipboard(
-                  generatedCards
-                    .map((card) => `${card.code} ${(card.credits ?? 0) / 1_000_000}元`)
-                    .join('\n'),
-                  { successMessage: '卡密列表已复制' }
-                )
-              }}
-            >
-              <RefreshCwIcon data-icon="inline-start" />
-              复制全部
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog open={pendingDeleteCard !== undefined} onOpenChange={() => setPendingDeleteCard(undefined)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认删除</AlertDialogTitle>
-            <AlertDialogDescription>
-              确认删除卡密 {pendingDeleteCard?.code ?? pendingDeleteCard?.id} 吗？此操作不可撤销。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={executeDeleteCard}>删除</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* 导出未用卡密 dialog */}
-      <Dialog open={exportDialogOpen} onOpenChange={(o) => { if (!o) { setExportDialogOpen(false); setMutError('') } }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>导出未用卡密</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>按批次筛选</Label>
-              <Select value={exportBatchId} onValueChange={setExportBatchId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="所有批次" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__all__">所有批次</SelectItem>
-                  {batchRows.map((b) => (
-                    <SelectItem key={b.batch_id} value={b.batch_id ?? ''}>
-                      {b.batch_id} {b.note ? `— ${b.note}` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>操作人密码（二次确认）</Label>
-              <Input
-                type="password"
-                value={exportPassword}
-                onChange={(e) => setExportPassword(e.target.value)}
-                placeholder="请输入您的登录密码"
-                onKeyDown={(e) => e.key === 'Enter' && exportUnusedCards()}
-              />
-            </div>
-            {mutError ? <p className="text-sm text-destructive">{mutError}</p> : null}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setExportDialogOpen(false)}>取消</Button>
-            <Button onClick={exportUnusedCards} disabled={exportingUnused || !exportPassword}>
-              {exportingUnused ? '导出中…' : '确认导出'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog open={pendingVoidCardId != null} onOpenChange={() => setPendingVoidCardId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认作废</AlertDialogTitle>
-            <AlertDialogDescription>
-              确认作废此卡密吗？作废后该卡密将无法使用，此操作不可撤销。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={executeVoidCard}>确认作废</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={pendingVoidBatchId != null} onOpenChange={() => setPendingVoidBatchId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认批量作废</AlertDialogTitle>
-            <AlertDialogDescription>
-              确认作废该批次所有未使用卡密吗？作废后该批次未使用卡密将全部失效，此操作不可撤销。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={executeVoidBatch}>确认作废</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmAction
+        open={pendingDeleteCard !== null}
+        onClose={() => setPendingDeleteCard(null)}
+        title='确认删除'
+        description={`确认删除卡密 ${pendingDeleteCard?.code ?? pendingDeleteCard?.id ?? ''} 吗？此操作不可撤销。`}
+        confirmLabel='删除'
+        onConfirm={() => void executeDeleteCard()}
+      />
+      <ConfirmAction
+        open={pendingVoidCardId != null}
+        onClose={() => setPendingVoidCardId(null)}
+        title='确认作废'
+        description='确认作废此卡密吗？作废后该卡密将无法使用，此操作不可撤销。'
+        confirmLabel='确认作废'
+        onConfirm={() => void executeVoidCard()}
+      />
+      <ConfirmAction
+        open={pendingVoidBatchId != null}
+        onClose={() => setPendingVoidBatchId(null)}
+        title='确认批量作废'
+        description='确认作废该批次所有未使用卡密吗？作废后该批次未使用卡密将全部失效，此操作不可撤销。'
+        confirmLabel='确认作废'
+        onConfirm={() => void executeVoidBatch()}
+      />
     </>
   )
 }

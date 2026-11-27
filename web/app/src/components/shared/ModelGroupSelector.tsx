@@ -62,7 +62,7 @@ export function ModelGroupSelector({ groups, selectedIds, onChange }: ModelGroup
       left.sortOrder - right.sortOrder || left.id - right.id || left.name.localeCompare(right.name),
     )
   }, [groups])
-  const [requestedProvider, setRequestedProvider] = useState('')
+  const [requestedProvider, setRequestedProvider] = useState(() => providers.find((provider) => provider.groups.some((group) => group.id !== undefined && selectedIds.includes(group.id)))?.key ?? '')
   const [draggedGroupId, setDraggedGroupId] = useState<number>()
   const activeProvider = providers.some((provider) => provider.key === requestedProvider)
     ? requestedProvider

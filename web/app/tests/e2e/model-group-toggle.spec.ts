@@ -96,6 +96,10 @@ test('disables and re-enables a model group without stale form state', async ({ 
   await groupRow.click()
 
   await groupRow.getByRole('button', { name: '停用', exact: true }).click()
+  const confirmDialog = page.getByRole('alertdialog', { name: '确认停用' })
+  await expect(confirmDialog).toContainText('停用后新请求将立即停止使用该分组')
+  disableConfirmations += 1
+  await confirmDialog.getByRole('button', { name: '确认停用' }).click()
   await expect.poll(() => togglePayload).toEqual({ is_active: false })
   await expect(groupRow.getByText('停用', { exact: true })).toBeVisible()
 

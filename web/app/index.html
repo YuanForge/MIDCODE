@@ -1,11 +1,17 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-ui="next">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="application-name" content="MidCode" />
     <title>MidCode</title>
+    <script>
+      // Light is the default; the dark class is set before first paint when the person chose dark, to avoid a light flash.
+      try {
+        if (window.localStorage.getItem('dark_mode') === 'true') document.documentElement.classList.add('dark')
+      } catch (e) {}
+    </script>
     <script src="/env.js"></script>
     <script>
       ;(function () {

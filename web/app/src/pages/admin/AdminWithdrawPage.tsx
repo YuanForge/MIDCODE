@@ -1,77 +1,26 @@
 import { useEffect, useRef, useState } from 'react'
-import { WalletIcon } from 'lucide-react'
 
-import { PageHeader } from '@/components/shared/PageHeader'
+import { ConfirmAction } from '@/components/shared/ConfirmAction'
 import { FilterBar } from '@/components/shared/FilterBar'
-import { TableEmpty } from '@/components/shared/TableEmpty'
-import { TablePagination } from '@/components/shared/TablePagination'
-import { TableSkeleton } from '@/components/shared/TableSkeleton'
+import { PageHeader } from '@/components/shared/PageHeader'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { ImageUpload } from '@/components/ui/image-upload'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { adminApi, type AdminWithdrawal } from '@/lib/api/admin'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useAsync } from '@/hooks/use-async'
+import { adminApi, type AdminWithdrawal } from '@/lib/api/admin'
+import { getApiErrorMessage } from '@/lib/api/http'
+import { ProofDialog } from '@/pages/admin/withdraw/ProofDialog'
+import { RejectDialog } from '@/pages/admin/withdraw/RejectDialog'
+import { ProofViewDialog, QrDialog } from '@/pages/admin/withdraw/ViewDialogs'
+import { WithdrawTable } from '@/pages/admin/withdraw/WithdrawTable'
+import { PAGE_SIZE } from '@/pages/admin/withdraw/format'
 
-function statusBadge(s: string | undefined) {
-  if (s === 'pending') return <Badge className="bg-yellow-500 hover:bg-yellow-500 text-white">待审核</Badge>
-  if (s === 'approved') return <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white">已通过</Badge>
-  if (s === 'rejected') return <Badge variant="destructive">已拒绝</Badge>
-  return <Badge variant="outline">{s ?? '-'}</Badge>
-}
-
-function stageBadge(stage: string | undefined) {
-  if (stage === 'cs_review') return <Badge variant="outline" className="text-xs border-yellow-400 text-yellow-600">客服初审</Badge>
-  if (stage === 'finance_review') return <Badge variant="outline" className="text-xs border-blue-400 text-blue-600">财务复审</Badge>
-  if (stage === 'completed') return <Badge variant="outline" className="text-xs border-emerald-400 text-emerald-600">已完结</Badge>
-  return null
-}
-
-function payTypeBadge(t: string | undefined) {
-  if (t === 'wechat') return <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white">微信</Badge>
-  if (t === 'alipay') return <Badge className="bg-blue-600 hover:bg-blue-600 text-white">支付宝</Badge>
-  return <Badge variant="secondary">{t ?? '-'}</Badge>
-}
-
+/** Two-stage withdrawal review: customer service first, finance second, then the transfer proof. */
 export function AdminWithdrawPage() {
   const [page, setPage] = useState(1)
-  const [statusFilter, setStatusFilter] = useState('') // 默认全部
-  const [queryParams, setQueryParams] = useState({ page: 1, size: 20, status: '' })
+  const [statusFilter, setStatusFilter] = useState('')
+  const [queryParams, setQueryParams] = useState({ page: 1, size: PAGE_SIZE, status: '' })
 
   const { data, loading, error: loadError, reload } = useAsync(async () => {
     const [listRes, countRes] = await Promise.all([
@@ -83,7 +32,7 @@ export function AdminWithdrawPage() {
     return { rows: records, total, pendingCount: countRes.count ?? 0 }
   }, { rows: [] as AdminWithdrawal[], total: 0, pendingCount: 0 }, [queryParams])
 
-  // 自动轮询待审核数量（每 30 秒）
+  // Keep the pending count fresh while the page is open.
   const reloadRef = useRef(reload)
   useEffect(() => {
     reloadRef.current = reload
@@ -93,32 +42,36 @@ export function AdminWithdrawPage() {
     return () => clearInterval(timer)
   }, [])
 
-  const rows = data.rows
-  const pendingCount = data.pendingCount
-  const pageSize = 20
   const [mutError, setMutError] = useState('')
-  const [rejecting, setRejecting] = useState<AdminWithdrawal | null>(null)
-  const [remark, setRemark] = useState('')
-  const [pendingApprove, setPendingApprove] = useState<AdminWithdrawal | null>(null)
-  const [pendingCsApprove, setPendingCsApprove] = useState<AdminWithdrawal | null>(null)
   const [viewRow, setViewRow] = useState<AdminWithdrawal | null>(null)
   const [viewProofRow, setViewProofRow] = useState<AdminWithdrawal | null>(null)
-  // 凭证上传弹窗
+  const [pendingApprove, setPendingApprove] = useState<AdminWithdrawal | null>(null)
+  const [pendingCsApprove, setPendingCsApprove] = useState<AdminWithdrawal | null>(null)
+  const [rejecting, setRejecting] = useState<AdminWithdrawal | null>(null)
+  const [remark, setRemark] = useState('')
+  const [rejectError, setRejectError] = useState('')
   const [proofRow, setProofRow] = useState<AdminWithdrawal | null>(null)
   const [proofUrl, setProofUrl] = useState('')
   const [proofNote, setProofNote] = useState('')
   const [proofUploading, setProofUploading] = useState(false)
+  const [proofError, setProofError] = useState('')
 
   const error = loadError || mutError
 
   function doFilter() {
     setPage(1)
-    setQueryParams({ page: 1, size: pageSize, status: statusFilter })
+    setQueryParams({ page: 1, size: PAGE_SIZE, status: statusFilter })
   }
 
   function changePage(next: number) {
     setPage(next)
     setQueryParams((prev) => ({ ...prev, page: next }))
+  }
+
+  function openReject(row: AdminWithdrawal) {
+    setRejecting(row)
+    setRemark('')
+    setRejectError('')
   }
 
   async function executeCsApprove() {
@@ -129,7 +82,6 @@ export function AdminWithdrawPage() {
       setPendingCsApprove(null)
       reload()
     } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
       setMutError(getApiErrorMessage(err))
     }
   }
@@ -142,28 +94,26 @@ export function AdminWithdrawPage() {
       await adminApi.approveWithdrawal(target.id)
       setViewRow(null)
       setPendingApprove(null)
-      // 审批通过后弹出凭证上传
       setProofRow(target)
       setProofUrl('')
       setProofNote('')
+      setProofError('')
       reload()
     } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
       setMutError(getApiErrorMessage(err))
     }
   }
 
   async function submitProof() {
     if (!proofRow?.id) return
-    setMutError('')
+    setProofError('')
     setProofUploading(true)
     try {
       await adminApi.uploadWithdrawalProof(proofRow.id, proofUrl, proofNote)
       setProofRow(null)
       reload()
     } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      setMutError(getApiErrorMessage(err))
+      setProofError(getApiErrorMessage(err))
     } finally {
       setProofUploading(false)
     }
@@ -171,335 +121,107 @@ export function AdminWithdrawPage() {
 
   async function reject() {
     if (!rejecting?.id) return
-    setMutError('')
+    setRejectError('')
     try {
       await adminApi.rejectWithdrawal(rejecting.id, remark)
       setRejecting(null)
       setRemark('')
       reload()
     } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      setMutError(getApiErrorMessage(err))
+      setRejectError(getApiErrorMessage(err))
     }
   }
 
   return (
     <>
       <PageHeader
-        eyebrow="Withdraw"
-        title="提现审核"
-        description={`当前待处理 ${pendingCount} 条提现申请。`}
-        actions={
-          error ? (
-            <Button size="sm" variant="outline" onClick={reload}>
-              重试
-            </Button>
-          ) : null
-        }
+        title='提现审核'
+        description={`当前待处理 ${data.pendingCount} 条提现申请。`}
+        actions={error ? <Button variant='outline' onClick={reload}>重试</Button> : null}
       />
       {error ? (
-        <Alert variant="destructive">
+        <Alert variant='destructive'>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
 
       <FilterBar
         filters={
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">状态</label>
-            <Select value={statusFilter || '_all'} onValueChange={(v) => setStatusFilter(v === '_all' ? '' : v)}>
-              <SelectTrigger className="w-32">
+          <div className='flex flex-col gap-1'>
+            <Label htmlFor='withdraw-status' className='text-xs text-muted-foreground'>状态</Label>
+            <Select value={statusFilter || '_all'} onValueChange={(value) => setStatusFilter(value === '_all' ? '' : value)}>
+              <SelectTrigger id='withdraw-status' className='w-32'>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="_all">全部</SelectItem>
-                <SelectItem value="pending">待审核</SelectItem>
-                <SelectItem value="approved">已通过</SelectItem>
-                <SelectItem value="rejected">已拒绝</SelectItem>
+                <SelectItem value='_all'>全部</SelectItem>
+                <SelectItem value='pending'>待审核</SelectItem>
+                <SelectItem value='approved'>已通过</SelectItem>
+                <SelectItem value='rejected'>已拒绝</SelectItem>
               </SelectContent>
             </Select>
           </div>
         }
-        actions={
-          <Button onClick={doFilter}>查询</Button>
-        }
+        actions={<Button onClick={doFilter}>查询</Button>}
       />
 
-      <Card className="overflow-hidden">
-        <Table className="min-w-[1180px]">
-          <TableHeader>
-            <TableRow>
-              <TableHead>ID</TableHead>
-              <TableHead>用户</TableHead>
-              <TableHead>申请时间</TableHead>
-              <TableHead className="text-right">金额</TableHead>
-              <TableHead>收款方式</TableHead>
-              <TableHead>状态</TableHead>
-              <TableHead>审批阶段</TableHead>
-              <TableHead>备注</TableHead>
-              <TableHead className="text-right">操作</TableHead>
-            </TableRow>
-          </TableHeader>
-          {loading ? (
-            <TableSkeleton cols={9} />
-          ) : (
-            <TableBody>
-              {rows.length === 0 ? (
-                <TableEmpty
-                  cols={9}
-                  Icon={WalletIcon}
-                  title="还没有提现申请"
-                  description="号商提交提现后会在这里出现，请审核后再处理。"
-                />
-              ) : (
-                rows.map((row, index) => (
-                  <TableRow key={row.id ?? index}>
-                    <TableCell>{row.id ?? '-'}</TableCell>
-                    <TableCell>{row.username ?? '-'}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {row.created_at ? new Date(row.created_at).toLocaleString('zh-CN') : '-'}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">¥{((row.amount ?? 0) / 1_000_000).toFixed(4)}</TableCell>
-                    <TableCell>{payTypeBadge(row.payment_type)}</TableCell>
-                    <TableCell>{statusBadge(row.status)}</TableCell>
-                    <TableCell>{stageBadge(row.review_stage)}</TableCell>
-                    <TableCell className="max-w-40 truncate text-xs text-muted-foreground" title={row.admin_remark}>
-                      {row.admin_remark ?? '-'}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button size="sm" variant="outline" onClick={() => setViewRow(row)}>
-                          查看收款码
-                        </Button>
-                        {row.proof_url ? (
-                          <Button size="sm" variant="outline" onClick={() => setViewProofRow(row)}>
-                            查看打款证明
-                          </Button>
-                        ) : null}
-                        {row.status === 'pending' && (row.review_stage === 'cs_review' || !row.review_stage) ? (
-                          <>
-                            <Button size="sm" variant="outline" onClick={() => setPendingCsApprove(row)}>
-                              初审通过
-                            </Button>
-                            <Button size="sm" variant="destructive" onClick={() => setRejecting(row)}>
-                              驳回
-                            </Button>
-                          </>
-                        ) : null}
-                        {row.status === 'pending' && row.review_stage === 'finance_review' ? (
-                          <>
-                            <Button size="sm" variant="outline" onClick={() => setPendingApprove(row)}>
-                              复审通过
-                            </Button>
-                            <Button size="sm" variant="destructive" onClick={() => setRejecting(row)}>
-                              驳回
-                            </Button>
-                          </>
-                        ) : null}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          )}
-        </Table>
-        {data.total > 0 ? (
-          <TablePagination current={page} total={data.total} pageSize={pageSize} onChange={changePage} className="rounded-none border-x-0 border-b-0" />
-        ) : null}
-      </Card>
+      <WithdrawTable
+        rows={data.rows}
+        loading={loading}
+        page={page}
+        total={data.total}
+        onPage={changePage}
+        handlers={{
+          onQr: setViewRow,
+          onProof: setViewProofRow,
+          onCsApprove: setPendingCsApprove,
+          onApprove: setPendingApprove,
+          onReject: openReject,
+        }}
+      />
 
-      {/* 查看收款码弹窗 */}
-      <Dialog open={Boolean(viewRow)} onOpenChange={() => setViewRow(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>收款码 — {viewRow?.username}</DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-col items-center gap-3">
-            {viewRow?.payment_qr ? (
-              <img
-                src={viewRow.payment_qr}
-                alt="收款码"
-                className="h-60 w-60 rounded-md border object-contain"
-              />
-            ) : (
-              <div className="flex h-60 w-60 items-center justify-center rounded-md border text-muted-foreground text-sm">
-                无收款码
-              </div>
-            )}
-            <div className="flex items-center gap-2">
-              {payTypeBadge(viewRow?.payment_type)}
-              <span className="text-sm">
-                提现金额：<strong>¥{((viewRow?.amount ?? 0) / 1_000_000).toFixed(4)}</strong>
-              </span>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setViewRow(null)}>关闭</Button>
-            {viewRow?.proof_url ? (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setViewProofRow(viewRow)
-                  setViewRow(null)
-                }}
-              >
-                查看打款证明
-              </Button>
-            ) : null}
-            {viewRow?.status === 'pending' && viewRow?.review_stage === 'cs_review' ? (
-              <Button variant="outline" onClick={() => { setPendingCsApprove(viewRow); setViewRow(null) }}>初审通过</Button>
-            ) : null}
-            {viewRow?.status === 'pending' && viewRow?.review_stage === 'finance_review' ? (
-              <Button onClick={() => executeApprove(viewRow)}>复审通过</Button>
-            ) : null}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={Boolean(viewProofRow)} onOpenChange={() => setViewProofRow(null)}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle>打款证明 — {viewProofRow?.username}</DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-col gap-4">
-            {viewProofRow?.proof_url ? (
-              <img
-                src={viewProofRow.proof_url}
-                alt="打款证明"
-                className="max-h-[70vh] w-full rounded-md border object-contain"
-              />
-            ) : (
-              <div className="flex h-60 items-center justify-center rounded-md border text-muted-foreground text-sm">
-                无打款证明
-              </div>
-            )}
-            <div className="grid gap-2 text-sm text-muted-foreground">
-              <div className="flex items-center gap-2">
-                {payTypeBadge(viewProofRow?.payment_type)}
-                <span>
-                  提现金额：<strong>¥{((viewProofRow?.amount ?? 0) / 1_000_000).toFixed(4)}</strong>
-                </span>
-              </div>
-              <div>
-                备注：{viewProofRow?.proof_note?.trim() ? viewProofRow.proof_note : '-'}
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setViewProofRow(null)}>关闭</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={Boolean(rejecting)} onOpenChange={() => setRejecting(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>拒绝提现申请</DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-wrap gap-1.5">
-            {[
-              '收款信息有误，请重新提交',
-              '账户存在异常，暂不处理',
-              '未满足提现门槛',
-              '信息不完整，请补充材料',
-              '超出单笔提现限额',
-              '重复提交申请',
-            ].map((reason) => (
-              <Button
-                key={reason}
-                size="sm"
-                variant={remark === reason ? 'default' : 'outline'}
-                className="text-xs h-7"
-                onClick={() => setRemark(reason)}
-              >
-                {reason}
-              </Button>
-            ))}
-          </div>
-          <Textarea
-            value={remark}
-            onChange={(event) => setRemark(event.target.value)}
-            placeholder="填写或自定义拒绝原因"
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRejecting(null)}>
-              取消
-            </Button>
-            <Button onClick={reject}>确认拒绝</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog open={pendingApprove !== null} onOpenChange={() => setPendingApprove(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认通过</AlertDialogTitle>
-            <AlertDialogDescription>
-              确认通过 {pendingApprove?.username} 的提现申请吗？
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={() => executeApprove()}>通过</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={pendingCsApprove !== null} onOpenChange={() => setPendingCsApprove(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>客服初审通过</AlertDialogTitle>
-            <AlertDialogDescription>
-              确认初审通过 {pendingCsApprove?.username} 的提现申请？将流转至财务复审阶段。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={executeCsApprove}>确认初审</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* 打款凭证上传 */}
-      <Dialog open={proofRow !== null} onOpenChange={() => setProofRow(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>上传打款凭证</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">审批已通过，请上传打款凭证截图（图片），备注可选。</p>
-          {mutError ? (
-            <Alert variant="destructive"><AlertDescription>{mutError}</AlertDescription></Alert>
-          ) : null}
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label>凭证图片</Label>
-              {/* 这里假设有一个Upload组件，上传后setProofUrl(url) */}
-              <ImageUpload
-                value={proofUrl}
-                onChange={setProofUrl}
-                accept="image/*"
-                description="请上传打款截图"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>备注</Label>
-              <Textarea
-                value={proofNote}
-                onChange={(e) => setProofNote(e.target.value)}
-                placeholder="打款备注信息（可留空）"
-                rows={3}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setProofRow(null)}>跳过</Button>
-            <Button onClick={submitProof} disabled={proofUploading || !proofUrl}>
-              {proofUploading ? '提交中…' : '提交凭证'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <QrDialog
+        row={viewRow}
+        onClose={() => setViewRow(null)}
+        onViewProof={(row) => {
+          setViewProofRow(row)
+          setViewRow(null)
+        }}
+        onCsApprove={(row) => {
+          setPendingCsApprove(row)
+          setViewRow(null)
+        }}
+        onApprove={(row) => void executeApprove(row)}
+      />
+      <ProofViewDialog row={viewProofRow} onClose={() => setViewProofRow(null)} />
+      <RejectDialog row={rejecting} remark={remark} onRemark={setRemark} error={rejectError} onClose={() => setRejecting(null)} onConfirm={() => void reject()} />
+      <ConfirmAction
+        open={pendingApprove !== null}
+        onClose={() => setPendingApprove(null)}
+        title='确认通过'
+        description={`确认通过 ${pendingApprove?.username ?? ''} 的提现申请吗？`}
+        confirmLabel='通过'
+        onConfirm={() => void executeApprove()}
+      />
+      <ConfirmAction
+        open={pendingCsApprove !== null}
+        onClose={() => setPendingCsApprove(null)}
+        title='客服初审通过'
+        description={`确认初审通过 ${pendingCsApprove?.username ?? ''} 的提现申请？将流转至财务复审阶段。`}
+        confirmLabel='确认初审'
+        onConfirm={() => void executeCsApprove()}
+      />
+      <ProofDialog
+        open={proofRow !== null}
+        url={proofUrl}
+        onUrl={setProofUrl}
+        note={proofNote}
+        onNote={setProofNote}
+        error={proofError}
+        uploading={proofUploading}
+        onClose={() => setProofRow(null)}
+        onSubmit={() => void submitProof()}
+      />
     </>
   )
 }

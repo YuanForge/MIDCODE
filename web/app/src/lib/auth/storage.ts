@@ -35,6 +35,7 @@ export function setSiteModePreference(mode: Role) {
 }
 
 export function isDarkModeEnabled() {
+  // Light is the default; dark only when the person has chosen it.
   return window.localStorage.getItem(DARK_KEY) === 'true'
 }
 

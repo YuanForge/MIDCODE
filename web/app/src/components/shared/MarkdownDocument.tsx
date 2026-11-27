@@ -20,6 +20,8 @@ type HeadingAnchor = {
 type MarkdownDocumentProps = {
   content: string
   showHeadingNav?: boolean
+  /** Puts the article on one glass sheet. Off by default, so a document inside a dialog is not glass on glass. */
+  panel?: boolean
 }
 
 function isTableSeparator(line: string) {
@@ -193,7 +195,7 @@ function renderInlineTokens(text: string, keyPrefix: string) {
       nodes.push(
         <code
           key={`${keyPrefix}-code-${match.index}`}
-          className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.92em]"
+          className="rounded bg-glass-strong/70 px-1.5 py-0.5 font-mono text-[0.92em]"
         >
           {token.slice(1, -1)}
         </code>,
@@ -286,7 +288,7 @@ function updateHash(id: string) {
   window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${hash}`)
 }
 
-export function MarkdownDocument({ content, showHeadingNav = false }: MarkdownDocumentProps) {
+export function MarkdownDocument({ content, showHeadingNav = false, panel = false }: MarkdownDocumentProps) {
   const blocks = useMemo(() => parseMarkdown(content), [content])
   const { headingIds, headings } = useMemo(() => buildHeadingAnchors(blocks), [blocks])
   const [activeHeading, setActiveHeading] = useState('')
@@ -343,7 +345,7 @@ export function MarkdownDocument({ content, showHeadingNav = false }: MarkdownDo
 
     return (
       <aside className="order-first lg:order-none lg:sticky lg:top-6 lg:self-start">
-        <nav className="rounded-lg border bg-card/80 p-3 text-sm shadow-sm">
+        <nav className="glass p-3 text-sm">
           <div className="mb-2 flex items-center justify-between gap-2">
             <p className="text-xs font-medium text-muted-foreground">标题定位</p>
             <button
@@ -360,7 +362,7 @@ export function MarkdownDocument({ content, showHeadingNav = false }: MarkdownDo
                 key={heading.id}
                 type="button"
                 className={cn(
-                  'block w-full rounded-md px-2 py-1.5 text-left text-xs leading-5 transition hover:bg-muted',
+                  'block w-full rounded-md px-2 py-1.5 text-left text-xs leading-5 transition hover:bg-glass-strong/60',
                   heading.level > 2 && 'pl-4',
                   heading.level > 3 && 'pl-6',
                   activeHeading === heading.id
@@ -380,7 +382,7 @@ export function MarkdownDocument({ content, showHeadingNav = false }: MarkdownDo
 
   return (
     <div className={cn('mx-auto w-full max-w-5xl', canShowHeadingNav && 'grid max-w-7xl gap-6 lg:grid-cols-[minmax(0,1fr)_240px]')}>
-      <article className="min-w-0 space-y-6">
+      <article className={cn('min-w-0 space-y-6', panel && 'glass p-6 sm:p-8')}>
         {blocks.map((block, index) => {
           if (block.type === 'heading') {
             const sizeClass =
@@ -424,7 +426,7 @@ export function MarkdownDocument({ content, showHeadingNav = false }: MarkdownDo
             return (
               <blockquote
                 key={index}
-                className="border-l-4 border-primary/25 bg-muted/30 px-4 py-3 text-[15px] leading-7 text-muted-foreground"
+                className="border-l-4 border-primary/25 bg-glass-strong/40 px-4 py-3 text-[15px] leading-7 text-muted-foreground"
               >
                 {renderInline(block.text, `blockquote-${index}`)}
               </blockquote>
@@ -433,13 +435,13 @@ export function MarkdownDocument({ content, showHeadingNav = false }: MarkdownDo
 
           if (block.type === 'code') {
             return (
-              <div key={index} className="overflow-hidden rounded-xl border bg-zinc-950">
+              <div key={index} className="overflow-hidden rounded-xl border border-code-border bg-code">
                 {block.language ? (
-                  <div className="border-b border-zinc-800 px-4 py-2 text-xs font-medium uppercase text-zinc-400">
+                  <div className="border-b border-code-border px-4 py-2 text-xs font-medium uppercase text-code-muted">
                     {block.language}
                   </div>
                 ) : null}
-                <pre className="overflow-x-auto p-4 text-sm leading-6 text-zinc-100">
+                <pre className="overflow-x-auto p-4 text-sm leading-6 text-code-foreground">
                   <code>{block.code}</code>
                 </pre>
               </div>
@@ -464,14 +466,14 @@ export function MarkdownDocument({ content, showHeadingNav = false }: MarkdownDo
 
           if (block.type === 'table') {
             return (
-              <div key={index} className="overflow-x-auto rounded-xl border">
+              <div key={index} className="overflow-x-auto rounded-xl border border-glass-border">
                 <table className="min-w-full border-collapse text-sm">
-                  <thead className="bg-muted/40">
+                  <thead className="bg-glass-strong/50">
                     <tr>
                       {block.headers.map((header, headerIndex) => (
                         <th
                           key={headerIndex}
-                          className="border-b px-4 py-3 text-left font-semibold text-foreground"
+                          className="border-b border-glass-border px-4 py-3 text-left font-semibold text-foreground"
                         >
                           {renderInline(header, `table-head-${index}-${headerIndex}`)}
                         </th>
@@ -480,7 +482,7 @@ export function MarkdownDocument({ content, showHeadingNav = false }: MarkdownDo
                   </thead>
                   <tbody>
                     {block.rows.map((row, rowIndex) => (
-                      <tr key={rowIndex} className="border-b last:border-b-0">
+                      <tr key={rowIndex} className="border-b border-glass-border last:border-b-0">
                         {row.map((cell, cellIndex) => (
                           <td key={cellIndex} className="px-4 py-3 align-top text-foreground/90">
                             {renderInline(cell, `table-cell-${index}-${rowIndex}-${cellIndex}`)}
@@ -494,7 +496,7 @@ export function MarkdownDocument({ content, showHeadingNav = false }: MarkdownDo
             )
           }
 
-          return <hr key={index} className="border-border" />
+          return <hr key={index} className="border-glass-border" />
         })}
       </article>
       {renderHeadingNav()}

@@ -20,14 +20,11 @@ export function AppErrorPage() {
   }
 
   return (
-    <main className="flex min-h-svh items-center justify-center bg-muted/30 px-5 py-16 sm:px-8">
-      <Card className="w-full max-w-xl shadow-lg">
-        <CardHeader className="gap-3 px-6 pt-6 sm:px-8 sm:pt-8">
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-            Application error
-          </p>
+    <main className="console-canvas flex min-h-svh items-center justify-center px-5 py-16 sm:px-8">
+      <Card className="w-full max-w-lg py-0 animate-page-enter">
+        <CardHeader className="gap-2 px-6 pt-7 sm:px-8 sm:pt-8">
           <CardTitle>
-            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
+            <h1 className="text-2xl leading-8 font-extrabold tracking-[-0.01em]">{title}</h1>
           </CardTitle>
           <CardDescription className="leading-7">{description}</CardDescription>
         </CardHeader>

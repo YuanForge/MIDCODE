@@ -44,33 +44,35 @@ export function DateRangeFilter({
     onChange({ startAt: r.start, endAt: r.end })
   }
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
       {label ? <Label className="text-sm text-muted-foreground">{label}</Label> : null}
       <Input
         type="datetime-local"
         step={1}
         value={startAt}
+        aria-label="开始时间"
         onChange={(e) => onChange({ startAt: e.target.value, endAt })}
-        className="w-[220px]"
+        className="w-full sm:w-[240px]"
       />
-      <span className="text-sm text-muted-foreground">至</span>
+      <span aria-hidden className="hidden text-sm text-muted-foreground sm:inline">至</span>
       <Input
         type="datetime-local"
         step={1}
         value={endAt}
+        aria-label="结束时间"
         onChange={(e) => onChange({ startAt, endAt: e.target.value })}
-        className="w-[220px]"
+        className="w-full sm:w-[240px]"
       />
       <div className="flex gap-1">
-        <Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs" onClick={() => applyPreset('今天')}>今天</Button>
-        <Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs" onClick={() => applyPreset('7 天')}>7 天</Button>
-        <Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs" onClick={() => applyPreset('30 天')}>30 天</Button>
+        <Button type="button" size="sm" variant="ghost" className="h-8 px-2.5 text-xs" onClick={() => applyPreset('今天')}>今天</Button>
+        <Button type="button" size="sm" variant="ghost" className="h-8 px-2.5 text-xs" onClick={() => applyPreset('7 天')}>7 天</Button>
+        <Button type="button" size="sm" variant="ghost" className="h-8 px-2.5 text-xs" onClick={() => applyPreset('30 天')}>30 天</Button>
         {(startAt || endAt) ? (
           <Button
             type="button"
             size="sm"
             variant="ghost"
-            className="h-8 px-2 text-xs text-muted-foreground"
+            className="h-8 px-2.5 text-xs text-muted-foreground"
             onClick={() => onChange({ startAt: '', endAt: '' })}
           >
             清除

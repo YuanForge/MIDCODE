@@ -103,8 +103,11 @@ test('shows the lowest terminal group price on model cards and in detail order',
   })
 
   await page.goto('/models')
-  await expect(page.getByText('¥0.8500 / 1M 输入 + ¥5.1000 / 1M 输出', { exact: true })).toBeVisible()
-  await expect(page.getByText('¥2.1250 / 1M 输入 + ¥12.7500 / 1M 输出', { exact: true })).toHaveCount(0)
+  // The card shows the lowest group price as its two figures, not the base price.
+  const card = page.locator('[data-slot="model-card"]').first()
+  await expect(card.getByText('¥0.85', { exact: true })).toBeVisible()
+  await expect(card.getByText('¥5.10', { exact: true })).toBeVisible()
+  await expect(card.getByText('¥2.125', { exact: true })).toHaveCount(0)
 
   await page.getByRole('heading', { name: 'gpt-5.6-sol' }).click()
   const details = await page.getByRole('dialog').innerText()
@@ -136,7 +139,7 @@ test('filters model cards by provider without leaking other providers', async ({
   await expect(page.getByRole('heading', { name: 'claude-sonnet', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'gpt-5.6' })).toBeVisible()
 
-  const cards = page.locator('[data-slot="card"] h3')
+  const cards = page.locator('[data-slot="model-card"] h3')
   const providers = page.locator('[data-slot="badge"].cursor-pointer')
   for (const provider of ['Google', 'OpenAI', 'Anthropic', 'Google', 'OpenAI']) {
     await providers.filter({ hasText: new RegExp(`${provider}$`) }).click()
@@ -238,7 +241,7 @@ test('renders user dashboard with authenticated mocks', async ({ page }) => {
   await page.goto('/dashboard')
 
   await expect(page.getByText('用户数据看板')).toBeVisible()
-  await expect(page.getByText('1.80', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('账户余额').getByText('1.80', { exact: true })).toBeVisible()
   await expect(page.getByText('5.20')).toBeVisible()
   await expect(page.getByText('1.20')).toBeVisible()
 })

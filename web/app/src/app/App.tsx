@@ -36,7 +36,7 @@ function SiteSettingsGate({ children }: { children: ReactNode }) {
 export function App() {
   return (
     <SiteSettingsProvider>
-      <TooltipProvider>
+      <TooltipProvider delayDuration={250}>
         <SiteSettingsGate>
           <RouterProvider router={router} />
         </SiteSettingsGate>

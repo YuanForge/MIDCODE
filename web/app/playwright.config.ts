@@ -5,7 +5,6 @@ const baseURL = `http://127.0.0.1:${previewPort}`
 
 export default defineConfig({
   testDir: './tests/e2e',
-  outputDir: process.env.PLAYWRIGHT_OUTPUT_DIR ?? './test-results',
   use: {
     baseURL,
     trace: 'on-first-retry',
@@ -18,7 +17,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'], channel: process.env.PLAYWRIGHT_CHANNEL },
+      use: { ...devices['Desktop Chrome'] },
     },
   ],
 })

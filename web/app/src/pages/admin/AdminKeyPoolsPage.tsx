@@ -1,543 +1,152 @@
 import { useState } from 'react'
+import { PlusIcon } from 'lucide-react'
 
+import { ConfirmAction } from '@/components/shared/ConfirmAction'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { TableEmpty } from '@/components/shared/TableEmpty'
-import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { NativeSelect } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import {
-  adminApi,
-  type AdminChannel,
-  type AdminKeyPool,
-  type AdminPoolKey,
-} from '@/lib/api/admin'
 import { useAsync } from '@/hooks/use-async'
+import { adminApi, type AdminChannel, type AdminKeyPool } from '@/lib/api/admin'
+import { getApiErrorMessage } from '@/lib/api/http'
+import { BindChannelsDialog } from '@/pages/admin/keypools/BindChannelsDialog'
+import { CreatePoolDialog } from '@/pages/admin/keypools/CreatePoolDialog'
+import { PoolKeysDialog } from '@/pages/admin/keypools/PoolKeysDialog'
+import { PoolsTable } from '@/pages/admin/keypools/PoolsTable'
 
+/** Key pools as a ruled ledger. Creating, managing keys and binding channels are dialogs on top of it; deleting a pool asks first. */
 export function AdminKeyPoolsPage() {
   const { data, loading, error: loadError, reload } = useAsync(async () => {
-    const [poolResponse, channelResponse] = await Promise.all([
-      adminApi.listKeyPools(),
-      adminApi.listChannels(),
-    ])
+    const [poolResponse, channelResponse] = await Promise.all([adminApi.listKeyPools(), adminApi.listChannels()])
     const pools = Array.isArray(poolResponse) ? poolResponse : poolResponse.pools ?? []
-    const channels = (Array.isArray(channelResponse)
-      ? channelResponse
-      : channelResponse.channels ?? channelResponse.items ?? []
-    ).filter((item: AdminChannel) => item?.id)
+    const channels = (Array.isArray(channelResponse) ? channelResponse : channelResponse.channels ?? channelResponse.items ?? []).filter(
+      (item: AdminChannel) => item?.id,
+    )
     return { pools, channels }
   }, { pools: [] as AdminKeyPool[], channels: [] as AdminChannel[] })
 
-  const pools = data.pools
-  const channels = data.channels
-
+  const { pools, channels } = data
   const [mutError, setMutError] = useState('')
-  const [activePool, setActivePool] = useState<AdminKeyPool | null>(null)
-  const [keys, setKeys] = useState<AdminPoolKey[]>([])
-  const [keysLoading, setKeysLoading] = useState(false)
-  const [createOpen, setCreateOpen] = useState(false)
-  const [keyOpen, setKeyOpen] = useState(false)
-  const [name, setName] = useState('')
-  const [channelId, setChannelId] = useState(() => String(data.channels[0]?.id ?? ''))
-  const [keyValue, setKeyValue] = useState('')
-  const [keyBaseUrl, setKeyBaseUrl] = useState('')
-  const [priority, setPriority] = useState('0')
-  const [pendingDeletePool, setPendingDeletePool] = useState<AdminKeyPool | undefined>()
-  const [importOpen, setImportOpen] = useState(false)
-  const [importText, setImportText] = useState('')
-  const [importing, setImporting] = useState(false)
-  const [importResult, setImportResult] = useState<{ imported: number; skipped: number } | null>(null)
-  const [bindingOpen, setBindingOpen] = useState(false)
-  const [bindingPool, setBindingPool] = useState<AdminKeyPool | null>(null)
-  const [selectedChannelIds, setSelectedChannelIds] = useState<number[]>([])
-  const [bindingLoading, setBindingLoading] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<AdminKeyPool | null>(null)
+  const [keysPool, setKeysPool] = useState<AdminKeyPool | null>(null)
+  const [bindPool, setBindPool] = useState<AdminKeyPool | null>(null)
 
+  const [createOpen, setCreateOpen] = useState(false)
+  const [name, setName] = useState('')
+  const [channelId, setChannelId] = useState<string | null>(null)
+  const [createError, setCreateError] = useState('')
+  const [creating, setCreating] = useState(false)
+
+  // Until the person picks one, the new pool starts on the first channel.
+  const channelValue = channelId ?? String(channels[0]?.id ?? '')
   const error = loadError || mutError
 
-  // Sync default channelId when channels first load
-  if (channels.length > 0 && !channelId) {
-    setChannelId(String(channels[0].id ?? ''))
-  }
-
-  async function openKeys(pool: AdminKeyPool) {
-    setActivePool(pool)
-    setKeyOpen(true)
-    setKeysLoading(true)
+  async function act(run: () => Promise<unknown>) {
     setMutError('')
     try {
-      const response = await adminApi.listPoolKeys(pool.id as number)
-      setKeys(Array.isArray(response) ? response : response.keys ?? [])
+      await run()
+      reload()
     } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
       setMutError(getApiErrorMessage(err))
-    } finally {
-      setKeysLoading(false)
     }
+  }
+
+  function openCreate() {
+    setName('')
+    setChannelId(null)
+    setCreateError('')
+    setCreateOpen(true)
   }
 
   async function createPool() {
-    setMutError('')
+    setCreating(true)
+    setCreateError('')
     try {
-      await adminApi.createKeyPool({ ...(channelId ? { channel_id: Number(channelId) } : {}), name })
+      await adminApi.createKeyPool({ ...(channelValue ? { channel_id: Number(channelValue) } : {}), name: name.trim() })
       setCreateOpen(false)
-      setName('')
       reload()
     } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      setMutError(getApiErrorMessage(err))
-    }
-  }
-
-  async function togglePool(pool: AdminKeyPool) {
-    if (!pool.id) return
-    setMutError('')
-    try {
-      await adminApi.toggleKeyPool(pool.id)
-      reload()
-    } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      setMutError(getApiErrorMessage(err))
-    }
-  }
-
-  async function toggleVendor(pool: AdminKeyPool) {
-    if (!pool.id) return
-    setMutError('')
-    try {
-      await adminApi.toggleVendorSubmittable(pool.id)
-      reload()
-    } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      setMutError(getApiErrorMessage(err))
-    }
-  }
-
-  async function executeDeletePool() {
-    if (!pendingDeletePool?.id) return
-    setMutError('')
-    try {
-      await adminApi.deleteKeyPool(pendingDeletePool.id)
-      reload()
-    } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      setMutError(getApiErrorMessage(err))
+      setCreateError(getApiErrorMessage(err))
     } finally {
-      setPendingDeletePool(undefined)
+      setCreating(false)
     }
   }
 
-  async function openBinding(pool: AdminKeyPool) {
-    if (!pool.id) return
-    setBindingPool(pool)
-    setBindingOpen(true)
-    setBindingLoading(true)
-    setMutError('')
-    try {
-      const res = await adminApi.getKeyPoolChannels(pool.id)
-      const channels = res.channels ?? []
-      setSelectedChannelIds(channels.map((channel) => channel.id).filter((id): id is number => Boolean(id)))
-    } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      setMutError(getApiErrorMessage(err))
-    } finally {
-      setBindingLoading(false)
-    }
-  }
-
-  async function saveBinding() {
-    if (!bindingPool?.id) return
-    setMutError('')
-    try {
-      await adminApi.replaceKeyPoolChannels(bindingPool.id, selectedChannelIds)
-      setBindingOpen(false)
-      reload()
-    } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      setMutError(getApiErrorMessage(err))
-    }
-  }
-
-  async function addKey() {
-    if (!activePool?.id) return
-    setMutError('')
-    try {
-      await adminApi.addPoolKey(activePool.id, {
-        value: keyValue,
-        priority: Number(priority),
-        base_url_override: keyBaseUrl.trim() || undefined,
-      })
-      setKeyValue('')
-      setKeyBaseUrl('')
-      setPriority('0')
-      await openKeys(activePool)
-    } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      setMutError(getApiErrorMessage(err))
-    }
-  }
-
-  async function updateKey(row: AdminPoolKey) {
-    if (!row.id) return
-    setMutError('')
-    try {
-      await adminApi.updatePoolKey(row.id, {
-        priority: row.priority ?? 0,
-        is_active: row.is_active ?? true,
-        base_url_override: row.base_url_override?.trim() ?? '',
-      })
-      if (activePool) await openKeys(activePool)
-    } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      setMutError(getApiErrorMessage(err))
-    }
-  }
-
-  async function removeKey(row: AdminPoolKey) {
-    if (!row.id) return
-    setMutError('')
-    try {
-      await adminApi.removePoolKey(row.id)
-      if (activePool) await openKeys(activePool)
-    } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      setMutError(getApiErrorMessage(err))
-    }
-  }
-
-  async function clearKeyVendor(row: AdminPoolKey) {
-    if (!row.id) return
-    setMutError('')
-    try {
-      await adminApi.setPoolKeyVendor(row.id, null)
-      if (activePool) await openKeys(activePool)
-    } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      setMutError(getApiErrorMessage(err))
-    }
-  }
-
-  function updateDraftKey(id: number | undefined, patch: Partial<AdminPoolKey>) {
+  function togglePool(pool: AdminKeyPool) {
+    const id = pool.id
     if (!id) return
-    setKeys((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)))
+    void act(() => adminApi.toggleKeyPool(id))
   }
 
-  async function importKeys() {
-    if (!activePool?.id) return
-    setMutError('')
-    setImporting(true)
-    setImportResult(null)
-    try {
-      const lines = importText.split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
-      const res = await adminApi.importPoolKeys(activePool.id, lines)
-      setImportResult(res)
-      setImportText('')
-      await openKeys(activePool)
-    } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      setMutError(getApiErrorMessage(err))
-    } finally {
-      setImporting(false)
-    }
+  function toggleVendor(pool: AdminKeyPool) {
+    const id = pool.id
+    if (!id) return
+    void act(() => adminApi.toggleVendorSubmittable(id))
   }
 
-  function channelLabel(channel: AdminChannel) {
-    return `${channel.name ?? '未命名渠道'} · ${channel.type ?? 'unknown'} · #${channel.id}`
+  async function executeDelete() {
+    const id = pendingDelete?.id
+    setPendingDelete(null)
+    if (!id) return
+    await act(() => adminApi.deleteKeyPool(id))
   }
 
   return (
     <>
       <PageHeader
-        eyebrow="Key Pools"
-        title="号池管理"
-        description="管理号池、启停、切换号商上传，以及管理池内 Key。"
+        title='号池管理'
+        description='管理号池、启停、切换号商上传，以及管理池内 Key。'
         actions={
           <>
             {error ? (
-              <Button size="sm" variant="outline" onClick={reload}>
+              <Button variant='outline' onClick={reload}>
                 重试
               </Button>
             ) : null}
-            <Button onClick={() => setCreateOpen(true)}>新建号池</Button>
+            <Button onClick={openCreate}>
+              <PlusIcon data-icon='inline-start' />
+              新建号池
+            </Button>
           </>
         }
       />
       {error ? (
-        <Alert variant="destructive">
+        <Alert variant='destructive'>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
-      <Card className="overflow-hidden">
-        <Table className="min-w-[1000px]">
-          <TableHeader>
-            <TableRow>
-              <TableHead>ID</TableHead>
-              <TableHead>名称</TableHead>
-              <TableHead>渠道 ID</TableHead>
-              <TableHead>状态</TableHead>
-              <TableHead>号商上传</TableHead>
-              <TableHead className="text-right">操作</TableHead>
-            </TableRow>
-          </TableHeader>
-          {loading ? (
-            <TableSkeleton cols={6} />
-          ) : (
-            <TableBody>
-              {pools.length === 0 ? (
-                <TableEmpty cols={6} title="暂无号池数据" description="新建号池后会显示在这里。" />
-              ) : (
-                pools.map((pool, index) => (
-                  <TableRow key={pool.id ?? index}>
-                    <TableCell>{pool.id ?? '-'}</TableCell>
-                    <TableCell>{pool.name ?? '-'}</TableCell>
-                    <TableCell>{pool.channel_ids?.length ?? (pool.channel_id ? 1 : 0)}</TableCell>
-                    <TableCell>
-                      <Badge variant={pool.is_active ? 'default' : 'secondary'}>
-                        {pool.is_active ? '启用' : '停用'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={pool.vendor_submittable ? 'default' : 'secondary'}>
-                        {pool.vendor_submittable ? '开放' : '关闭'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex flex-wrap justify-end gap-2">
-                        <Button size="sm" variant="outline" onClick={() => openKeys(pool)}>管理 Keys</Button>
-                        <Button size="sm" variant="outline" onClick={() => openBinding(pool)}>绑定渠道</Button>
-                        <Button size="sm" variant="outline" onClick={() => togglePool(pool)}>
-                          {pool.is_active ? '停用' : '启用'}
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => toggleVendor(pool)}>切上传</Button>
-                        <Button size="sm" variant="destructive" onClick={() => setPendingDeletePool(pool)}>删除</Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          )}
-        </Table>
-      </Card>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="w-[min(calc(100vw-2rem),720px)] max-w-none sm:max-w-[720px]">
-          <DialogHeader><DialogTitle>新建号池</DialogTitle></DialogHeader>
-          <div className="flex flex-col gap-4">
-            <NativeSelect value={channelId} onChange={(event) => setChannelId(event.target.value)}>
-              <option value="">选择关联渠道</option>
-              {channels.map((channel) => (
-                <option key={channel.id} value={String(channel.id)}>
-                  {channelLabel(channel)}
-                </option>
-              ))}
-            </NativeSelect>
-            <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="号池名称" />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>取消</Button>
-            <Button onClick={createPool} disabled={!name.trim()}>创建</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <PoolsTable
+        pools={pools}
+        loading={loading}
+        onKeys={setKeysPool}
+        onBind={setBindPool}
+        onToggle={togglePool}
+        onToggleVendor={toggleVendor}
+        onDelete={setPendingDelete}
+      />
 
-      <Dialog open={keyOpen} onOpenChange={setKeyOpen}>
-        <DialogContent className="max-h-[86vh] w-[min(calc(100vw-2rem),1280px)] max-w-none overflow-y-auto sm:max-w-[1280px]">
-          <DialogHeader><DialogTitle>{activePool?.name ?? ''} - Key 管理</DialogTitle></DialogHeader>
-          <div className="flex flex-wrap gap-3">
-            <Input value={keyValue} onChange={(event) => setKeyValue(event.target.value)} placeholder="Key 值" />
-            <Input className="min-w-[320px] flex-1" value={keyBaseUrl} onChange={(event) => setKeyBaseUrl(event.target.value)} placeholder="https://api.example.com/v1/images/generations" />
-            <Input value={priority} onChange={(event) => setPriority(event.target.value)} placeholder="优先级" />
-            <Button onClick={addKey}>添加 Key</Button>
-            <Button variant="outline" onClick={() => { setImportOpen(true); setImportResult(null) }}>批量导入</Button>
-          </div>
-          {importOpen ? (
-            <div className="space-y-2 rounded-md border p-3">
-              <p className="text-sm text-muted-foreground">每行或逗号分隔填写 Key 值，重复的自动跳过。</p>
-              <Textarea
-                rows={4}
-                value={importText}
-                onChange={e => setImportText(e.target.value)}
-                placeholder="key1&#10;key2&#10;key3"
-              />
-              {importResult ? (
-                <p className="text-xs text-muted-foreground">
-                  已导入 <strong>{importResult.imported}</strong> 条，跳过 <strong>{importResult.skipped}</strong> 条。
-                </p>
-              ) : null}
-              <div className="flex gap-2">
-                <Button size="sm" onClick={importKeys} disabled={importing || !importText.trim()}>
-                  {importing ? '导入中…' : '确认导入'}
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => { setImportOpen(false); setImportText('') }}>取消</Button>
-              </div>
-            </div>
-          ) : null}
-          <Table className="min-w-[1280px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead>ID</TableHead>
-                <TableHead>Key</TableHead>
-                <TableHead>Base URL</TableHead>
-                <TableHead>号商</TableHead>
-                <TableHead>最近使用</TableHead>
-                <TableHead className="text-right">调用次数</TableHead>
-                <TableHead className="text-right">失败率</TableHead>
-                <TableHead>优先级</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead className="text-right">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            {keysLoading ? (
-              <TableSkeleton cols={10} rows={3} />
-            ) : (
-              <TableBody>
-                {keys.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={10} className="py-6 text-center text-muted-foreground">
-                      暂无 Key 数据
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  keys.map((row, index) => (
-                    <TableRow key={row.id ?? index}>
-                      <TableCell>{row.id ?? '-'}</TableCell>
-                      <TableCell className="font-mono text-xs">{row.value ?? '-'}</TableCell>
-                      <TableCell>
-                        <Input
-                          className="min-w-[280px] font-mono text-xs"
-                          value={row.base_url_override ?? ''}
-                          onChange={(event) =>
-                            updateDraftKey(row.id, { base_url_override: event.target.value })
-                          }
-                          placeholder="使用渠道 Base URL"
-                        />
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {row.vendor_id != null
-                          ? <span className="font-medium text-foreground">号商 #{row.vendor_id}</span>
-                          : <span className="text-muted-foreground/50">直营</span>}
-                        {row.vendor_id != null && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="ml-1 h-5 px-1 text-xs text-muted-foreground"
-                            onClick={() => clearKeyVendor(row)}
-                          >
-                            解绑
-                          </Button>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {row.last_used_at ? new Date(row.last_used_at).toLocaleString('zh-CN') : '从未'}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">{row.total_calls ?? 0}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {row.fail_rate != null
-                          ? <span className={row.fail_rate > 0.1 ? 'text-destructive' : ''}>{(row.fail_rate * 100).toFixed(1)}%</span>
-                          : '-'}
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          className="w-24"
-                          value={String(row.priority ?? 0)}
-                          onChange={(event) =>
-                            updateDraftKey(row.id, { priority: Number(event.target.value || '0') })
-                          }
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Label className="flex items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={row.is_active !== false}
-                            onChange={(event) =>
-                              updateDraftKey(row.id, { is_active: event.target.checked })
-                            }
-                          />
-                          {row.is_active === false ? '停用' : '启用'}
-                        </Label>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="outline" onClick={() => updateKey(row)}>保存</Button>
-                          <Button size="sm" onClick={() => removeKey(row)}>删除</Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            )}
-          </Table>
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog open={pendingDeletePool !== undefined} onOpenChange={() => setPendingDeletePool(undefined)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认删除</AlertDialogTitle>
-            <AlertDialogDescription>
-              确认删除号池 {pendingDeletePool?.name ?? pendingDeletePool?.id} 吗？此操作不可撤销。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={executeDeletePool}>删除</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <Dialog open={bindingOpen} onOpenChange={setBindingOpen}>
-        <DialogContent className="w-[min(calc(100vw-2rem),900px)] max-w-none sm:max-w-[900px]">
-          <DialogHeader><DialogTitle>{bindingPool?.name ?? ''} - 绑定渠道</DialogTitle></DialogHeader>
-          {bindingLoading ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">加载中…</p>
-          ) : (
-            <div className="flex max-h-[55vh] flex-col gap-2 overflow-y-auto">
-              {channels.map((ch) => (
-                <Label key={ch.id} className="flex items-center gap-2 rounded border p-2">
-                  <input type="checkbox" checked={selectedChannelIds.includes(ch.id ?? 0)} onChange={(event) => setSelectedChannelIds((ids) => event.target.checked ? [...ids.filter((id) => id !== ch.id), ch.id ?? 0].filter(Boolean) : ids.filter((id) => id !== ch.id))} />
-                  <span>{ch.name ?? '-'} · {ch.model ?? '-'} · #{ch.id}</span>
-                </Label>
-              ))}
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setBindingOpen(false)}>关闭</Button>
-            <Button onClick={saveBinding}>保存绑定</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CreatePoolDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        channels={channels}
+        channelId={channelValue}
+        onChannelId={setChannelId}
+        name={name}
+        onName={setName}
+        error={createError}
+        submitting={creating}
+        onSubmit={() => void createPool()}
+      />
+      {keysPool ? <PoolKeysDialog key={keysPool.id} pool={keysPool} onClose={() => setKeysPool(null)} /> : null}
+      {bindPool ? <BindChannelsDialog key={bindPool.id} pool={bindPool} channels={channels} onClose={() => setBindPool(null)} onSaved={reload} /> : null}
+      <ConfirmAction
+        open={pendingDelete != null}
+        onClose={() => setPendingDelete(null)}
+        title='确认删除'
+        description={`确认删除号池 ${pendingDelete?.name ?? pendingDelete?.id ?? ''} 吗？此操作不可撤销。`}
+        confirmLabel='删除'
+        onConfirm={() => void executeDelete()}
+      />
     </>
   )
 }

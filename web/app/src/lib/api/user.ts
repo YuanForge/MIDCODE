@@ -70,12 +70,10 @@ export type UserChannel = {
   icon_url?: string
   price_display?: string
   group_price?: string
-  gpt_context_pricing?: boolean
   group_prices?: Array<{
     group_id: number
     group_code: string
     group_name: string
-    gpt_context_pricing?: boolean
     price_display?: string
     vip_prices?: Array<{ code: string; name: string; price_display?: string }>
   }>
@@ -92,11 +90,9 @@ export type ModelAvailability = {
   total: number
   success: number
   availability_percent: number
+  ttft_ms?: number | null
+  tps?: number | null
   p50_latency_ms: number
-  ttft_ms: number | null
-  tps: number | null
-  ttft_samples: number
-  tps_samples: number
   recent: ModelAvailabilityRecent[]
 }
 
@@ -121,8 +117,8 @@ export type UserTask = {
 }
 
 export interface UserLogUsage {
-  performance_ttft_ms?: number | null;
-  performance_tps?: number | null;
+  performance_ttft_ms?: number | null
+  performance_tps?: number | null
   prompt_tokens?: number;
   completion_tokens?: number;
   total_tokens?: number;
@@ -179,27 +175,7 @@ export type TokenStatsResponse = {
   end_at: string
 }
 
-export type UsageMetrics = Omit<TokenUsageRow, 'model'> & {
-  requests: number
-  success: number
-  failed: number
-  credits: number
-}
-export type UsageModel = UsageMetrics & { model: string }
-export type UsagePoint = UsageMetrics & { at: string }
-export type UsageStatsResponse = {
-  start_at: string
-  end_at: string
-  bucket: 'hour' | 'day'
-  summary: UsageMetrics
-  previous: UsageMetrics
-  points: UsagePoint[]
-  models: UsageModel[]
-  available_models: string[]
-}
-
 export type UserLog = {
-  cache_hit_percent?: number | null
   id?: number
   model?: string
   created_at?: string
@@ -219,6 +195,7 @@ export type UserLog = {
   upstream_headers?: Record<string, unknown>
   upstream_request?: Record<string, unknown>
   upstream_response?: Record<string, unknown>
+  /** How long the call took. In milliseconds, but measured in whole seconds. Absent while the call is still pending. */
   latency_ms?: number
   usage?: UserLogUsage
 }
@@ -296,7 +273,29 @@ export type ChatConversation = {
   updated_at: string
 }
 
+export type UsageMetrics = Omit<TokenUsageRow, 'model'> & {
+  requests: number
+  success: number
+  failed: number
+  credits: number
+}
+export type UsageModel = UsageMetrics & { model: string }
+export type UsagePoint = UsageMetrics & { at: string }
+export type UsageStatsResponse = {
+  start_at: string
+  end_at: string
+  bucket: 'hour' | 'day'
+  summary: UsageMetrics
+  previous: UsageMetrics
+  points: UsagePoint[]
+  models: UsageModel[]
+  available_models: string[]
+}
+
 export const userApi = {
+  getUsageStats: (params: { start_at: string; end_at: string; bucket: 'hour' | 'day'; model?: string }) =>
+    http.get<UsageStatsResponse>('/user/stats/usage', { params }),
+
   getTransferBalance: () => http.get<{ credits: number }>('/user/credits/transfer-balance'),
   transferCredits: (data: { recipient_id: number; credits: number; request_id: string }) => http.post('/user/credits/transfer', data),
   getVIPProgress: () => http.get<{
@@ -309,8 +308,6 @@ export const userApi = {
   getProfile: () => http.get<UserProfileResponse>('/user/profile'),
   getBalance: () => http.get<UserBalanceResponse>('/user/balance'),
   getStats: () => http.get<UserStatsResponse>('/user/stats'),
-  getUsageStats: (params: { start_at: string; end_at: string; bucket: 'hour' | 'day'; model?: string }) =>
-    http.get<UsageStatsResponse>('/user/stats/usage', { params }),
   getTokenStats: (params: { start_at: string; end_at: string; model?: string; page: number; page_size: number }) =>
     http.get<TokenStatsResponse>('/user/stats/tokens', { params }),
   getTransactions: (page = 1, size = 20, taskId?: string, corrId?: string, apiKeyId?: number) =>
@@ -331,8 +328,8 @@ export const userApi = {
     http.delete<Record<string, unknown>>(`/user/apikeys/${id}`),
   listChannels: () =>
     http.get<{ channels?: UserChannel[] } | UserChannel[]>('/user/channels'),
-  getModelAvailability: (model?: string) =>
-    http.get<{ models: ModelAvailability[] }>('/user/model-availability', { params: model ? { model } : undefined }),
+  getModelAvailability: () =>
+    http.get<{ models: ModelAvailability[] }>('/user/model-availability'),
   redeemCard: (code: string) =>
     http.post<{ credits?: number; message?: string }>('/user/cards/redeem', { code }),
   getRedeemHistory: (page = 1, size = 20) =>
@@ -341,8 +338,9 @@ export const userApi = {
   bindInviteCode: (inviteCode: string) =>
     http.post<{ message?: string; inviter_id?: number }>('/user/invite/bind', { invite_code: inviteCode }),
   getInviteeList: () => http.get<{ invitees: InviteeRecord[] }>('/user/invite/list'),
-  convertFrozen: (amount = 0) =>
-    http.post<Record<string, unknown>>('/user/invite/convert', { amount }),
+  /** `amount` is in micro-credits and must be exact: the server reads 0 as "everything", so callers never default it. */
+  convertFrozen: (amount: number) =>
+    http.post<{ converted?: number; available_balance?: number }>('/user/invite/convert', { amount }),
   getPaymentQR: () =>
     http.get<{ wechat_qr?: string; alipay_qr?: string }>('/user/payment-qr'),
   savePaymentQR: (payload: { wechat_qr?: string; alipay_qr?: string }) =>

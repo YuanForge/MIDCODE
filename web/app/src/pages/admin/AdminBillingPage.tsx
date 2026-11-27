@@ -1,75 +1,27 @@
 import { useState } from 'react'
-import { WalletCardsIcon } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/shared/PageHeader'
-import { FilterBar } from '@/components/shared/FilterBar'
-import { TableEmpty } from '@/components/shared/TableEmpty'
-import { TablePagination } from '@/components/shared/TablePagination'
-import { TableSkeleton } from '@/components/shared/TableSkeleton'
+import { Readout } from '@/components/shared/Readout'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { DeductPointsDialog } from '@/components/shared/DeductPointsDialog'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { adminApi, type AdminTransaction, type AdminTransactionSummary } from '@/lib/api/admin'
 import { useAsync } from '@/hooks/use-async'
+import { adminApi, type AdminTransaction, type AdminTransactionSummary } from '@/lib/api/admin'
+import { getApiErrorMessage } from '@/lib/api/http'
+import { AdjustDialog } from '@/pages/admin/billing/AdjustDialog'
+import { AggregateTable } from '@/pages/admin/billing/AggregateTable'
+import { BillingFilters } from '@/pages/admin/billing/BillingFilters'
+import { TransactionsTable } from '@/pages/admin/billing/TransactionsTable'
+import { DIMS, buildBillingParams, emptyFilters, toMoney, type AggRow, type BillingFilterState } from '@/pages/admin/billing/format'
 
-function toMoney(cny: number | undefined) {
-  return (cny ?? 0).toFixed(4)
-}
-
-function txTypeLabel(t: string | undefined) {
-  return ({ charge: '扣费', refund: '退款', recharge: '充值', hold: '预扣', settle: '结算', adjust: '手动扣除' } as Record<string, string>)[t ?? ''] ?? (t ?? '-')
-}
-
-function txTypeVariant(t: string | undefined): 'destructive' | 'secondary' | 'outline' {
-  if (t === 'charge' || t === 'hold' || t === 'settle') return 'destructive'
-  if (t === 'refund' || t === 'recharge') return 'secondary'
-  return 'outline'
-}
-
-function profitOf(row: AdminTransaction) {
-  if (row.profit != null) return row.profit
-  const amount = row.amount ?? 0
-  const cost = row.cost ?? 0
-  if (row.type === 'refund') return -(amount - cost)
-  if (row.type === 'charge' || row.type === 'settle' || row.type === 'hold') return amount - cost
-  return 0
-}
-
+/** Revenue, cost and profit: the detail ledger with its totals, and the same numbers summed by user, channel, model or day. */
 export function AdminBillingPage() {
-  const [activeTab, setActiveTab] = useState('detail')
+  const [tab, setTab] = useState('detail')
+  const [filters, setFilters] = useState<BillingFilterState>(emptyFilters)
   const [page, setPage] = useState(1)
-  const [startAt, setStartAt] = useState('')
-  const [endAt, setEndAt] = useState('')
-  const [txType, setTxType] = useState('')
-  const [userId, setUserId] = useState('')
-  const [apiKeyId, setApiKeyId] = useState('')
   const [searchParams, setSearchParams] = useState<Record<string, unknown>>({ page: 1 })
-
-  // 手动调账 dialog
-  const [adjustOpen, setAdjustOpen] = useState(false)
-  const [adjustSuccess, setAdjustSuccess] = useState('')
-  // 按月导出
-  const [exportMonth, setExportMonth] = useState(() => new Date().toISOString().slice(0, 7))
-  const [exporting, setExporting] = useState(false)
 
   const { data, loading, error, reload } = useAsync(async () => {
     const res = await adminApi.listTransactions(searchParams)
@@ -79,24 +31,28 @@ export function AdminBillingPage() {
     return { transactions, total, summary }
   }, { transactions: [] as AdminTransaction[], total: 0, summary: {} as AdminTransactionSummary }, [searchParams])
 
-  const pageSize = 20
-  function doSearch() {
-    const params: Record<string, unknown> = { page: 1, size: pageSize }
-    if (startAt) params.start_at = startAt.replace('T', ' ') + ':00'
-    if (endAt) params.end_at = endAt.replace('T', ' ') + ':00'
-    if (txType) params.type = txType
-    if (userId) params.user_id = userId
-    if (apiKeyId) params.api_key_id = apiKeyId
-    setPage(1)
-    setSearchParams(params)
+  const aggDim = tab === 'detail' ? '' : tab
+  const { data: aggData, loading: aggLoading, error: aggError } = useAsync(async () => {
+    if (!aggDim) return { rows: [] as AggRow[] }
+    return adminApi.getTransactionAggregate({ dim: aggDim })
+  }, { rows: [] as AggRow[] }, [aggDim])
+
+  const [adjustOpen, setAdjustOpen] = useState(false)
+
+  const [exportMonth, setExportMonth] = useState(() => new Date().toISOString().slice(0, 7))
+  const [exporting, setExporting] = useState(false)
+
+  function updateFilter<K extends keyof BillingFilterState>(key: K, value: BillingFilterState[K]) {
+    setFilters((current) => ({ ...current, [key]: value }))
   }
 
-  function resetSearch() {
-    setStartAt('')
-    setEndAt('')
-    setTxType('')
-    setUserId('')
-    setApiKeyId('')
+  function search() {
+    setPage(1)
+    setSearchParams(buildBillingParams(filters, 1))
+  }
+
+  function reset() {
+    setFilters(emptyFilters)
     setPage(1)
     setSearchParams({ page: 1 })
   }
@@ -106,268 +62,86 @@ export function AdminBillingPage() {
     setSearchParams((prev) => ({ ...prev, page: next }))
   }
 
-  // 聚合视图数据
-  const aggDim = activeTab === 'detail' ? '' : activeTab
-  const { data: aggData, loading: aggLoading, error: aggError } = useAsync(async () => {
-    if (!aggDim) return { rows: [] as { key: string; revenue: number; cost: number; profit: number; calls: number }[] }
-    return adminApi.getTransactionAggregate({ dim: aggDim })
-  }, { rows: [] as { key: string; revenue: number; cost: number; profit: number; calls: number }[] }, [aggDim])
-
   async function submitExport() {
     setExporting(true)
     try {
-      await adminApi.createExportTask({
-        name: `账单对账单 ${exportMonth}`,
-        type: 'billing',
-        params: { month: exportMonth },
-      })
-      // 导出任务已创建，提示用户前往数据导出页查看
-      alert(`导出任务已提交（${exportMonth}），请前往「数据导出」页面下载。`)
+      await adminApi.createExportTask({ name: `账单对账单 ${exportMonth}`, type: 'billing', params: { month: exportMonth } })
+      toast.success(`导出任务已提交（${exportMonth}），请前往「数据导出」页面下载。`)
     } catch (err) {
-      const { getApiErrorMessage } = await import('@/lib/api/http')
-      alert(getApiErrorMessage(err))
+      toast.error(getApiErrorMessage(err))
     } finally {
       setExporting(false)
     }
   }
 
+  const hasSummary = data.summary.revenue != null || data.summary.cost != null
+
   return (
     <>
       <PageHeader
-        eyebrow="Finance"
-        title="账单流水与利润统计"
-        description="按时间范围查看平台收入、成本和利润，支持运营复盘与对账。"
+        title='账单流水与利润统计'
+        description='按时间范围查看平台收入、成本和利润，支持运营复盘与对账。'
         actions={
-          <div className="flex items-center gap-2">
-            {adjustSuccess && <Alert role="status"><AlertDescription>{adjustSuccess}</AlertDescription></Alert>}
-      {error ? (
-              <Button size="sm" variant="outline" onClick={reload}>
+          <>
+            {error ? (
+              <Button variant='outline' onClick={reload}>
                 重试
               </Button>
             ) : null}
-            <input
-              type="month"
-              value={exportMonth}
-              onChange={e => setExportMonth(e.target.value)}
-              className="h-10 rounded-md border border-input bg-background px-3 text-sm shadow-sm"
-            />
-            <Button size="sm" variant="outline" onClick={submitExport} disabled={exporting}>
+            <Input type='month' aria-label='导出月份' className='w-40' value={exportMonth} onChange={(event) => setExportMonth(event.target.value)} />
+            <Button variant='outline' onClick={() => void submitExport()} disabled={exporting}>
               {exporting ? '提交中…' : '导出对账单'}
             </Button>
-            <Button size="sm" onClick={() => { setAdjustSuccess(''); setAdjustOpen(true) }}>
-              扣除积分
-            </Button>
-          </div>
+            <Button onClick={() => setAdjustOpen(true)}>手动调账</Button>
+          </>
         }
       />
       {error ? (
-        <Alert variant="destructive">
+        <Alert variant='destructive'>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
-          <TabsTrigger value="detail">明细</TabsTrigger>
-          <TabsTrigger value="user">按用户</TabsTrigger>
-          <TabsTrigger value="channel">按渠道</TabsTrigger>
-          <TabsTrigger value="model">按模型</TabsTrigger>
-          <TabsTrigger value="day">按日</TabsTrigger>
+          <TabsTrigger value='detail'>明细</TabsTrigger>
+          {DIMS.map((dim) => (
+            <TabsTrigger key={dim.value} value={dim.value}>
+              {dim.label}
+            </TabsTrigger>
+          ))}
         </TabsList>
 
-        <TabsContent value="detail">
-      {/* 过滤栏 */}
-      <FilterBar
-        filters={
-          <>
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">开始时间</label>
-            <Input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} className="w-52" />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">结束时间</label>
-            <Input type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} className="w-52" />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">类型</label>
-            <Select value={txType || '_all'} onValueChange={(v) => setTxType(v === '_all' ? '' : v)}>
-              <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_all">全部</SelectItem>
-                <SelectItem value="settle">结算</SelectItem>
-                <SelectItem value="hold">预扣</SelectItem>
-                <SelectItem value="refund">退款</SelectItem>
-                <SelectItem value="recharge">充值</SelectItem>
-                <SelectItem value="withdraw">提现</SelectItem>
-                <SelectItem value="adjust">调整</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">用户 ID</label>
-            <Input className="w-28" placeholder="精确" value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && doSearch()} />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">API Key ID</label>
-            <Input className="w-28" placeholder="精确" value={apiKeyId}
-              onChange={(e) => setApiKeyId(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && doSearch()} />
-          </div>
-          </>
-        }
-        actions={
-          <>
-            <Button onClick={doSearch}>查询</Button>
-            <Button variant="outline" onClick={resetSearch}>重置</Button>
-          </>
-        }
-      />
-
-      {/* 汇总卡片 */}
-      {(data.summary.revenue != null || data.summary.cost != null) ? (
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">收入</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-semibold tabular-nums">¥{toMoney(data.summary.revenue)}</p></CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">成本</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-semibold tabular-nums">¥{toMoney(data.summary.cost)}</p></CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">利润</CardTitle></CardHeader>
-            <CardContent><p className="text-2xl font-semibold tabular-nums">¥{toMoney(data.summary.profit)}</p></CardContent>
-          </Card>
-        </div>
-      ) : null}
-
-      {/* 流水表格 */}
-      <Card className="overflow-hidden">
-        <Table className="min-w-[1040px]">
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-14">ID</TableHead>
-              <TableHead className="w-16">用户 ID</TableHead>
-              <TableHead className="w-20">类型</TableHead>
-              <TableHead className="w-36 text-right">金额（CNY）</TableHead>
-              <TableHead className="w-32 text-right">成本（CNY）</TableHead>
-              <TableHead className="w-32 text-right">利润（CNY）</TableHead>
-              <TableHead className="w-16">渠道</TableHead>
-              <TableHead>关联 ID</TableHead>
-              <TableHead className="w-40">时间</TableHead>
-            </TableRow>
-          </TableHeader>
-          {loading ? (
-            <TableSkeleton cols={9} />
-          ) : (
-            <TableBody>
-              {data.transactions.length === 0 ? (
-                <TableEmpty
-                  cols={9}
-                  Icon={WalletCardsIcon}
-                  title="还没有账单记录"
-                  description="平台累计的所有积分流水会汇总在此处。"
-                />
-              ) : (
-                data.transactions.map((row, index) => {
-                  const amount = row.amount ?? 0
-                  const isDebit = ['charge', 'hold', 'settle'].includes(row.type ?? '')
-                  const profit = profitOf(row)
-                  return (
-                    <TableRow key={row.id ?? index}>
-                      <TableCell className="text-muted-foreground">{row.id ?? '-'}</TableCell>
-                      <TableCell className="text-muted-foreground">{row.user_id ?? '-'}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap items-center gap-1">
-                          <Badge variant={txTypeVariant(row.type)} className="text-xs">
-                            {txTypeLabel(row.type)}
-                          </Badge>
-                          {(row.model_credit_charged ?? 0) > 0 && (
-                            <Badge variant="outline" className="text-xs text-purple-600 border-purple-300">
-                              专属积分
-                            </Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className={`text-right font-mono text-sm ${isDebit ? 'text-red-500' : 'text-emerald-600'}`}>
-                        {isDebit ? '-' : '+'}{Math.abs(amount).toLocaleString('zh-CN', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-sm text-muted-foreground">
-                        {(row.cost ?? 0).toLocaleString('zh-CN', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
-                      </TableCell>
-                      <TableCell className={`text-right font-mono text-sm ${profit >= 0 ? 'text-blue-600' : 'text-red-500'}`}>
-                        {profit.toLocaleString('zh-CN', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{row.channel_id ?? '-'}</TableCell>
-                      <TableCell className="max-w-32 truncate text-xs text-muted-foreground" title={row.corr_id}>
-                        {row.llm_log_id ? (
-                          <a href={`/admin/llm-logs?id=${row.llm_log_id}`} className="text-blue-600 hover:underline">{row.corr_id}</a>
-                        ) : row.task_id ? (
-                          <a href={`/admin/tasks?id=${row.task_id}`} className="text-blue-600 hover:underline">{row.corr_id}</a>
-                        ) : (row.corr_id ?? '-')}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {row.created_at ? new Date(row.created_at).toLocaleString('zh-CN') : '-'}
-                      </TableCell>
-                    </TableRow>
-                  )
-                })
-              )}
-            </TableBody>
-          )}
-        </Table>
-        {data.total > 0 ? (
-          <TablePagination current={page} total={data.total} pageSize={pageSize} onChange={changePage} className="rounded-none border-x-0 border-b-0" />
-        ) : null}
-      </Card>
+        <TabsContent value='detail' className='mt-4 flex flex-col gap-6'>
+          <BillingFilters value={filters} onField={updateFilter} onSearch={search} onReset={reset} />
+          {hasSummary ? (
+            <div className='glass grid gap-8 p-6 sm:grid-cols-3'>
+              <Readout size='md' label='收入' value={`¥${toMoney(data.summary.revenue)}`} loading={loading} />
+              <Readout size='md' label='成本' value={`¥${toMoney(data.summary.cost)}`} loading={loading} />
+              <Readout size='md' label='利润' value={`¥${toMoney(data.summary.profit)}`} loading={loading} />
+            </div>
+          ) : null}
+          <TransactionsTable rows={data.transactions} loading={loading} page={page} total={data.total} onPage={changePage} />
         </TabsContent>
 
-        {/* 聚合视图 */}
-        {(['user', 'channel', 'model', 'day'] as const).map((dim) => (
-          <TabsContent key={dim} value={dim}>
+        {DIMS.map((dim) => (
+          <TabsContent key={dim.value} value={dim.value} className='mt-4'>
             {aggError ? (
-              <Alert variant="destructive"><AlertDescription>{aggError}</AlertDescription></Alert>
+              <Alert variant='destructive'>
+                <AlertDescription>{aggError}</AlertDescription>
+              </Alert>
             ) : (
-              <Card className="overflow-hidden">
-              <Table className="min-w-[720px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{{ user: '用户 ID', channel: '渠道 ID', model: '模型', day: '日期' }[dim]}</TableHead>
-                    <TableHead className="text-right">收入（CNY）</TableHead>
-                    <TableHead className="text-right">成本（CNY）</TableHead>
-                    <TableHead className="text-right">利润（CNY）</TableHead>
-                    <TableHead className="text-right">调用次数</TableHead>
-                  </TableRow>
-                </TableHeader>
-                {aggLoading ? <TableSkeleton cols={5} /> : (
-                  <TableBody>
-                    {aggData.rows.length === 0 ? (
-                      <TableEmpty cols={5} title="暂无汇总数据" description="当前维度下没有可展示的账单数据。" />
-                    ) : aggData.rows.map((row, i) => (
-                      <TableRow key={row.key ?? i}>
-                        <TableCell className="font-mono text-sm">{row.key}</TableCell>
-                        <TableCell className="text-right font-mono text-sm">{toMoney(row.revenue)}</TableCell>
-                        <TableCell className="text-right font-mono text-sm text-muted-foreground">{toMoney(row.cost)}</TableCell>
-                        <TableCell className={`text-right font-mono text-sm ${(row.profit ?? 0) >= 0 ? 'text-blue-600' : 'text-red-500'}`}>{toMoney(row.profit)}</TableCell>
-                        <TableCell className="text-right text-sm">{row.calls?.toLocaleString('zh-CN') ?? '-'}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                )}
-              </Table>
-              </Card>
+              <AggregateTable head={dim.head} rows={aggData.rows} loading={aggLoading} />
             )}
           </TabsContent>
         ))}
       </Tabs>
 
-      {adjustOpen && <DeductPointsDialog
-        onClose={() => setAdjustOpen(false)}
-        onSuccess={(message) => { setAdjustSuccess(message); setAdjustOpen(false); reload() }}
-      />}
+      <AdjustDialog
+        open={adjustOpen}
+        onOpenChange={setAdjustOpen}
+        onDone={reload}
+      />
     </>
   )
 }
-

@@ -1,3 +1,4 @@
+import { UsageCalendar } from './UsageCalendar';
 import { useMemo, useState } from "react";
 import {
   ArrowDownUpIcon,
@@ -229,7 +230,9 @@ export function UserStatsPage() {
     setPage(1);
     setCustomOpen(false);
   }
+  const [calendarRevision, refreshCalendar] = useState(0);
   function refresh() {
+    refreshCalendar(n => n + 1);
     if (preset !== "custom" && preset !== "yesterday")
       setRange(usageRange(preset));
     else reload();
@@ -258,6 +261,7 @@ export function UserStatsPage() {
           刷新
         </Button>
       </header>
+      <UsageCalendar revision={calendarRevision} />
       <Card className="py-3">
         <CardContent className="flex flex-wrap items-center gap-3">
           <TogglePrimitive.Root

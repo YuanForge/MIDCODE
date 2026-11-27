@@ -1,10 +1,9 @@
-import { useRoleToken } from '@/hooks/use-role-token'
 import { lazy, Suspense, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom'
 
 import { i18n, supportedLanguages, type AppLanguage } from '@/i18n'
-
+import { getRoleToken } from '@/lib/auth/storage'
 
 const AuthLayout = lazy(() => import('@/layouts/AuthLayout').then((m) => ({ default: m.AuthLayout })))
 const UserLayout = lazy(() => import('@/layouts/UserLayout').then((m) => ({ default: m.UserLayout })))
@@ -23,8 +22,7 @@ const UserDashboardPage = lazy(() => import('@/pages/user/UserDashboardPage').th
 const UserModelsPage = lazy(() => import('@/pages/user/UserModelsPage').then((m) => ({ default: m.UserModelsPage })))
 const UserKeysPage = lazy(() => import('@/pages/user/UserKeysPage').then((m) => ({ default: m.UserKeysPage })))
 const UserPlaygroundPage = lazy(() => import('@/pages/user/UserPlaygroundPage').then((m) => ({ default: m.UserPlaygroundPage })))
-const ImageStudioLaunch = lazy(() => import('@/components/shared/ImageStudioLaunch').then((m) => ({ default: m.ImageStudioLaunch })))
-const VideoStudioLaunch = lazy(() => import('@/components/shared/VideoStudioLaunch').then((m) => ({ default: m.VideoStudioLaunch })))
+const UserCreationPage = lazy(() => import('@/pages/user/UserCreationPage').then((m) => ({ default: m.UserCreationPage })))
 const UserImageGenPage = lazy(() => import('@/pages/user/UserImageGenPage').then((m) => ({ default: m.UserImageGenPage })))
 const UserVideoGenPage = lazy(() => import('@/pages/user/UserVideoGenPage').then((m) => ({ default: m.UserVideoGenPage })))
 const UserMusicGenPage = lazy(() => import('@/pages/user/UserMusicGenPage').then((m) => ({ default: m.UserMusicGenPage })))
@@ -59,7 +57,6 @@ const AdminExportsPage = lazy(() => import('@/pages/admin/AdminExportsPage').the
 const AdminAuditPage = lazy(() => import('@/pages/admin/AdminAuditPage').then((m) => ({ default: m.AdminAuditPage })))
 const AdminAlertsPage = lazy(() => import('@/pages/admin/AdminAlertsPage').then((m) => ({ default: m.AdminAlertsPage })))
 const AdminNotificationsPage = lazy(() => import('@/pages/admin/AdminNotificationsPage').then((m) => ({ default: m.AdminNotificationsPage })))
-const AdminBotKeysPage = lazy(() => import('@/pages/admin/AdminBotKeysPage').then((m) => ({ default: m.AdminBotKeysPage })))
 const AdminApiKeysPage = lazy(() => import('@/pages/admin/AdminApiKeysPage').then((m) => ({ default: m.AdminApiKeysPage })))
 const AdminRolesPage = lazy(() => import('@/pages/admin/AdminRolesPage').then((m) => ({ default: m.AdminRolesPage })))
 const AdminCouponsPage = lazy(() => import('@/pages/admin/AdminCouponsPage').then((m) => ({ default: m.AdminCouponsPage })))
@@ -79,7 +76,7 @@ const ResellerSitesPage = lazy(() => import('@/pages/reseller/ResellerSitesPage'
 
 function renderLazy(node: ReactNode) {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+    <Suspense fallback={<div aria-busy="true" className="min-h-[50vh]" />}>
       {node}
     </Suspense>
   )
@@ -108,9 +105,8 @@ function RequireRole({
   role: 'user' | 'admin' | 'vendor' | 'reseller'
   redirectTo: string
 }) {
-  const token = useRoleToken(role)
+  const token = getRoleToken(role)
   if (!token) {
-    if (role === 'user') return renderLazy(<UserLayout guestPrompt />)
     return <Navigate replace to={redirectTo} />
   }
 
@@ -124,13 +120,17 @@ function PublicOnly({
   role: 'user' | 'admin' | 'vendor' | 'reseller'
   redirectTo: string
 }) {
-  const token = useRoleToken(role)
+  const token = getRoleToken(role)
   if (token) {
     return <Navigate replace to={redirectTo} />
   }
 
   return <Outlet />
 }
+
+const VideoStudioLaunch = lazy(() => import('@/components/shared/VideoStudioLaunch').then(m => ({ default: m.VideoStudioLaunch })))
+
+const AdminBotKeysPage = lazy(() => import('@/pages/admin/AdminBotKeysPage').then(m => ({ default: m.AdminBotKeysPage })))
 
 export const router = createBrowserRouter([
   { path: '/', element: renderLazy(<PublicHomePage />), errorElement: renderLazy(<AppErrorPage />) },
@@ -169,8 +169,8 @@ export const router = createBrowserRouter([
         element: renderLazy(<UserLayout />),
         children: [
           { path: '/playground', element: renderLazy(<UserPlaygroundPage />) },
-          { path: '/creation', element: renderLazy(<ImageStudioLaunch />) },
           { path: '/video-studio', element: renderLazy(<VideoStudioLaunch />) },
+          { path: '/creation', element: renderLazy(<UserCreationPage />) },
           { path: '/image-gen', element: renderLazy(<UserImageGenPage />) },
           { path: '/video-gen', element: renderLazy(<UserVideoGenPage />) },
           { path: '/music-gen', element: renderLazy(<UserMusicGenPage />) },
@@ -209,6 +209,7 @@ export const router = createBrowserRouter([
           { path: 'channels', element: renderLazy(<AdminChannelsPage />) },
           { path: 'channels/:id/token-stats', element: renderLazy(<AdminChannelTokenStatsPage />) },
           { path: 'users', element: renderLazy(<AdminUsersPage />) },
+          { path: 'bot-keys', element: renderLazy(<AdminBotKeysPage />) },
           { path: 'billing', element: renderLazy(<AdminBillingPage />) },
           { path: 'cards', element: renderLazy(<AdminCardsPage />) },
           { path: 'key-pools', element: renderLazy(<AdminKeyPoolsPage />) },
@@ -226,7 +227,6 @@ export const router = createBrowserRouter([
           { path: 'audit', element: renderLazy(<AdminAuditPage />) },
           { path: 'alerts', element: renderLazy(<AdminAlertsPage />) },
           { path: 'notifications', element: renderLazy(<AdminNotificationsPage />) },
-          { path: 'bot-keys', element: renderLazy(<AdminBotKeysPage />) },
           { path: 'api-keys', element: renderLazy(<AdminApiKeysPage />) },
           { path: 'roles', element: renderLazy(<AdminRolesPage />) },
           { path: 'coupons', element: renderLazy(<AdminCouponsPage />) },

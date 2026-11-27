@@ -19,7 +19,7 @@ export function CCSwitchImport({ keys, selectedId, disabled = false }: { keys?: 
   const [open, setOpen] = useState(false)
   return <>
     <Button variant="default" size="sm" className={keys ? 'cc-switch-launch cc-switch-launch-compact' : 'cc-switch-launch'} aria-label="导入 CC Switch" title="导入 CC Switch" disabled={disabled} onClick={() => setOpen(true)}>
-      <><img src="/cc-switch.png" alt="" width={24} height={24} /><span className="cc-switch-launch-copy"><span className="cc-switch-launch-name">CC Switch</span><span className="cc-switch-launch-action">一键导入</span></span></>
+      <><img src={import.meta.env.BASE_URL + "cc-switch.png"} alt="" width={24} height={24} /><span className="cc-switch-launch-copy"><span className="cc-switch-launch-name">CC Switch</span><span className="cc-switch-launch-action">一键导入</span></span></>
     </Button>
     <Dialog open={open && !loginOpen} onOpenChange={setOpen}>
       <DialogContent>

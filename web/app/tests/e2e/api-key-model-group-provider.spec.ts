@@ -83,7 +83,7 @@ test('selects and orders API key groups independently by model provider', async 
   await expect.poll(() => createPayload?.group_ids).toEqual([1, 2, 3])
 
   await page.getByRole('button', { name: '关闭' }).click()
-  await page.getByRole('row').filter({ hasText: 'existing-key' }).getByRole('button', { name: '分组排序' }).click()
+  await page.getByRole('row').filter({ hasText: 'existing-key' }).getByRole('button', { name: '修改分组' }).click()
   await expect(page.getByRole('tab')).toHaveText([/Legacy OpenAI/, /Anthropic/, /OpenAI/])
   await page.getByRole('tab', { name: /Legacy OpenAI/ }).click()
   await expect(page.getByLabel('legacy-gpt')).toBeChecked()
@@ -105,7 +105,7 @@ test('selects and orders API key groups independently by model provider', async 
     openAICards.filter({ hasText: 'GPT K12' }),
   )
   await expect(openAICards).toHaveText([/GPT Plus/, /GPT K12/])
-  await page.getByRole('button', { name: '保存排序' }).click()
+  await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect.poll(() => updatePayload?.group_ids).toEqual([2, 5, 3, 1, 4])
 
   await page.getByRole('button', { name: '新建密钥' }).click()

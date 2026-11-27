@@ -1,0 +1,1004 @@
+import { useRoleToken } from '@/hooks/use-role-token'
+import { createHttpClient } from '@/lib/api/http'
+import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { BlocksIcon, Copy, Pin, Search, Star, TerminalSquare } from 'lucide-react'
+
+import { EmptyState } from '@/components/shared/EmptyState'
+import { FilterBar } from '@/components/shared/FilterBar'
+import { PageHeader } from '@/components/shared/PageHeader'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { copyToClipboard } from '@/lib/clipboard'
+import { useAsync } from '@/hooks/use-async'
+import { useModelPreferences } from '@/hooks/use-model-preferences'
+import { userApi, type ModelAvailability, type UserChannel } from '@/lib/api/user'
+import { cn } from '@/lib/utils'
+
+type DocMode = 'channel' | 'balance' | 'task'
+type LangTab = 'curl' | 'javascript' | 'python' | 'php' | 'go' | 'java'
+type SunoMode = 'inspire' | 'custom' | 'extend' | 'overpainting' | 'underpainting'
+type ProviderOption = { name: string; iconUrl?: string }
+type GroupPrice = NonNullable<UserChannel['group_prices']>[number]
+
+const typeOptions = [
+  { labelKey: 'models.allTypes', value: '' },
+  { labelKey: 'models.llm', value: 'llm' },
+  { labelKey: 'models.image', value: 'image' },
+  { labelKey: 'models.video', value: 'video' },
+  { labelKey: 'models.audio', value: 'audio' },
+  { labelKey: 'models.music', value: 'music' },
+]
+
+const protocolLabels: Record<string, string> = {
+  openai: 'models.openaiCompatible',
+  claude: 'models.claudeNative',
+  gemini: 'models.geminiNative',
+}
+
+const billingTypeLabels: Record<string, string> = {
+  token: 'models.tokenBilling',
+  image: 'models.imageBilling',
+  video: 'models.videoBilling',
+  audio: 'models.audioBilling',
+  music: 'models.musicBilling',
+  count: 'models.countBilling',
+  custom: 'models.customBilling',
+}
+
+function terminalPriceSortKey(priceDisplay?: string) {
+  return Array.from(priceDisplay?.matchAll(/¥\s*([0-9]+(?:\.[0-9]+)?)/g) ?? [], (match) => Number(match[1]))
+    .filter(Number.isFinite)
+}
+
+function compareTerminalPrices(left?: string, right?: string) {
+  const leftPrices = terminalPriceSortKey(left)
+  const rightPrices = terminalPriceSortKey(right)
+  const width = Math.max(leftPrices.length, rightPrices.length, 1)
+  for (let index = 0; index < width; index += 1) {
+    const diff = (leftPrices[index] ?? Number.POSITIVE_INFINITY) - (rightPrices[index] ?? Number.POSITIVE_INFINITY)
+    if (diff !== 0) return diff
+  }
+  return (left ?? '').localeCompare(right ?? '')
+}
+
+function sortGroupPricesByTerminalPrice(groups?: GroupPrice[]) {
+  return [...(groups ?? [])].sort((left, right) =>
+    compareTerminalPrices(left.price_display, right.price_display)
+    || (left.group_name ?? '').localeCompare(right.group_name ?? '')
+    || left.group_code.localeCompare(right.group_code)
+    || left.group_id - right.group_id,
+  )
+}
+
+function channelSummaryPrice(channel: UserChannel) {
+  return sortGroupPricesByTerminalPrice(channel.group_prices)[0]?.price_display || channel.price_display || ''
+}
+
+function channelWithSortedPrices(channel: UserChannel): UserChannel {
+  if (!channel.group_prices?.length) return channel
+  const group_prices = sortGroupPricesByTerminalPrice(channel.group_prices)
+  return { ...channel, group_prices, price_display: group_prices[0]?.price_display || channel.price_display, gpt_context_pricing: group_prices[0]?.gpt_context_pricing ?? channel.gpt_context_pricing }
+}
+
+function ContextPricingNote({ compact = false, model }: { compact?: boolean; model?: string }) {
+  const isSol61 = model?.toLowerCase() === 'gpt-6.1-sol'
+  return <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs leading-5">
+    <div className="font-medium text-foreground">长上下文倍率：输入 / 缓存 ×2 · 输出 ×1.5</div>
+    <div className="text-muted-foreground">{isSol61 ? '单次输入 ≤500,000 token 按所示短档价格计费；超过后，整次请求按上述倍率计费。' : '单次输入 ≤272,000 token 按所示短档价格计费；超过后，整次请求按上述倍率计费。'}</div>
+    {!compact ? <div className="mt-1 text-muted-foreground">输入含缓存读取和写入，输出不计入分档。倍率适用于本分组的普通价和对应会员价，并非只对超出部分加价。</div> : null}
+  </div>
+}
+
+function copyText(text: string, label = '已复制') {
+  void copyToClipboard(text, { successMessage: label })
+}
+
+function availabilityState(item: ModelAvailability | undefined, unavailable: boolean) {
+  if (unavailable) return { label: '统计暂不可用', tone: 'text-muted-foreground' }
+  if (!item || item.total === 0) return { label: '暂无调用数据', tone: 'text-muted-foreground' }
+  if (item.availability_percent > 90) return { label: '正常', tone: 'text-emerald-600' }
+  if (item.availability_percent >= 80) return { label: '波动', tone: 'text-amber-600' }
+  return { label: '异常', tone: 'text-destructive' }
+}
+
+// This component mounts only inside an opened model detail sheet.
+function LazyModelAvailability({ model }: { model: string }) {
+  const { data, loading, error, reload } = useAsync(
+    () => userApi.getModelAvailability(model), { models: [] as ModelAvailability[] }, [model],
+  )
+  if (loading) return <div role="status" className="rounded-lg border p-4 text-sm text-muted-foreground">正在加载模型统计…</div>
+  if (error) return <div role="alert" className="rounded-lg border p-4 text-sm">统计暂不可用 <Button variant="outline" size="sm" onClick={reload}>重试统计</Button></div>
+  return <ModelAvailabilityPanel item={data.models.find(item => item.routing_model === model)} unavailable={false} />
+}
+
+function ModelAvailabilityPanel({ item, unavailable }: { item?: ModelAvailability; unavailable: boolean }) {
+  const state = availabilityState(item, unavailable)
+  const recent = item?.recent ?? []
+  const maxLatency = Math.max(1, ...recent.map((entry) => entry.latency_ms))
+  const bars = [...Array(Math.max(0, 60 - recent.length)).fill(null), ...recent]
+  return (
+    <div className="border-t pt-3" onClick={(event) => event.stopPropagation()}>
+      <div className="flex items-center justify-between gap-3 text-xs">
+        <span className="text-muted-foreground">可用性 · 7 天</span>
+        <span className={cn('font-medium', state.tone)}>{state.label}</span>
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+        <div><div className="text-muted-foreground">成功率</div><div className="mt-1 font-medium">{item?.total ? `${item.availability_percent.toFixed(2)}%` : '—'}</div></div>
+        <div><div className="text-muted-foreground">P50</div><div className="mt-1 font-medium">{item?.p50_latency_ms ? `${item.p50_latency_ms}ms` : '—'}</div></div>
+        <div><div className="text-muted-foreground">请求数</div><div className="mt-1 font-medium">{item?.total ?? 0}</div></div>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-3 rounded-lg bg-muted/40 px-3 py-2 text-xs">
+        <div title={`最近 7 天成功流式调用的首个文本、思考或工具参数输出延迟中位数；${item?.ttft_samples ?? 0} 个样本。不含仅有角色或心跳的事件。`}>
+          <div className="text-muted-foreground">TTFT · 首字延迟</div>
+          <div className="mt-1 font-medium tabular-nums">{!unavailable && item?.ttft_ms != null ? `${(item.ttft_ms / 1000).toFixed(2)} s` : '—'}</div>
+        </div>
+        <div title={`最近 7 天成功流式调用的输出速度中位数；${item?.tps_samples ?? 0} 个样本。按上游实际输出 token（含思考）与首字之后的流时长计算，排除估算用量。`}>
+          <div className="text-muted-foreground">TPS · 输出速度</div>
+          <div className="mt-1 font-medium tabular-nums">{!unavailable && item?.tps != null ? `${item.tps.toFixed(1)} token/s` : '—'}</div>
+        </div>
+        <div className="col-span-2 text-[10px] text-muted-foreground">流式调用 P50 · {item?.ttft_samples ?? 0} / {item?.tps_samples ?? 0} 个有效样本</div>
+      </div>
+      <div className="mt-3 flex h-8 items-end gap-px" aria-label={`最近 60 次调用，${item?.success ?? 0} 次成功`}>
+        {bars.map((entry, index) => (
+          <span
+            key={index}
+            className={cn('min-w-0 flex-1 rounded-t-[1px]', !entry ? 'bg-muted' : entry.status === 'ok' ? 'bg-emerald-500' : 'bg-destructive')}
+            style={{ height: entry ? `${Math.max(25, Math.round(entry.latency_ms / maxLatency * 100))}%` : '8%' }}
+            title={entry ? `${new Date(entry.created_at).toLocaleString('zh-CN')} · ${entry.status === 'ok' ? '成功' : '失败'} · ${entry.latency_ms}ms` : undefined}
+          />
+        ))}
+      </div>
+      <div className="mt-1 flex justify-between text-[10px] text-muted-foreground"><span>最近 60 次</span><span>现在</span></div>
+    </div>
+  )
+}
+
+function shouldUseChineseExamples(language: string) {
+  return language.toLowerCase().startsWith('zh')
+}
+
+function nativeImageKind(channel: UserChannel) {
+  const model = channel.routing_model || channel.name || ''
+  if (/^gpt-image-/.test(model)) return 'openai'
+  if (/^gemini-.*image/.test(model)) return 'gemini'
+  return null
+}
+
+function supportsImageSizeParameter(channel: UserChannel) {
+  return nativeImageKind(channel) !== null
+}
+
+function buildChannelRequestBody(channel: UserChannel, sunoMode: SunoMode, language: string, imageSize = 'default') {
+  const useChinese = shouldUseChineseExamples(language)
+  const model = channel.routing_model || channel.name
+  const imageKind = nativeImageKind(channel)
+  const prompt = useChinese ? '雨后蓝色时刻的未来城市全景，无文字' : 'A cinematic futuristic city at blue hour after rain, no text.'
+  if (imageKind === 'gemini') {
+    return JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseModalities: ['TEXT', 'IMAGE'],
+        imageConfig: { aspectRatio: '16:9', ...(imageSize !== 'default' && supportsImageSizeParameter(channel) ? { imageSize } : {}) },
+      },
+    }, null, 2)
+  }
+  if (imageKind === 'openai') {
+    return JSON.stringify({ model, prompt, n: 1, quality: 'high', output_format: 'png',
+      ...(imageSize !== 'default' && supportsImageSizeParameter(channel) ? { size: imageSize === '4K' ? '3840x2160' : '2560x1440' } : {}),
+    }, null, 2)
+  }
+  if (channel.type === 'llm') {
+    if (channel.protocol === 'gemini') {
+      return JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: useChinese ? '你好，请介绍一下自己' : 'Hello, please introduce yourself.' }] }],
+      }, null, 2)
+    }
+    return JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: useChinese ? '你好，请介绍一下自己' : 'Hello, please introduce yourself.' }],
+      stream: false,
+    }, null, 2)
+  }
+  if (channel.type === 'image') {
+    return JSON.stringify({
+      model,
+      prompt: useChinese ? '一只可爱的橘猫坐在阳光下' : 'A cute orange cat sitting in the sunlight',
+      size: '1k',
+      aspect_ratio: '1:1',
+      n: 1,
+    }, null, 2)
+  }
+  if (channel.type === 'video') {
+    return JSON.stringify({
+      model,
+      prompt: useChinese ? '海浪拍打岸边，夕阳西下' : 'Ocean waves hitting the shore at sunset',
+      size: '720p',
+      aspect_ratio: '16:9',
+      duration: '5',
+    }, null, 2)
+  }
+  if (channel.type === 'audio') {
+    return JSON.stringify({
+      model,
+      input: useChinese ? '你好，欢迎使用语音合成服务' : 'Hello, welcome to the speech synthesis service.',
+      voice: 'alloy',
+    }, null, 2)
+  }
+  if (channel.type === 'music') {
+    if (sunoMode === 'custom') {
+      return JSON.stringify({
+        model,
+        input_type: '20',
+        prompt: useChinese
+          ? '[主歌]\n周四的阳光晒脸庞\n微风轻轻吹过窗\n\n[副歌]\n周四快乐不散场\n欢声笑语满心房'
+          : '[Verse]\nMorning light across my face\nA gentle breeze through the window\n\n[Chorus]\nKeep the good times rolling\nLaughter filling up the room',
+        title: useChinese ? '周四快乐' : 'Bright Morning',
+        tags: 'pop,female voice',
+        mv_version: 'chirp-v5',
+        make_instrumental: false,
+      }, null, 2)
+    }
+    if (sunoMode === 'extend') {
+      return JSON.stringify({
+        model,
+        input_type: '20',
+        prompt: useChinese
+          ? '[Verse 1]\n小狗汪汪叫\n尾巴甩甩跳\n\n[Chorus]\n汪汪汪谁在听\n汪汪汪快乐行'
+          : '[Verse 1]\nCity lights are fading\nFootsteps moving with the rain\n\n[Chorus]\nSing it out, keep on dreaming\nEvery night can start again',
+        title: useChinese ? '为你歌唱' : 'Sing for You',
+        tags: '',
+        mv_version: 'chirp-v5',
+        make_instrumental: false,
+        continue_clip_id: 'https://cdn1.suno.ai/7c395650-62f2-4c4f-8b68-cf55b874c96c.mp3',
+        continue_at: '27',
+      }, null, 2)
+    }
+    if (sunoMode === 'overpainting') {
+      return JSON.stringify({
+        model,
+        input_type: '20',
+        prompt: '[Verse 1]\nUsah lepas kau pergi',
+        tags: 'pop,female voice',
+        title: 'Hi, melancholic',
+        task: 'overpainting',
+        metadata_params: {
+          overpainting_clip_id: 'https://cdn1.suno.ai/21ae9c64-86ab-435a-b810-ed62727caf0a.mp3',
+          overpainting_start_s: 0,
+          overpainting_end_s: 57.9,
+        },
+      }, null, 2)
+    }
+    if (sunoMode === 'underpainting') {
+      return JSON.stringify({
+        model,
+        input_type: '20',
+        prompt: '',
+        tags: 'pop,female voice',
+        title: 'Hi, melancholic',
+        task: 'underpainting',
+        make_instrumental: true,
+        metadata_params: {
+          underpainting_clip_id: 'https://cdn1.suno.ai/21ae9c64-86ab-435a-b810-ed62727caf0a.mp3',
+          underpainting_start_s: 0,
+          underpainting_end_s: 57.9,
+        },
+      }, null, 2)
+    }
+    return JSON.stringify({
+      model,
+      input_type: '10',
+      gpt_description_prompt: useChinese
+        ? '轻快的爵士乐，适合咖啡馆氛围，女声演唱'
+        : 'Light jazz for a warm cafe atmosphere, female vocal',
+      mv_version: 'chirp-v5',
+      make_instrumental: false,
+    }, null, 2)
+  }
+  return JSON.stringify({ model, prompt: '...' }, null, 2)
+}
+
+function getChannelEndpoint(channel: UserChannel) {
+  if (nativeImageKind(channel) === 'openai') return '/v1/images/generations'
+  const endpointMap: Record<string, string> = {
+    llm: '/v1/chat/completions',
+    image: '/v1/image',
+    video: '/v1/video',
+    audio: '/v1/audio',
+    music: '/v1/music',
+  }
+  if (channel.type === 'llm' && channel.protocol === 'gemini') {
+    const model = channel.routing_model || channel.name
+    return `/v1beta/models/${model}:generateContent`
+  }
+  return endpointMap[channel.type ?? 'llm'] || '/v1/chat/completions'
+}
+
+function getChannelCode(channel: UserChannel, lang: LangTab, sunoMode: SunoMode, language: string, imageSize = 'default') {
+  const origin = window.location.origin
+  const endpoint = getChannelEndpoint(channel)
+  const body = buildChannelRequestBody(channel, sunoMode, language, imageSize)
+  if (lang === 'curl') {
+    return `curl -X POST "${origin}${endpoint}" \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -d '${body}'`
+  }
+  if (lang === 'javascript') {
+    return `const response = await fetch("${origin}${endpoint}", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer YOUR_API_KEY",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify(${body})
+});
+
+console.log(await response.json());`
+  }
+  if (lang === 'python') {
+    return `import requests\nimport json\n\nurl = "${origin}${endpoint}"\nheaders = {\n    "Authorization": "Bearer YOUR_API_KEY",\n    "Content-Type": "application/json"\n}\nbody = json.loads('''${body}''')\n\nresponse = requests.post(url, headers=headers, json=body)\nprint(response.json())`
+  }
+  if (lang === 'php') {
+    const safeBody = body.replace(/'/g, "\\'")
+    return `<?php\n$url = "${origin}${endpoint}";\n$body = '${safeBody}';\n\n$ch = curl_init($url);\ncurl_setopt_array($ch, [\n    CURLOPT_RETURNTRANSFER => true,\n    CURLOPT_POST           => true,\n    CURLOPT_HTTPHEADER     => [\n        'Authorization: Bearer YOUR_API_KEY',\n        'Content-Type: application/json',\n    ],\n    CURLOPT_POSTFIELDS     => $body,\n]);\n\n$response = curl_exec($ch);\ncurl_close($ch);\necho $response;`
+  }
+  if (lang === 'go') {
+    return `package main\n\nimport (\n\t"bytes"\n\t"fmt"\n\t"io"\n\t"net/http"\n)\n\nfunc main() {\n\tbody := []byte(\`${body}\`)\n\n\treq, _ := http.NewRequest("POST", "${origin}${endpoint}", bytes.NewBuffer(body))\n\treq.Header.Set("Authorization", "Bearer YOUR_API_KEY")\n\treq.Header.Set("Content-Type", "application/json")\n\n\tresp, _ := (&http.Client{}).Do(req)\n\tdefer resp.Body.Close()\n\tdata, _ := io.ReadAll(resp.Body)\n\tfmt.Println(string(data))\n}`
+  }
+  const escapedBody = body.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')
+  return `import java.net.http.*;\nimport java.net.URI;\n\npublic class Main {\n    public static void main(String[] args) throws Exception {\n        String body = "${escapedBody}";\n\n        var request = HttpRequest.newBuilder()\n            .uri(URI.create("${origin}${endpoint}"))\n            .header("Authorization", "Bearer YOUR_API_KEY")\n            .header("Content-Type", "application/json")\n            .POST(HttpRequest.BodyPublishers.ofString(body))\n            .build();\n\n        var response = HttpClient.newHttpClient()\n            .send(request, HttpResponse.BodyHandlers.ofString());\n        System.out.println(response.body());\n    }\n}`
+}
+
+function getImageEditCode(channel: UserChannel) {
+  const model = channel.routing_model || channel.name
+  const endpoint = `${window.location.origin}/v1/images/edits`
+  if (nativeImageKind(channel) === 'openai') {
+    return [
+      `curl "${endpoint}" \\`,
+      '  -H "Authorization: Bearer YOUR_API_KEY" \\',
+      `  -F "model=${model}" \\`,
+      '  -F "image=@input.png" \\',
+      '  -F "prompt=Change the background to a beach, preserve the subject" \\',
+      '  -F "n=1"',
+    ].join('\n')
+  }
+  const body = JSON.stringify({
+    contents: [{ role: 'user', parts: [
+      { text: 'Change the background to a beach, preserve the subject' },
+      { inlineData: { mimeType: 'image/png', data: 'BASE64_INPUT_IMAGE_WITHOUT_DATA_URL_PREFIX' } },
+    ] }],
+    generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
+  }, null, 2)
+  return [
+    `curl "${window.location.origin}${getChannelEndpoint(channel)}" \\`,
+    '  -H "Authorization: Bearer YOUR_API_KEY" \\',
+    '  -H "Content-Type: application/json" \\',
+    `  -d '${body}'`,
+  ].join('\n')
+}
+
+function getBalanceCode(lang: LangTab) {
+  const origin = window.location.origin
+  if (lang === 'curl') return `curl -X GET "${origin}/user/balance" \\\n  -H "Authorization: Bearer YOUR_API_KEY"`
+  if (lang === 'javascript') return `const response = await fetch("${origin}/user/balance", {
+  headers: { "Authorization": "Bearer YOUR_API_KEY" }
+});
+
+console.log(await response.json());`
+  if (lang === 'python') return `import requests\n\nurl = "${origin}/user/balance"\nheaders = {"Authorization": "Bearer YOUR_API_KEY"}\n\nresponse = requests.get(url, headers=headers)\nprint(response.json())`
+  if (lang === 'php') return `<?php\n$url = "${origin}/user/balance";\n\n$ch = curl_init($url);\ncurl_setopt_array($ch, [\n    CURLOPT_RETURNTRANSFER => true,\n    CURLOPT_HTTPHEADER     => ['Authorization: Bearer YOUR_API_KEY'],\n]);\n\necho curl_exec($ch);\ncurl_close($ch);`
+  if (lang === 'go') return `package main\n\nimport (\n\t"fmt"\n\t"io"\n\t"net/http"\n)\n\nfunc main() {\n\treq, _ := http.NewRequest("GET", "${origin}/user/balance", nil)\n\treq.Header.Set("Authorization", "Bearer YOUR_API_KEY")\n\n\tresp, _ := (&http.Client{}).Do(req)\n\tdefer resp.Body.Close()\n\tdata, _ := io.ReadAll(resp.Body)\n\tfmt.Println(string(data))\n}`
+  return `import java.net.http.*;\nimport java.net.URI;\n\npublic class Main {\n    public static void main(String[] args) throws Exception {\n        var request = HttpRequest.newBuilder()\n            .uri(URI.create("${origin}/user/balance"))\n            .header("Authorization", "Bearer YOUR_API_KEY")\n            .GET()\n            .build();\n\n        var response = HttpClient.newHttpClient()\n            .send(request, HttpResponse.BodyHandlers.ofString());\n        System.out.println(response.body());\n    }\n}`
+}
+
+function getTaskCode(lang: LangTab) {
+  const origin = window.location.origin
+  if (lang === 'curl') return `curl -X GET "${origin}/v1/tasks/YOUR_TASK_ID" \\\n  -H "Authorization: Bearer YOUR_API_KEY"`
+  if (lang === 'javascript') return `const response = await fetch("${origin}/v1/tasks/YOUR_TASK_ID", {
+  headers: { "Authorization": "Bearer YOUR_API_KEY" }
+});
+
+console.log(await response.json());`
+  if (lang === 'python') return `import requests\n\nurl = "${origin}/v1/tasks/YOUR_TASK_ID"\nheaders = {"Authorization": "Bearer YOUR_API_KEY"}\n\nresponse = requests.get(url, headers=headers)\nprint(response.json())`
+  if (lang === 'php') return `<?php\n$url = "${origin}/v1/tasks/YOUR_TASK_ID";\n\n$ch = curl_init($url);\ncurl_setopt_array($ch, [\n    CURLOPT_RETURNTRANSFER => true,\n    CURLOPT_HTTPHEADER     => ['Authorization: Bearer YOUR_API_KEY'],\n]);\n\necho curl_exec($ch);\ncurl_close($ch);`
+  if (lang === 'go') return `package main\n\nimport (\n\t"fmt"\n\t"io"\n\t"net/http"\n)\n\nfunc main() {\n\treq, _ := http.NewRequest("GET", "${origin}/v1/tasks/YOUR_TASK_ID", nil)\n\treq.Header.Set("Authorization", "Bearer YOUR_API_KEY")\n\n\tresp, _ := (&http.Client{}).Do(req)\n\tdefer resp.Body.Close()\n\tdata, _ := io.ReadAll(resp.Body)\n\tfmt.Println(string(data))\n}`
+  return `import java.net.http.*;\nimport java.net.URI;\n\npublic class Main {\n    public static void main(String[] args) throws Exception {\n        var request = HttpRequest.newBuilder()\n            .uri(URI.create("${origin}/v1/tasks/YOUR_TASK_ID"))\n            .header("Authorization", "Bearer YOUR_API_KEY")\n            .GET()\n            .build();\n\n        var response = HttpClient.newHttpClient()\n            .send(request, HttpResponse.BodyHandlers.ofString());\n        System.out.println(response.body());\n    }\n}`
+}
+
+function getChannelResponse(channel: UserChannel, language: string) {
+  if (nativeImageKind(channel) === 'openai') {
+    return JSON.stringify({ created: 1750000000, data: [{ b64_json: 'BASE64_IMAGE_DATA' }] }, null, 2)
+  }
+  if (nativeImageKind(channel) === 'gemini') {
+    return JSON.stringify({ candidates: [{ content: { role: 'model', parts: [{ inlineData: { mimeType: 'image/png', data: 'BASE64_IMAGE_DATA' } }] }, finishReason: 'STOP' }] }, null, 2)
+  }
+  if (channel.type === 'llm') {
+    return JSON.stringify({
+      id: 'chatcmpl-abc123',
+      object: 'chat.completion',
+      model: channel.routing_model || channel.name,
+      choices: [{
+        index: 0,
+        message: {
+          role: 'assistant',
+          content: shouldUseChineseExamples(language)
+            ? '你好！我是一个人工智能助手，很高兴认识你。请问有什么我可以帮助你的吗？'
+            : 'Hello! I am an AI assistant. Nice to meet you. How can I help?',
+        },
+        finish_reason: 'stop',
+      }],
+      usage: { prompt_tokens: 12, completion_tokens: 34, total_tokens: 46 },
+    }, null, 2)
+  }
+  return JSON.stringify({ task_id: 'task_abc1234xyz', status: 'pending' }, null, 2)
+}
+
+function ProviderLogo({ iconUrl, label }: { iconUrl?: string; label: string }) {
+  return (
+    <span className="flex size-4 shrink-0 items-center justify-center overflow-hidden rounded-full border bg-background text-[9px] font-semibold text-foreground">
+      {iconUrl ? (
+        <img alt="" src={iconUrl} className="h-full w-full object-cover" />
+      ) : (
+        label.charAt(0).toUpperCase()
+      )}
+    </span>
+  )
+}
+
+function ProviderLogoStack({ providers }: { providers: ProviderOption[] }) {
+  const icons = providers.filter((provider) => provider.iconUrl).slice(0, 3)
+  if (icons.length === 0) return null
+
+  return (
+    <span className="flex shrink-0 -space-x-1">
+      {icons.map((provider) => (
+        <span
+          key={provider.name}
+          className="flex size-4 items-center justify-center overflow-hidden rounded-full border bg-background ring-1 ring-background"
+        >
+          <img alt="" src={provider.iconUrl} className="h-full w-full object-cover" />
+        </span>
+      ))}
+    </span>
+  )
+}
+
+export function UserModelsPage() {
+  const token = useRoleToken()
+  const { i18n, t } = useTranslation()
+  const modelPreferences = useModelPreferences()
+  const { preferences } = modelPreferences
+  const [collection, setCollection] = useState('all')
+  const { data, loading, error, reload } = useAsync(async () => {
+    const response = token ? await userApi.listChannels() : await createHttpClient().get<{ channels: UserChannel[] }>('/public/channels')
+    return { channels: Array.isArray(response) ? response : response.channels ?? [] }
+  }, { channels: [] as UserChannel[] }, [token])
+  const channels = data.channels
+  const displayChannels = useMemo(() => channels.map(channelWithSortedPrices), [channels])
+
+  const [filterType, setFilterType] = useState('')
+  const [filterName, setFilterName] = useState('')
+  const [filterProtocol, setFilterProtocol] = useState('')
+  const [filterProvider, setFilterProvider] = useState('')
+  const [docVisible, setDocVisible] = useState(false)
+  const [docMode, setDocMode] = useState<DocMode>('channel')
+  const [docChannel, setDocChannel] = useState<UserChannel | null>(null)
+  const [langTab, setLangTab] = useState<LangTab>('curl')
+  const [sunoMode, setSunoMode] = useState<SunoMode>('inspire')
+  const [imageSize, setImageSize] = useState('default')
+
+  const protocolOptions = useMemo(
+    () => Array.from(new Set(displayChannels.map((channel) => channel.protocol || 'openai'))),
+    [displayChannels],
+  )
+
+  const providerOptions = useMemo(() => {
+    const providers = new Map<string, string>()
+    displayChannels.forEach((channel) => {
+      const provider = channel.model_provider?.trim()
+      if (!provider) return
+
+      const iconUrl = channel.icon_url?.trim() || ''
+      if (!providers.has(provider) || (!providers.get(provider) && iconUrl)) {
+        providers.set(provider, iconUrl)
+      }
+    })
+
+    return Array.from(providers, ([name, iconUrl]) => ({ name, iconUrl })).sort((left, right) =>
+      left.name.localeCompare(right.name),
+    )
+  }, [displayChannels])
+
+  const availableTypeOptions = useMemo(() => {
+    const presentTypes = new Set(displayChannels.map((c) => c.type ?? ''))
+    return typeOptions.filter((opt) => opt.value === '' || presentTypes.has(opt.value))
+  }, [displayChannels])
+
+  const filteredChannels = useMemo(() => {
+    return displayChannels.filter((channel) => {
+      if (collection === 'favorites' && !preferences.get(channel.routing_model || channel.name || '')?.favorite) return false
+      if (filterType && channel.type !== filterType) return false
+      if (filterProtocol && (channel.protocol || 'openai') !== filterProtocol) return false
+      if (filterProvider && channel.model_provider?.trim() !== filterProvider) return false
+      if (!filterName) return true
+
+      const keyword = filterName.toLowerCase()
+      return [channel.name, channel.routing_model, channel.model_provider, channel.description]
+        .some((value) => value?.toLowerCase().includes(keyword))
+    }).sort((left, right) => Number(!!preferences.get(right.routing_model || right.name || '')?.pinned) - Number(!!preferences.get(left.routing_model || left.name || '')?.pinned))
+  }, [displayChannels, filterName, filterProtocol, filterProvider, filterType, collection, preferences])
+
+  const favoriteCount = displayChannels.filter(channel => preferences.get(channel.routing_model || channel.name || '')?.favorite).length
+
+  function openDoc(channel: UserChannel) {
+    setImageSize('default')
+    setDocChannel(channel)
+    setDocMode('channel')
+    setLangTab('curl')
+    setSunoMode('inspire')
+    setDocVisible(true)
+  }
+
+  function openBalanceDocs() {
+    setDocMode('balance')
+    setLangTab('curl')
+    setDocVisible(true)
+  }
+
+  function openTaskDocs() {
+    setDocMode('task')
+    setLangTab('curl')
+    setDocVisible(true)
+  }
+
+  function getProtocolLabel(protocol: string) {
+    const key = protocolLabels[protocol]
+    return key ? t(key) : protocol
+  }
+
+  function getBillingTypeLabel(billingType?: string) {
+    if (!billingType) return '—'
+    const key = billingTypeLabels[billingType]
+    return key ? t(key) : billingType
+  }
+
+  return (
+    <>
+      <PageHeader
+        eyebrow={t('models.eyebrow')}
+        title={t('models.title')}
+        description={t('models.description')}
+        actions={
+          <>
+            <Button variant="outline" onClick={openBalanceDocs} className="hidden sm:inline-flex">
+              <TerminalSquare data-icon="inline-start" />
+              {t('models.balanceApi')}
+            </Button>
+            <Button variant="outline" onClick={openTaskDocs} className="hidden sm:inline-flex">
+              <TerminalSquare data-icon="inline-start" />
+              {t('models.taskApi')}
+            </Button>
+            {error ? <Button size="sm" variant="outline" onClick={reload}>{t('common.retry')}</Button> : null}
+          </>
+        }
+      />
+      {error ? (
+        <Alert className="mb-4" variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <Tabs value={collection} onValueChange={setCollection}>
+          <TabsList aria-label="模型分类">
+            <TabsTrigger value="all">全部模型</TabsTrigger>
+            <TabsTrigger value="favorites"><Star data-icon="inline-start" />收藏{modelPreferences.loading ? '' : ` (${favoriteCount})`}</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <span className="text-xs text-muted-foreground">{modelPreferences.authenticated ? '置顶与收藏仅对你可见，随账号保存' : '登录后可置顶和收藏常用模型'}</span>
+      </div>
+      {modelPreferences.error ? (
+        <Alert className="mb-4" variant="destructive">
+          <AlertDescription className="flex flex-wrap items-center gap-2">
+            收藏和置顶加载失败：{modelPreferences.error}
+            <Button size="sm" variant="outline" onClick={modelPreferences.retry}>重试</Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      <FilterBar
+        filters={
+          <div className="flex min-w-0 flex-1 flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+          {availableTypeOptions.map((option) => (
+            <Badge
+              key={option.value}
+              variant={filterType === option.value ? 'default' : 'secondary'}
+              className="cursor-pointer px-3 py-1"
+              onClick={() => setFilterType(option.value)}
+            >
+              {t(option.labelKey)}
+            </Badge>
+          ))}
+            </div>
+        {protocolOptions.length > 1 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant={filterProtocol === '' ? 'default' : 'secondary'}
+              className="cursor-pointer px-3 py-1"
+              onClick={() => setFilterProtocol('')}
+            >
+              {t('models.allProtocols')}
+            </Badge>
+            {protocolOptions.map((protocol) => (
+              <Badge
+                key={protocol}
+                variant={filterProtocol === protocol ? 'default' : 'secondary'}
+                className="cursor-pointer px-3 py-1"
+                onClick={() => setFilterProtocol(protocol)}
+              >
+                {getProtocolLabel(protocol)}
+              </Badge>
+            ))}
+          </div>
+        ) : null}
+        {providerOptions.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant={filterProvider === '' ? 'default' : 'secondary'}
+              className="cursor-pointer gap-1.5 px-3 py-1"
+              onClick={() => setFilterProvider('')}
+            >
+              <ProviderLogoStack providers={providerOptions} />
+              {t('models.allProviders')}
+            </Badge>
+            {providerOptions.map((provider) => (
+              <Badge
+                key={provider.name}
+                variant={filterProvider === provider.name ? 'default' : 'secondary'}
+                className="cursor-pointer gap-1.5 px-3 py-1"
+                onClick={() => setFilterProvider(provider.name)}
+              >
+                <ProviderLogo iconUrl={provider.iconUrl} label={provider.name} />
+                {provider.name}
+              </Badge>
+            ))}
+          </div>
+        ) : null}
+          </div>
+        }
+        actions={
+          <div className="flex w-full flex-col items-start gap-2 sm:w-auto sm:items-end">
+          <span className="text-sm font-medium text-muted-foreground">{t('models.modelCount', { count: filteredChannels.length })}</span>
+          <div className="relative w-full sm:w-auto">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              className="w-full pl-9 sm:w-[280px]"
+              placeholder={t('models.searchPlaceholder')}
+              value={filterName}
+              onChange={(event) => setFilterName(event.target.value)}
+            />
+          </div>
+          </div>
+        }
+      />
+
+      {loading || (collection === 'favorites' && modelPreferences.loading) ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <Card key={index}>
+              <CardContent className="flex flex-col gap-3 p-5">
+                <Skeleton className="h-14 w-full" />
+                <Skeleton className="h-5 w-2/3" />
+                <Skeleton className="h-12 w-full" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : filteredChannels.length === 0 ? (
+        <EmptyState
+          icon={<BlocksIcon className="size-6 text-muted-foreground" />}
+          title={collection === 'favorites' ? (modelPreferences.error ? '收藏暂不可用' : !modelPreferences.authenticated ? '登录后查看你的收藏' : favoriteCount ? '没有符合筛选条件的收藏' : '还没有收藏模型') : t('models.emptyTitle')}
+          description={collection === 'favorites' ? (modelPreferences.error ? '请重试加载收藏。' : !modelPreferences.authenticated ? '收藏会随账号保存，登录后即可使用。' : favoriteCount ? '试试调整类型、厂商或搜索条件。' : '点击模型卡片上的星标，把常用模型收藏到这里。') : t('models.emptyDescription')}
+        />
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredChannels.map((channel) => (
+            <Card
+              key={channel.routing_model || channel.name}
+              data-model={channel.routing_model || channel.name}
+              data-pinned={!!preferences.get(channel.routing_model || channel.name || '')?.pinned}
+              className="group cursor-pointer overflow-hidden transition-colors hover:border-primary/50"
+              onClick={() => openDoc(channel)}
+            >
+              <CardContent className="flex h-full flex-col gap-4 p-5">
+                <div className="flex items-center justify-between gap-2" onClick={event => event.stopPropagation()}>
+                  <Button size="sm" variant={preferences.get(channel.routing_model || channel.name || '')?.pinned ? 'secondary' : 'ghost'}
+                    aria-label={`${preferences.get(channel.routing_model || channel.name || '')?.pinned ? '取消置顶' : '置顶'} ${channel.name}`}
+                    aria-pressed={!!preferences.get(channel.routing_model || channel.name || '')?.pinned}
+                    disabled={modelPreferences.disabled(channel.routing_model || channel.name || '')}
+                    onClick={() => void modelPreferences.toggle(channel.routing_model || channel.name || '', 'pinned')}>
+                    <Pin data-icon="inline-start" />{preferences.get(channel.routing_model || channel.name || '')?.pinned ? '已置顶' : '置顶'}
+                  </Button>
+                  <Button size="sm" variant={preferences.get(channel.routing_model || channel.name || '')?.favorite ? 'secondary' : 'ghost'}
+                    aria-label={`${preferences.get(channel.routing_model || channel.name || '')?.favorite ? '取消收藏' : '收藏'} ${channel.name}`}
+                    aria-pressed={!!preferences.get(channel.routing_model || channel.name || '')?.favorite}
+                    disabled={modelPreferences.disabled(channel.routing_model || channel.name || '')}
+                    onClick={() => void modelPreferences.toggle(channel.routing_model || channel.name || '', 'favorite')}>
+                    <Star data-icon="inline-start" fill={preferences.get(channel.routing_model || channel.name || '')?.favorite ? 'currentColor' : 'none'} />{preferences.get(channel.routing_model || channel.name || '')?.favorite ? '已收藏' : '收藏'}
+                  </Button>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border bg-muted/30 text-lg font-bold">
+                    {channel.icon_url ? (
+                      <img alt="" src={channel.icon_url} className="h-full w-full rounded-lg object-cover" />
+                    ) : (
+                      (channel.name || '?').charAt(0).toUpperCase()
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="truncate text-sm font-semibold" title={channel.name}>{channel.name}</h3>
+                      <button
+                        className="hidden shrink-0 text-muted-foreground hover:text-foreground group-hover:block"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          copyText(channel.routing_model || channel.name || '', t('models.copiedModelId'))
+                        }}
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                      {channel.model_provider ? <Badge variant="outline">{channel.model_provider}</Badge> : null}
+                      <Badge variant="outline">{getProtocolLabel(channel.protocol || 'openai')}</Badge>
+                      {channel.billing_type ? <Badge variant="outline">{getBillingTypeLabel(channel.billing_type)}</Badge> : null}
+                    </div>
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      {channelSummaryPrice(channel) ? (
+                        channelSummaryPrice(channel).split('\n').map((line, lineIndex) => (
+                          <div key={lineIndex} className={lineIndex === 0 ? 'font-medium text-primary/80' : 'text-[10px]'}>{line}</div>
+                        ))
+                      ) : (
+                        <div>{t('models.meteredBilling')}</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                {channel.gpt_context_pricing ? <ContextPricingNote compact model={channel.routing_model || channel.name} /> : null}
+                <p className="min-h-10 text-xs leading-5 text-muted-foreground line-clamp-2">
+                  {channel.description || t('models.fallbackDescription')}
+                </p>
+                <div className="mt-auto flex items-center justify-between gap-3 border-t pt-3 text-xs font-medium">
+                  <div className="rounded bg-muted/40 px-2 py-1 font-mono text-muted-foreground">
+                    {channel.routing_model || channel.model || channel.name}
+                  </div>
+                  <Badge variant="secondary">{t('common.available')}</Badge>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <Sheet open={docVisible} onOpenChange={setDocVisible}>
+        <SheetContent side="right" className="flex w-[90vw] flex-col overflow-y-auto p-0 data-[side=right]:sm:max-w-4xl">
+          <SheetHeader className="shrink-0 border-b p-6 pb-2">
+            <SheetTitle>
+              {docMode === 'balance' ? t('models.balanceTitle') : docMode === 'task' ? t('models.taskTitle') : docChannel?.name}
+            </SheetTitle>
+          </SheetHeader>
+          <div className="flex-1 space-y-6 bg-muted/10 p-6">
+            {token && docVisible && docMode === 'channel' && docChannel ? (
+              <LazyModelAvailability key={docChannel.routing_model || docChannel.name} model={docChannel.routing_model || docChannel.model || docChannel.name || ''} />
+            ) : null}
+            {docMode === 'balance' ? (
+              <div className="space-y-6">
+                <div className="flex items-center gap-4">
+                  <Badge variant="secondary" className="rounded-md px-3 py-1 text-sm font-bold tracking-wide">GET</Badge>
+                  <div className="flex flex-1 items-center rounded border bg-background px-3 py-1 font-mono">
+                    <span className="flex-1">/user/balance</span>
+                    <button onClick={() => copyText(`GET ${window.location.origin}/user/balance`, t('common.copied'))} className="hover:text-primary"><Copy className="h-4 w-4" /></button>
+                  </div>
+                </div>
+                <div className="rounded-xl border bg-muted/40 p-4 text-sm leading-relaxed text-foreground">
+                  {t('models.balanceDescription')}
+                </div>
+                <div>
+                  <h4 className="mb-2 flex items-center justify-between font-semibold">
+                    {t('models.requestHeaders')}
+                    <Button variant="ghost" size="sm" className="h-7" onClick={() => copyText('Authorization: Bearer YOUR_API_KEY', t('common.copied'))}>
+                      <Copy data-icon="inline-start" />
+                      {t('common.copyHeaders')}
+                    </Button>
+                  </h4>
+                  <pre className="overflow-auto rounded-xl bg-foreground p-4 font-mono text-sm text-background">Authorization: Bearer YOUR_API_KEY</pre>
+                </div>
+                <div>
+                  <h4 className="mb-2 flex items-center justify-between font-semibold">
+                    {t('models.callExample')}
+                    <Button variant="ghost" size="sm" className="h-7" onClick={() => copyText(getBalanceCode(langTab), t('common.copied'))}>
+                      <Copy data-icon="inline-start" />
+                      {t('common.copyCode')}
+                    </Button>
+                  </h4>
+                  <Tabs value={langTab} onValueChange={(value) => setLangTab(value as LangTab)}>
+                    <TabsList className="mb-2 grid h-auto w-full grid-cols-3 sm:grid-cols-6">
+                      <TabsTrigger value="curl">cURL</TabsTrigger>
+                      <TabsTrigger value="javascript">JavaScript</TabsTrigger>
+                      <TabsTrigger value="python">Python</TabsTrigger>
+                      <TabsTrigger value="php">PHP</TabsTrigger>
+                      <TabsTrigger value="go">Go</TabsTrigger>
+                      <TabsTrigger value="java">Java</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                  <pre className="min-h-[140px] overflow-auto rounded-xl bg-foreground p-4 font-mono text-sm whitespace-pre-wrap text-background">{getBalanceCode(langTab)}</pre>
+                </div>
+                <div>
+                  <h4 className="mb-2 font-semibold">{t('models.responseExample')}</h4>
+                  <pre className="overflow-auto rounded-xl bg-foreground p-4 font-mono text-sm text-background">{JSON.stringify({ balance_cny: 1.971573 }, null, 2)}</pre>
+                </div>
+              </div>
+            ) : null}
+
+            {docMode === 'task' ? (
+              <div className="space-y-6">
+                <div className="flex items-center gap-4">
+                  <Badge variant="secondary" className="rounded-md px-3 py-1 text-sm font-bold tracking-wide">GET</Badge>
+                  <div className="flex flex-1 items-center rounded border bg-background px-3 py-1 font-mono">
+                    <span className="flex-1">/v1/tasks/{'{id}'}</span>
+                    <button onClick={() => copyText(`${window.location.origin}/v1/tasks/YOUR_TASK_ID`, t('common.copied'))} className="hover:text-primary"><Copy className="h-4 w-4" /></button>
+                  </div>
+                </div>
+                <div className="rounded-xl border bg-muted/40 p-4 text-sm leading-relaxed text-foreground">
+                  {t('models.taskDescription')}
+                </div>
+                <div>
+                  <h4 className="mb-2 flex items-center justify-between font-semibold">
+                    {t('models.callExample')}
+                    <Button variant="ghost" size="sm" className="h-7" onClick={() => copyText(getTaskCode(langTab), t('common.copied'))}>
+                      <Copy data-icon="inline-start" />
+                      {t('common.copyCode')}
+                    </Button>
+                  </h4>
+                  <Tabs value={langTab} onValueChange={(value) => setLangTab(value as LangTab)}>
+                    <TabsList className="mb-2 grid h-auto w-full grid-cols-3 sm:grid-cols-6">
+                      <TabsTrigger value="curl">cURL</TabsTrigger>
+                      <TabsTrigger value="javascript">JavaScript</TabsTrigger>
+                      <TabsTrigger value="python">Python</TabsTrigger>
+                      <TabsTrigger value="php">PHP</TabsTrigger>
+                      <TabsTrigger value="go">Go</TabsTrigger>
+                      <TabsTrigger value="java">Java</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                  <pre className="min-h-[140px] overflow-auto rounded-xl bg-foreground p-4 font-mono text-sm whitespace-pre-wrap text-background">{getTaskCode(langTab)}</pre>
+                </div>
+                <div>
+                  <h4 className="mb-2 font-semibold">{t('models.responseExample')}</h4>
+                  <pre className="overflow-auto rounded-xl bg-foreground p-4 font-mono text-sm text-background">{JSON.stringify({ task_id: '12345', status: 1, code: 200, msg: 'success', url: '', credits_charged: 3600 }, null, 2)}</pre>
+                </div>
+              </div>
+            ) : null}
+
+            {docMode === 'channel' && docChannel ? (
+              <div className="space-y-6">
+                <div className="flex items-center gap-4">
+                  <Badge className="rounded-md px-3 py-1 text-sm font-bold tracking-wide">POST</Badge>
+                  <div className="flex flex-1 items-center rounded border bg-background px-3 py-1 font-mono">
+                    <span className="flex-1">{getChannelEndpoint(docChannel)}</span>
+                    <button onClick={() => copyText(`${window.location.origin}${getChannelEndpoint(docChannel)}`, t('common.copied'))} className="hover:text-primary"><Copy className="h-4 w-4" /></button>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 rounded-xl border bg-background p-4 sm:grid-cols-2">
+                  <div>
+                    <div className="text-xs text-muted-foreground">{t('models.modelId')}</div>
+                    <div className="mt-1 font-mono text-sm font-medium">{docChannel.routing_model || docChannel.name}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">{t('models.protocol')}</div>
+                    <div className="mt-1 text-sm font-medium">{getProtocolLabel(docChannel.protocol || 'openai')}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">{t('models.provider')}</div>
+                    <div className="mt-1 text-sm font-medium">{docChannel.model_provider || '—'}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">{t('models.billingType')}</div>
+                    <div className="mt-1 text-sm font-medium">{getBillingTypeLabel(docChannel.billing_type)}</div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="font-semibold">模型分组价格</h4>
+                  {docChannel.group_prices?.length ? docChannel.group_prices.map((group) => <Card key={group.group_id}>
+                    <CardContent className="space-y-3 p-4">
+                      <div className="flex items-center justify-between gap-3"><div><div className="font-medium">{group.group_name}</div><div className="font-mono text-xs text-muted-foreground">{group.group_code}</div></div><Badge variant="secondary">普通价</Badge></div>
+                      {group.gpt_context_pricing ? <ContextPricingNote model={docChannel.routing_model || docChannel.name} /> : null}
+                      <div className="whitespace-pre-wrap text-sm font-medium">{group.price_display || t('models.defaultPriceEmpty')}</div>
+                      {group.vip_prices?.length ? <div className="space-y-2 border-t pt-3">{group.vip_prices.map((vip) => <div key={vip.code} className="grid gap-1 sm:grid-cols-[10rem_1fr]"><div className="text-sm"><span className="font-medium">{vip.name}</span><span className="ml-2 font-mono text-xs text-muted-foreground">{vip.code}</span></div><div className="whitespace-pre-wrap text-sm text-primary">{vip.price_display || t('models.defaultPriceEmpty')}</div></div>)}</div> : null}
+                    </CardContent>
+                  </Card>) : <div className="rounded-lg border p-4 text-sm text-muted-foreground">{docChannel.price_display || t('models.defaultPriceEmpty')}</div>}
+                </div>
+
+                <div className="rounded-xl border bg-accent/50 p-4 text-sm leading-relaxed">
+                  {docChannel.gpt_context_pricing ? <div className="mb-3"><ContextPricingNote compact model={docChannel.routing_model || docChannel.name} /></div> : null}
+                  <div className="whitespace-pre-wrap font-medium">{docChannel.price_display || t('models.defaultPriceEmpty')}</div>
+                  {docChannel.description ? <div className="mt-3 whitespace-pre-wrap text-muted-foreground">{docChannel.description}</div> : null}
+                </div>
+
+                {nativeImageKind(docChannel) ? (
+                  <div className="space-y-3 rounded-xl border p-4 text-sm">
+                    <h4 className="font-semibold">图片生成</h4>
+                    {supportsImageSizeParameter(docChannel) ? <label className="flex items-center gap-3">
+                      示例分辨率（横版 16:9）
+                      <select aria-label="示例分辨率" className="rounded border bg-background p-2" value={imageSize} onChange={(event) => setImageSize(event.target.value)}>
+                        <option value="default">默认</option><option value="2K">2K</option><option value="4K">4K</option>
+                      </select>
+                    </label> : <p>当前示例使用默认尺寸，暂未验证该模型能按指定参数返回 2K/4K 图片。</p>}
+                    <p>同步返回图片，不返回任务 ID。请检查实际图片尺寸；生成较慢时，公网入口仍可能超时。</p>
+                    <p>{nativeImageKind(docChannel) === 'openai' ? '将 data[0].b64_json 解码为图片；若返回 data[0].url，则下载该地址的原图。' : '读取 candidates 中的 content.parts，将 inlineData.data 按 Base64 解码，并按 mimeType 保存图片。'}</p>
+                  </div>
+                ) : null}
+
+                {docChannel.type === 'music' ? (
+                  <Tabs value={sunoMode} onValueChange={(value) => setSunoMode(value as SunoMode)}>
+                    <TabsList className="grid h-auto w-full grid-cols-5 py-1">
+                      <TabsTrigger value="inspire" className="text-xs">{t('models.inspireMode')}</TabsTrigger>
+                      <TabsTrigger value="custom" className="text-xs">{t('models.customMode')}</TabsTrigger>
+                      <TabsTrigger value="extend" className="text-xs">{t('models.extendMode')}</TabsTrigger>
+                      <TabsTrigger value="overpainting" className="text-xs">{t('models.overpaintingMode')}</TabsTrigger>
+                      <TabsTrigger value="underpainting" className="text-xs">{t('models.underpaintingMode')}</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                ) : null}
+
+                <div>
+                  <h4 className="mb-2 flex items-center justify-between font-semibold">
+                    {t('models.callExample')}
+                    <Button variant="ghost" size="sm" className="h-7" onClick={() => copyText(getChannelCode(docChannel, langTab, sunoMode, i18n.language, imageSize), t('common.copied'))}>
+                      <Copy data-icon="inline-start" />
+                      {t('common.copyCode')}
+                    </Button>
+                  </h4>
+                  <Tabs value={langTab} onValueChange={(value) => setLangTab(value as LangTab)}>
+                    <TabsList className="mb-2 grid h-auto w-full grid-cols-3 sm:grid-cols-6">
+                      <TabsTrigger value="curl">cURL</TabsTrigger>
+                      <TabsTrigger value="javascript">JavaScript</TabsTrigger>
+                      <TabsTrigger value="python">Python</TabsTrigger>
+                      <TabsTrigger value="php">PHP</TabsTrigger>
+                      <TabsTrigger value="go">Go</TabsTrigger>
+                      <TabsTrigger value="java">Java</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                  <pre className="min-h-[140px] overflow-auto rounded-xl bg-foreground p-4 font-mono text-sm whitespace-pre-wrap text-background">{getChannelCode(docChannel, langTab, sunoMode, i18n.language, imageSize)}</pre>
+                </div>
+                {nativeImageKind(docChannel) ? <div className="space-y-3">
+                  <h4 className="font-semibold">图片编辑 · 接口格式参考</h4>
+                  <p className="text-sm text-muted-foreground">该模型的编辑能力及编辑时的 2K/4K 输出尚未实测确认，不能由图片生成成功推断。以下为请求格式参考，请先验证后使用。</p>
+                  <p className="text-sm">{nativeImageKind(docChannel) === 'openai' ? '以 multipart/form-data 上传 input.png；让客户端自动设置 Content-Type 和 boundary。' : '将原图转换为不带 data: 前缀的 Base64，与修改要求一起提交。'}</p>
+                  <pre className="overflow-auto rounded-xl bg-foreground p-4 font-mono text-sm whitespace-pre-wrap text-background">{getImageEditCode(docChannel)}</pre>
+                </div> : null}
+
+                <div>
+                  <h4 className="mb-2 font-semibold">{t('models.responseExample')}</h4>
+                  <pre className={cn('overflow-auto rounded-xl bg-foreground p-4 font-mono text-sm text-background', docChannel.type !== 'llm' && 'opacity-80')}>
+                    {getChannelResponse(docChannel, i18n.language)}
+                  </pre>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </SheetContent>
+      </Sheet>
+    </>
+  )
+}

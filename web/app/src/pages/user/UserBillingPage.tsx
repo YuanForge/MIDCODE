@@ -1,638 +1,224 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import QRCode from 'qrcode'
+import { toast } from 'sonner'
+
 import { PageHeader } from '@/components/shared/PageHeader'
-import { PageSection } from '@/components/shared/PageSection'
-import { FilterBar } from '@/components/shared/FilterBar'
-import { TablePagination } from '@/components/shared/TablePagination'
-import { Button } from '@/components/ui/button'
+import { Section } from '@/components/shared/Section'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { NativeSelect } from '@/components/ui/select'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
-import { userApi, type ApiKeyRecord } from '@/lib/api/user'
-import { payApi } from '@/lib/api/pay'
 import { useAsync } from '@/hooks/use-async'
-import { useSiteSettings } from '@/hooks/use-site-settings'
 import { useAuth } from '@/hooks/use-auth'
-import { Badge } from '@/components/ui/badge'
+import { useSiteSettings } from '@/hooks/use-site-settings'
+import { userApi } from '@/lib/api/user'
 import { formatCredits } from '@/lib/formatters/credits'
 import { cn } from '@/lib/utils'
-import { Check, Loader2, RefreshCcw, Wallet } from 'lucide-react'
-import { toast } from 'sonner'
-import type { PaymentOrder } from '@/lib/api/user'
 import { CardRedemptionSection } from './CardRedemptionSection'
+import { OrdersPanel } from './billing/OrdersPanel'
+import { PayDialog } from './billing/PayDialog'
+import { PaySummary } from './billing/PaySummary'
+import { PlanOption } from './billing/PlanOption'
+import { TransactionsPanel } from './billing/TransactionsPanel'
+import { useCoupon } from './billing/useCoupon'
+import { usePayment, type PayMethod } from './billing/usePayment'
 
+/**
+ * Recharge sheet (ledger). The account column (balance, model credits, settlement) and the two work
+ * sections share one grid. Source order is model credits, card redemption, then packages; on phones the
+ * packages are moved to the top with `order`, and on desktop grid placement puts them first in the left column.
+ */
 export function UserBillingPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const defaultTab = searchParams.get('tab') || 'recharge'
-  
+  const tab = searchParams.get('tab') || 'recharge'
+
   const { settings } = useSiteSettings()
   const { user } = useAuth()
   const { data: balanceCredits, reload: reloadBalance } = useAsync(async () => {
     const res = await userApi.getBalance()
     return res.balance_credits ?? 0
   }, 0)
-
   const { data: modelCredits } = useAsync(async () => {
     const res = await userApi.getModelCredits()
     return res.model_credits ?? []
   }, [])
 
-  // Recharge State
   const [selectedPlan, setSelectedPlan] = useState<number>(-1)
   const [selectedAmount, setSelectedAmount] = useState<number | ''>('')
-  const [payMethod, setPayMethod] = useState<'wechat' | 'alipay'>('wechat')
-  const [isPaying, setIsPaying] = useState(false)
-  const [payUrl, setPayUrl] = useState<string>('')
-  const [currentOutTradeNo, setCurrentOutTradeNo] = useState<string>('')
-  const [showPayFrame, setShowPayFrame] = useState(false)
-  const qrCanvasRef = useRef<HTMLCanvasElement>(null)
-  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [qrError, setQrError] = useState('')
+  const [pickedMethod, setPickedMethod] = useState<PayMethod | null>(null)
+  // Until a method is picked, the first enabled one is used. It is derived here, so no effect has to correct it.
+  const payMethod: PayMethod = pickedMethod ?? (!settings.wechatPayEnabled && settings.alipayEnabled ? 'alipay' : 'wechat')
+  const amountNumber = Number(selectedAmount) || 0
+  const coupon = useCoupon(amountNumber)
+  const payable = coupon.result ? coupon.result.final_amount : amountNumber
+  const payment = usePayment({ method: payMethod, onPaid: reloadBalance })
 
-  // Coupon State
-  const [couponCode, setCouponCode] = useState('')
-  const [couponValidating, setCouponValidating] = useState(false)
-  const [couponResult, setCouponResult] = useState<{ discount_yuan: number; final_amount: number } | null>(null)
-  const [couponError, setCouponError] = useState('')
-
-  async function validateCoupon() {
-    if (!couponCode.trim()) return
-    const amount = Number(selectedAmount)
-    if (!amount || amount < 0.01) {
-      setCouponError('请先选择或输入充值金额')
-      return
-    }
-    setCouponValidating(true)
-    setCouponError('')
-    setCouponResult(null)
-    try {
-      const res = await payApi.validateCoupon(couponCode.trim(), amount)
-      setCouponResult({ discount_yuan: res.discount_yuan, final_amount: res.final_amount })
-    } catch (e: any) {
-      setCouponError(e.message || '优惠券验证失败')
-    } finally {
-      setCouponValidating(false)
-    }
+  function choosePlan(index: number, amount: number) {
+    setSelectedPlan(index)
+    setSelectedAmount(amount)
+    coupon.reset()
   }
 
-  // 当 settings 加载完毕后，将支付方式重置为第一个可用方式
-  useEffect(() => {
-    if (!settings.wechatPayEnabled && settings.alipayEnabled) {
-      setPayMethod('alipay')
-    }
-  }, [settings.wechatPayEnabled, settings.alipayEnabled])
-
-  useEffect(() => {
-    if (!showPayFrame || !payUrl || !qrCanvasRef.current) return
-    setQrError('')
-    QRCode.toCanvas(qrCanvasRef.current, payUrl, { width: 240, margin: 1 }, (err) => {
-      if (err) setQrError('二维码生成失败，请使用下方按钮打开支付页')
-    })
-  }, [showPayFrame, payUrl])
-
-  // Transaction State
-  const [txPage, setTxPage] = useState(1)
-  const [txTaskIdFilter, setTxTaskIdFilter] = useState('')
-  const [txCorrIdFilter, setTxCorrIdFilter] = useState('')
-  const [txApiKeyFilter, setTxApiKeyFilter] = useState('')
-  const { data: apiKeys } = useAsync(async () => {
-    const response = await userApi.listApiKeys()
-    return (Array.isArray(response) ? response : response.api_keys ?? response.keys ?? []) as ApiKeyRecord[]
-  }, [] as ApiKeyRecord[])
-  const { data: txData, reload: txReload } = useAsync(async () => {
-    const res = await userApi.getTransactions(
-      txPage,
-      20,
-      txTaskIdFilter || undefined,
-      txCorrIdFilter || undefined,
-      txApiKeyFilter ? Number(txApiKeyFilter) : undefined,
-    )
-    return {
-      items: Array.isArray(res) ? res : res.items ?? res.transactions ?? [],
-      total: !Array.isArray(res) ? res.total ?? 0 : 0
-    }
-  }, { items: [], total: 0 } as { items: unknown[]; total: number }, [txPage, txTaskIdFilter, txCorrIdFilter, txApiKeyFilter])
-
-  // Orders State
-  const [orderPage, setOrderPage] = useState(1)
-  const { data: orderData, reload: orderReload } = useAsync(async () => {
-    const res = await userApi.getPaymentOrders(orderPage, 20)
-    return {
-      items: res.orders || [],
-      total: res.total || 0
-    }
-  }, { items: [], total: 0 } as any, [orderPage])
-
-  // Update URL on tab change
-  const handleTabChange = (val: string) => {
-    setSearchParams({ tab: val })
+  function typeAmount(value: string) {
+    setSelectedPlan(-1)
+    setSelectedAmount(value ? Number(value) : '')
+    coupon.reset()
   }
 
-  const stopPolling = useCallback(() => {
-    if (pollTimerRef.current) {
-      clearInterval(pollTimerRef.current)
-      pollTimerRef.current = null
-    }
-    if (pollTimeoutRef.current) {
-      clearTimeout(pollTimeoutRef.current)
-      pollTimeoutRef.current = null
-    }
-  }, [])
-
-  const handlePaymentSuccess = () => {
-    toast.success('充值成功')
-    stopPolling()
-    setShowPayFrame(false)
-    txReload()
-    orderReload()
-    reloadBalance()
-  }
-
-  useEffect(() => stopPolling, [stopPolling])
-
-  const isMobileBrowser = () => /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent)
-  const isWeChatBrowser = () => /micromessenger/i.test(navigator.userAgent)
-
-  const openPaymentPage = (url: string) => {
-    if (isMobileBrowser()) {
-      window.location.href = url
-      return
-    }
-    window.open(url, '_blank', 'noopener,noreferrer')
-  }
-
-  // Payment logic
-  const handlePay = async () => {
-    if (!selectedAmount || Number(selectedAmount) < 0.01) {
-      toast.error('请输入有效的充值金额')
-      return
-    }
-    
-    const amount = couponResult ? couponResult.final_amount : Number(selectedAmount)
-    setIsPaying(true)
-    try {
-      if (settings.shouqianbaEnabled) {
-      const payFlat = payMethod === 'wechat' ? 1 : 2
-      const res = await payApi.createShouqianbaOrder({ amount, pay_flat: payFlat })
-      if (res.pay_url) {
-        setPayUrl(res.pay_url)
-        setCurrentOutTradeNo(res.out_trade_no || "")
-        setShowPayFrame(!isMobileBrowser())
-        startPolling(res.out_trade_no)
-        openPaymentPage(res.pay_url)
-      }
-      } else if (settings.payApplyEnabled) {
-        const payFlat = payMethod === 'wechat' ? 1 : 2
-        const payFrom = isMobileBrowser()
-          ? (payMethod === 'wechat' && isWeChatBrowser() ? 'wapwx' : 'wap')
-          : 'pc'
-        const res = await payApi.createPayApplyOrder({ amount, pay_flat: payFlat, pay_from: payFrom })
-        if (res.pay_url) {
-          setPayUrl(res.pay_url)
-          setCurrentOutTradeNo(res.out_trade_no || "")
-          setShowPayFrame(!isMobileBrowser())
-          startPolling(res.out_trade_no)
-          openPaymentPage(res.pay_url)
-        }
-      } else if (settings.epayEnabled) {
-        const type = payMethod === 'wechat' ? 'wxpay' : 'alipay'
-        const res = await payApi.createEpayOrder(amount, type)
-        if (res.pay_url) {
-          setPayUrl(res.pay_url)
-          setCurrentOutTradeNo(res.out_trade_no || "")
-          setShowPayFrame(!isMobileBrowser())
-          startPolling(res.out_trade_no)
-          openPaymentPage(res.pay_url)
-        }
-      }
-    } catch (e: any) {
-      toast.error(e.message || '支付发起失败')
-    } finally {
-      setIsPaying(false)
-    }
-  }
-
-  const startPolling = (outTradeNo?: string) => {
-    if (!outTradeNo) return
-    stopPolling()
-
-    pollTimerRef.current = setInterval(async () => {
-      try {
-        const res = await payApi.getOrderStatus(outTradeNo)
-        if (res.status === 'paid') {
-          handlePaymentSuccess()
-        }
-      } catch {
-        // ignore polling errors
-      }
-    }, 3000)
-
-    pollTimeoutRef.current = setTimeout(stopPolling, 300000) // 5 minutes max
-  }
-
-  const handlePayDialogOpenChange = (open: boolean) => {
-    setShowPayFrame(open)
-    if (!open) {
-      stopPolling()
-    }
-  }
-
-  const txTypeLabel = (type: string) => {
-    const map: Record<string, string> = {
-      recharge: '充值',
-      transfer_out: '积分转赠',
-      transfer_in: '收到转赠',
-      hold: '预扣',
-      settle: '结算',
-      charge: '扣费',
-      refund: '退款',
-      consume: '消费',
-      invite_rebate: '邀请返利',
-    }
-    return map[type] || type
-  }
-
-  // 扣款类型：hold / settle / charge / consume；收入类型：recharge / refund / invite_rebate
-  const isDebit = (type: string) => ['hold', 'settle', 'charge', 'consume', 'transfer_out'].includes(type)
-  const txSign = (type: string) => (isDebit(type) ? '-' : '+')
-  const txAmtColor = (type: string) => (isDebit(type) ? 'text-destructive' : 'text-primary')
-
-  const orderStatusLabel = (status: string) => {
-    switch (status) {
-      case 'pending': return '待支付'
-      case 'paid': return '已完成'
-      case 'failed': return '失败'
-      default: return status ?? '未知'
-    }
-  }
-
-  const orderChannelLabel = (row: PaymentOrder) => {
-    if (row.pay_channel === 'shouqianba_wechat') return '收钱吧-微信'
-    if (row.pay_channel === 'shouqianba_alipay') return '收钱吧-支付宝'
-    if (row.pay_channel) return row.pay_channel
-    if (row.pay_flat === 1) return 'wechat'
-    if (row.pay_flat === 2) return 'alipay'
-    return 'epay'
-  }
+  const paymentEnabled = settings.epayEnabled || settings.payApplyEnabled || settings.shouqianbaEnabled
+  const selectedPlanInfo = selectedPlan >= 0 ? settings.plans?.[selectedPlan] : undefined
+  const planLabel = selectedPlanInfo
+    ? `${selectedPlanInfo.credits} 积分${selectedPlanInfo.bonus ? `（+${selectedPlanInfo.bonus}）` : ''}`
+    : amountNumber > 0 ? '自定义金额' : '未选择'
+  const payMethods = [
+    settings.wechatPayEnabled ? { value: 'wechat' as const, label: '微信支付' } : null,
+    settings.alipayEnabled ? { value: 'alipay' as const, label: '支付宝' } : null,
+  ].filter((item): item is { value: PayMethod; label: string } => Boolean(item))
 
   return (
     <>
-      <PageHeader
-        eyebrow="Billing"
-        title="我的订单"
-        description="管理您的积分余额、充值、以及查看流水账单。"
-      />
+      <PageHeader title='积分充值' description='充值或兑换积分，并查看余额流水与订单记录。' />
 
-      <Tabs value={defaultTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="mb-6">
-          <TabsTrigger value="recharge">积分充值</TabsTrigger>
-          <TabsTrigger value="transactions">余额流水</TabsTrigger>
-          <TabsTrigger value="orders">订单记录</TabsTrigger>
+      <Tabs value={tab} onValueChange={(value) => setSearchParams({ tab: value })} className='w-full gap-6'>
+        <TabsList variant='line' className='w-full justify-start'>
+          <TabsTrigger value='recharge'>积分充值</TabsTrigger>
+          <TabsTrigger value='transactions'>余额流水</TabsTrigger>
+          <TabsTrigger value='orders'>订单记录</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="recharge" className="space-y-6">
-          <div className="grid gap-6 md:grid-cols-2">
-            <PageSection
-              title="当前积分"
-              description="积分永不过期，随时可用"
-            >
-                <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-semibold tracking-tight tabular-nums">{formatCredits(balanceCredits)}</span>
-                  <span className="text-muted-foreground">积分</span>
+        <TabsContent value='recharge'>
+          <div className='grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_340px]'>
+            <aside className='order-2 flex min-w-0 flex-col lg:sticky lg:top-6 lg:order-none lg:col-start-2 lg:row-span-2 lg:row-start-1'>
+              <Card className='gap-0 py-0'>
+                <div className='flex flex-col gap-1 p-5'>
+                  <h2 className='text-[13px] font-normal text-muted-foreground'>当前积分</h2>
+                  <p className='flex items-baseline gap-1.5'>
+                    <span className='text-[32px] leading-10 font-semibold tracking-[-0.02em] text-foreground tabular-nums'>{formatCredits(balanceCredits)}</span>
+                    <span className='text-sm text-muted-foreground'>积分</span>
+                  </p>
+                  <p className='text-xs text-muted-foreground'>积分永不过期，随时可用</p>
                 </div>
-            </PageSection>
-
-            <PageSection title="账户信息">
-              <div className="space-y-4 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">用户名</span>
-                  <span className="font-medium">{user?.username || '—'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">分组</span>
-                  <span className="font-medium">{user?.group || '默认'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">邮箱</span>
-                  <span className="font-medium">{user?.email || '未绑定'}</span>
-                </div>
-              </div>
-            </PageSection>
-          </div>
-
-          {modelCredits.length > 0 ? (
-            <PageSection title="专属模型积分" description="仅可用于指定模型的专属积分，优先于通用积分消耗">
-                <div className="divide-y">
-                  {modelCredits.map((mc, i) => (
-                    <div key={mc.id ?? i} className="flex items-center justify-between py-2">
-                      <span className="font-mono text-sm">{mc.model_name}</span>
-                      <span className="font-medium">{formatCredits(mc.credits ?? 0)} 积分</span>
-                    </div>
-                  ))}
-                </div>
-            </PageSection>
-          ) : null}
-
-          <CardRedemptionSection purchaseUrl={settings.cardPurchaseUrl} onRedeemed={reloadBalance} />
-
-          {(settings.epayEnabled || settings.payApplyEnabled || settings.shouqianbaEnabled) && (
-            <PageSection title="选择充值套餐" description="选择套餐或输入自定义金额，确认优惠与实付金额后发起支付。">
-                <div className="grid gap-4 md:grid-cols-3">
-                  {settings.plans?.map((plan, i) => (
-                    <button
-                      type="button"
-                      key={i}
-                      onClick={() => {
-                        setSelectedPlan(i)
-                        setSelectedAmount(plan.amount)
+                <dl className='grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 border-t border-glass-border px-5 py-4 text-[13px]'>
+                  <dt className='text-muted-foreground'>用户名</dt>
+                  <dd className='truncate text-right font-medium'>{user?.username || '—'}</dd>
+                  <dt className='text-muted-foreground'>分组</dt>
+                  <dd className='truncate text-right font-medium'>{user?.group || '默认'}</dd>
+                  <dt className='text-muted-foreground'>邮箱</dt>
+                  <dd className='truncate text-right font-medium'>{user?.email || '未绑定'}</dd>
+                </dl>
+                {modelCredits.length > 0 ? (
+                  <div className='border-t border-glass-border px-5 pt-5 pb-5'>
+                    <Section title="专属模型积分" description='仅可用于指定模型，优先于通用积分消耗'>
+                      <ul className='flex flex-col divide-y divide-glass-border border-y border-glass-border'>
+                        {modelCredits.map((mc, i) => (
+                          <li key={mc.id ?? i} className='flex items-center justify-between gap-3 py-2 text-[13px]'>
+                            <span className='truncate font-mono text-xs'>{mc.model_name}</span>
+                            <span className='shrink-0 font-medium tabular-nums'>{formatCredits(mc.credits ?? 0)} 积分</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </Section>
+                  </div>
+                ) : null}
+                {paymentEnabled ? (
+                  <div className='border-t border-glass-border bg-glass-strong/60 p-5'>
+                    <PaySummary
+                      methods={payMethods}
+                      method={payMethod}
+                      onMethod={setPickedMethod}
+                      coupon={coupon}
+                      planLabel={planLabel}
+                      amount={amountNumber}
+                      payable={payable}
+                      paying={payment.paying}
+                      onPay={() => {
+                        // A code that was typed but not validated would be dropped silently and the full price charged, so it is refused here.
+                        const code = coupon.code.trim()
+                        if (code && !coupon.result) {
+                          toast.error('优惠券还没有验证：点「验证」使用它，或清空券码后再支付')
+                          return
+                        }
+                        void payment.pay({ selectedAmount, couponCode: coupon.result ? code : undefined })
                       }}
-                      aria-pressed={selectedPlan === i}
-                      className={cn(
-                        "relative rounded-xl border-2 p-4 text-left transition-all hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                        selectedPlan === i ? "border-primary bg-primary/5 shadow-md" : "border-border"
-                      )}
-                    >
-                      {selectedPlan === i && (
-                        <div className="absolute top-2 right-2 rounded-full bg-primary p-1 text-primary-foreground">
-                          <Check className="h-3 w-3" />
-                        </div>
-                      )}
-                      <div className="mb-2 font-semibold text-foreground">
-                        {plan.credits} 积分
-                        {plan.bonus ? <span className="text-xs text-primary"> (+{plan.bonus})</span> : ''}
-                      </div>
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-sm">￥</span>
-                        <span className="text-2xl font-bold">{plan.amount}</span>
-                        {plan.origin_amount && (
-                          <span className="text-xs text-muted-foreground line-through ml-2">￥{plan.origin_amount}</span>
-                        )}
-                      </div>
-                      {plan.desc && <div className="mt-2 text-xs text-muted-foreground">{plan.desc}</div>}
-                    </button>
-                  ))}
-                  {(!settings.plans?.length || settings.allowCustom) && (
-                    <div className="flex flex-col justify-center rounded-xl border-2 border-border p-4">
-                      <div className="mb-2 font-semibold">自定义金额</div>
-                      <div className="flex items-center gap-2">
-                        <span>￥</span>
-                        <Input
-                          type="number"
-                          value={selectedAmount}
-                          onChange={(e) => {
-                            setSelectedPlan(-1)
-                            setSelectedAmount(e.target.value ? Number(e.target.value) : '')
-                          }}
-                          min={1}
-                          max={10000}
-                          placeholder="请输入金额"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-8 flex flex-col items-center gap-6">
-                  <div className="flex gap-4">
-                    {settings.wechatPayEnabled && (
-                      <Button
-                        variant={payMethod === 'wechat' ? 'default' : 'outline'}
-                        className="h-11 w-32"
-                        onClick={() => setPayMethod('wechat')}
-                      >
-                        微信支付
-                      </Button>
-                    )}
-                    {settings.alipayEnabled && (
-                      <Button
-                        variant={payMethod === 'alipay' ? 'default' : 'outline'}
-                        className="h-11 w-32"
-                        onClick={() => setPayMethod('alipay')}
-                      >
-                        支付宝
-                      </Button>
-                    )}
+                    />
                   </div>
+                ) : null}
+              </Card>
+            </aside>
 
-                  {/* 优惠券 */}
-                  <div className="w-64 space-y-1">
-                    <div className="flex items-center gap-2">
-                      <Input
-                        placeholder="输入优惠券码"
-                        value={couponCode}
-                        onChange={(e) => { setCouponCode(e.target.value); setCouponResult(null); setCouponError('') }}
-                        onKeyDown={(e) => e.key === 'Enter' && validateCoupon()}
-                        className="h-9 text-sm"
+            <div className={cn('order-3 min-w-0 lg:order-none lg:col-start-1', paymentEnabled ? 'lg:row-start-2' : 'lg:row-start-1')}>
+              <CardRedemptionSection purchaseUrl={settings.cardPurchaseUrl} onRedeemed={reloadBalance} />
+            </div>
+
+            {paymentEnabled ? (
+              <Section
+                title="选择充值套餐" panel
+                description='选择套餐或输入自定义金额，在右侧确认实付金额后发起支付。'
+                className='order-1 min-w-0 lg:order-none lg:col-start-1 lg:row-start-1'
+              >
+                {settings.plans?.length ? (
+                  <div role='group' aria-label='充值套餐' className='flex flex-col divide-y divide-glass-border'>
+                    {settings.plans.map((plan, i) => (
+                      <PlanOption
+                        key={i}
+                        credits={plan.credits}
+                        bonus={plan.bonus}
+                        amount={plan.amount}
+                        originAmount={plan.origin_amount}
+                        desc={plan.desc}
+                        active={selectedPlan === i}
+                        onSelect={() => choosePlan(i, plan.amount)}
                       />
-                      <Button size="sm" variant="outline" onClick={validateCoupon} disabled={couponValidating || !couponCode.trim()}>
-                        {couponValidating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : '验证'}
-                      </Button>
-                    </div>
-                    {couponError && <p className="text-xs text-destructive">{couponError}</p>}
-                    {couponResult && (
-                      <p className="text-xs font-medium text-primary">
-                        优惠 ¥{couponResult.discount_yuan.toFixed(2)}，实付 ¥{couponResult.final_amount.toFixed(2)}
-                      </p>
-                    )}
+                    ))}
                   </div>
-
-                  <Button size="lg" className="w-64 text-base" onClick={handlePay} disabled={isPaying || !selectedAmount}>
-                    {isPaying && <Loader2 className="mr-2 h-5 w-5 animate-spin" />}
-                    立即支付 ￥{couponResult ? couponResult.final_amount.toFixed(2) : (Number(selectedAmount) || 0).toFixed(2)}
-                  </Button>
-                </div>
-            </PageSection>
-          )}
+                ) : null}
+                {!settings.plans?.length || settings.allowCustom ? (
+                  <div className='flex flex-col gap-2 pt-4 sm:flex-row sm:items-center sm:justify-between'>
+                    <div className='flex flex-col'>
+                      <Label htmlFor='recharge-custom-amount' className='text-sm'>自定义金额</Label>
+                      <span className='text-xs text-muted-foreground'>输入后将取消已选套餐</span>
+                    </div>
+                    <div className='relative w-full sm:w-56'>
+                      <span aria-hidden className='pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm text-muted-foreground'>¥</span>
+                      <Input
+                        id='recharge-custom-amount'
+                        type='number'
+                        className='pl-7 tabular-nums'
+                        value={selectedPlan === -1 ? selectedAmount : ''}
+                        onChange={(event) => typeAmount(event.target.value)}
+                        min={1}
+                        max={10000}
+                        placeholder='请输入金额'
+                      />
+                    </div>
+                  </div>
+                ) : null}
+              </Section>
+            ) : null}
+          </div>
         </TabsContent>
 
-        <TabsContent value="transactions" className="space-y-4">
-          <FilterBar
-            filters={
-              <>
-                <Input
-                  placeholder="按任务 ID 查询"
-                  value={txTaskIdFilter}
-                  onChange={(e) => setTxTaskIdFilter(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && setTxPage(1)}
-                />
-                <Input
-                  placeholder="按 Corr ID 查询"
-                  value={txCorrIdFilter}
-                  onChange={(e) => setTxCorrIdFilter(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && setTxPage(1)}
-                />
-                <NativeSelect value={txApiKeyFilter} onChange={(e) => { setTxApiKeyFilter(e.target.value); setTxPage(1) }}>
-                  <option value="">全部 API Key</option>
-                  {apiKeys.map((key) => <option key={key.id} value={key.id}>{key.name || `Key #${key.id}`}</option>)}
-                </NativeSelect>
-              </>
-            }
-            actions={
-              <>
-                <Button onClick={() => setTxPage(1)}>查询</Button>
-                <Button variant="outline" size="icon" aria-label="刷新流水" onClick={() => txReload()}><RefreshCcw className="h-4 w-4" /></Button>
-              </>
-            }
-          />
-          <PageSection title="流水明细" description="展示积分收入、扣费及操作后的余额。">
-            <div className="overflow-x-auto">
-            <Table className="min-w-[760px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>类型</TableHead>
-                  <TableHead>积分变动</TableHead>
-                  <TableHead>操作后余额</TableHead>
-                  <TableHead>关联任务</TableHead>
-                  <TableHead>时间</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {!txData?.items?.length ? (
-                  <TableRow><TableCell colSpan={5} className="text-center py-6 text-muted-foreground">暂无流水记录</TableCell></TableRow>
-                ) : (
-                  txData.items.map((row: any) => (
-                    <TableRow key={row.id}>
-                      <TableCell>
-                        <div className="flex flex-wrap items-center gap-1">
-                          <Badge variant="outline">{txTypeLabel(row.type)}</Badge>
-                          {(row.model_credit_charged > 0) && (
-                            <Badge variant="secondary" className="text-xs">专属积分</Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className={cn("font-medium", txAmtColor(row.type))}>
-                        {txSign(row.type)} {formatCredits(Math.abs(row.credits || row.amount || 0))} 积分
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {row.balance_after != null ? `${formatCredits(row.balance_after)} 积分` : '—'}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
-                        {row.metrics?.task_id ? `#${row.metrics.task_id}` : '—'}
-                      </TableCell>
-                      <TableCell>{row.created_at}</TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-            </div>
-            {txData?.total > 0 && (
-              <div className="border-t pt-4">
-                <TablePagination current={txPage} total={txData.total} pageSize={20} onChange={setTxPage} className="py-0" />
-              </div>
-            )}
-          </PageSection>
+        <TabsContent value='transactions'>
+          <TransactionsPanel />
         </TabsContent>
 
-        <TabsContent value="orders">
-          <PageSection title="订单记录" description="查看充值金额、到账积分、支付渠道和订单状态。">
-            <div className="overflow-x-auto">
-            <Table className="min-w-[820px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>订单号</TableHead>
-                  <TableHead>充值金额</TableHead>
-                  <TableHead>到账积分</TableHead>
-                  <TableHead>渠道</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead>支付时间</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {!orderData?.items?.length ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground">暂无订单记录</TableCell></TableRow>
-                ) : (
-                  orderData.items.map((row: PaymentOrder) => (
-                    <TableRow key={row.id}>
-                      <TableCell className="font-mono text-xs">{row.out_trade_no}</TableCell>
-                      <TableCell className="font-semibold tabular-nums">￥{row.amount.toFixed(2)}</TableCell>
-                      <TableCell className="font-semibold text-primary">
-                        {row.credits ? `+${formatCredits(row.credits)} 积分` : '—'}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{orderChannelLabel(row)}</TableCell>
-                      <TableCell>
-                        <Badge variant={row.status === 'paid' ? 'default' : 'secondary'}>{orderStatusLabel(row.status)}</Badge>
-                      </TableCell>
-                      <TableCell>{row.paid_at || row.created_at}</TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-            </div>
-            {orderData?.total > 0 && (
-              <div className="border-t pt-4">
-                <TablePagination current={orderPage} total={orderData.total} pageSize={20} onChange={setOrderPage} className="py-0" />
-              </div>
-            )}
-          </PageSection>
+        <TabsContent value='orders'>
+          <OrdersPanel />
         </TabsContent>
       </Tabs>
 
-      <Dialog open={showPayFrame} onOpenChange={handlePayDialogOpenChange}>
-        <DialogContent className="w-[min(calc(100vw-2rem),420px)] max-w-none gap-0 overflow-hidden p-0">
-          <DialogHeader className="px-5 pb-3 pt-5 pr-12">
-            <DialogTitle>扫描二维码支付</DialogTitle>
-            <DialogDescription className="leading-6">
-              请使用 {payMethod === 'wechat' ? '微信' : '支付宝'} 扫码完成支付，支付成功后系统将自动到账。
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col items-center justify-center px-5 pb-5 pt-2">
-            {payUrl ? (
-              <>
-                <div className="flex aspect-square w-full max-w-60 items-center justify-center rounded-xl border bg-background p-3">
-                  <canvas ref={qrCanvasRef} className="max-h-full max-w-full" />
-                </div>
-                {qrError ? (
-                  <div className="mt-3 text-xs text-destructive">{qrError}</div>
-                ) : null}
-              </>
-            ) : (
-              <div className="py-8 text-center text-muted-foreground">
-                <Wallet className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                即将跳转到支付网关...
-              </div>
-            )}
-            <div className="mt-6 text-sm text-center">
-              长按保存或截图扫码
-              <br />
-              <span className="text-muted-foreground text-xs mt-2 inline-block break-all">单号: {currentOutTradeNo}</span>
-            </div>
-
-            {payUrl ? (
-              <Button
-                variant="link"
-                size="sm"
-                className="mt-2 h-auto max-w-full whitespace-normal px-0 text-center"
-                onClick={() => window.open(payUrl, '_blank', 'noopener,noreferrer')}
-              >
-                在新窗口中打开支付页 →
-              </Button>
-            ) : null}
-
-            <div className="mt-6 grid w-full grid-cols-2 gap-3">
-              <Button variant="outline" className="min-w-0 w-full" onClick={() => handlePayDialogOpenChange(false)}>取消支付</Button>
-              <Button className="w-full" onClick={() => {
-                handlePayDialogOpenChange(false);
-                txReload();
-                orderReload();
-                reloadBalance();
-              }}>我已支付</Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <PayDialog
+        open={payment.frameOpen}
+        onOpenChange={payment.onFrameOpenChange}
+        payUrl={payment.payUrl}
+        outTradeNo={payment.outTradeNo}
+        payable={payable}
+        methodLabel={payMethod === 'wechat' ? '微信' : '支付宝'}
+        onClaimPaid={() => {
+          payment.onFrameOpenChange(false)
+          reloadBalance()
+        }}
+      />
     </>
   )
 }

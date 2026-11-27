@@ -272,15 +272,15 @@ export function AdminOfficialPricesTab() {
   return (
     <div className="min-w-0">
       <div className="grid gap-px border-b bg-border sm:grid-cols-3">
-        <div className="min-w-0 bg-background px-4 py-3">
+        <div className="min-w-0 bg-glass-strong/50 px-4 py-3">
           <div className="text-xs text-muted-foreground">USD/CNY</div>
           <div className="mt-1 font-mono text-base font-medium">{data.exchangeRate.available ? data.exchangeRate.value : '不可用'}</div>
         </div>
-        <div className="min-w-0 bg-background px-4 py-3">
+        <div className="min-w-0 bg-glass-strong/50 px-4 py-3">
           <div className="text-xs text-muted-foreground">来源 / 日期</div>
           <div className="mt-1 truncate text-sm font-medium">{rateSource(data.exchangeRate)} · {data.exchangeRate.date || '-'}</div>
         </div>
-        <div className="min-w-0 bg-background px-4 py-3">
+        <div className="min-w-0 bg-glass-strong/50 px-4 py-3">
           <div className="text-xs text-muted-foreground">最近同步</div>
           <div className="mt-1 truncate text-sm font-medium">{formatTime(data.exchangeRate.synced_at)}</div>
           {data.exchangeRate.last_error ? <div className="mt-1 truncate text-xs text-destructive" title={data.exchangeRate.last_error}>{data.exchangeRate.last_error}</div> : null}

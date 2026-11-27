@@ -15,13 +15,15 @@ export function TableEmpty({
   Icon?: ComponentType<{ className?: string }>
 }) {
   return (
-    <TableRow>
-      <TableCell colSpan={cols} className="py-12">
-        <div className="flex flex-col items-center justify-center gap-2 text-center">
-          <Icon className="size-10 text-muted-foreground/40" />
+    <TableRow className="hover:bg-transparent">
+      <TableCell colSpan={cols} className="py-14">
+        <div className="sticky left-0 flex w-[min(100%,calc(100vw-4rem))] flex-col items-center justify-center gap-2 text-center whitespace-normal">
+          <span className="mb-1 flex size-10 items-center justify-center rounded-full bg-glass-strong">
+            <Icon className="size-5 text-muted-foreground" />
+          </span>
           <p className="text-sm font-medium text-foreground">{title}</p>
           {description ? (
-            <p className="max-w-sm text-xs text-muted-foreground">{description}</p>
+            <p className="max-w-sm text-[13px] leading-5 text-muted-foreground">{description}</p>
           ) : null}
         </div>
       </TableCell>

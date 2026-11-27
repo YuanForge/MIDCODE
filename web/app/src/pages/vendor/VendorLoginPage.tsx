@@ -2,8 +2,9 @@ import type { FormEvent } from 'react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
+import { AuthField, AuthPanel } from '@/components/shared/AuthPanel'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { createHttpClient, getApiErrorMessage } from '@/lib/api/http'
 import { setRoleToken, setSiteModePreference } from '@/lib/auth/storage'
@@ -34,24 +35,46 @@ export function VendorLoginPage() {
   }
 
   return (
-    <Card className="w-full max-w-xl border-border/70 bg-card/92 shadow-lg">
-      <CardHeader>
-        <CardTitle>登录 Vendor 端</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-          <Input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="用户名" />
-          <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="密码" />
-          {error ? <div className="text-sm text-destructive">{error}</div> : null}
-          <Button className="w-full" type="submit">进入 Vendor 端</Button>
-          <p className="text-center text-sm text-muted-foreground">
-            还没有账号？{' '}
-            <Link to="/vendor/register" className="text-primary hover:underline">
-              立即注册
-            </Link>
-          </p>
-        </form>
-      </CardContent>
-    </Card>
+    <AuthPanel
+      title='登录 Vendor 端'
+      footer={
+        <>
+          <span>还没有账号？</span>
+          <Link to='/vendor/register' className='font-medium text-brand underline-offset-4 hover:underline'>
+            立即注册
+          </Link>
+        </>
+      }
+    >
+      <form className='flex flex-col gap-5' onSubmit={handleSubmit}>
+        <AuthField label='用户名' htmlFor='vendor-login-username'>
+          <Input
+            id='vendor-login-username'
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            placeholder='用户名'
+            autoComplete='username'
+          />
+        </AuthField>
+        <AuthField label='密码' htmlFor='vendor-login-password'>
+          <Input
+            id='vendor-login-password'
+            type='password'
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder='密码'
+            autoComplete='current-password'
+          />
+        </AuthField>
+        {error ? (
+          <Alert variant='destructive'>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : null}
+        <Button className='w-full' size='lg' type='submit'>
+          进入 Vendor 端
+        </Button>
+      </form>
+    </AuthPanel>
   )
 }

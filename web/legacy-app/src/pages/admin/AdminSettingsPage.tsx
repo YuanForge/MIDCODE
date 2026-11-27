@@ -1,0 +1,944 @@
+import { lazy, Suspense, useRef, useState } from 'react'
+import { PlusIcon, SaveIcon, Trash2Icon, UploadIcon } from 'lucide-react'
+import { toast } from 'sonner'
+
+import { PageHeader } from '@/components/shared/PageHeader'
+import { TableSkeleton } from '@/components/shared/TableSkeleton'
+import { isThemeColorValueValid, ThemeColorField } from '@/components/shared/ThemeColorField'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
+import { adminApi, type AdminAuditLog } from '@/lib/api/admin'
+import { useAsync } from '@/hooks/use-async'
+import { useSiteSettings } from '@/hooks/use-site-settings'
+import { sanitizeHtml } from '@/lib/sanitize-html'
+
+const AdminOfficialPricesTab = lazy(() => import('./AdminOfficialPricesTab').then((module) => ({ default: module.AdminOfficialPricesTab })))
+
+type SettingsMap = Record<string, string>
+type PlanRow = { credits: number; bonus: number; amount: number; origin_amount: number; desc: string }
+type ProxyRule = { from: string; to: string }
+
+const compactTextareaClass = '[field-sizing:fixed] max-h-36 min-h-24 resize-y overflow-auto'
+const codeTextareaClass = `${compactTextareaClass} font-mono text-xs`
+const largeMarkdownTextareaClass = '[field-sizing:fixed] h-64 max-h-80 min-h-40 resize-y overflow-auto font-mono text-xs'
+
+function totalPlanCredits(plan: PlanRow) {
+  return Number(plan.credits || 0) + Number(plan.bonus || 0)
+}
+
+function planDiscountLabel(plan: PlanRow) {
+  const originAmount = Number(plan.origin_amount || 0)
+  const amount = Number(plan.amount || 0)
+  if (originAmount <= 0 || originAmount <= amount) return '—'
+  return `${(((originAmount - amount) / originAmount) * 100).toFixed(1)}%`
+}
+
+function Tip({ children }: { children: React.ReactNode }) {
+  return <p className="mt-1 text-xs text-muted-foreground leading-relaxed">{children}</p>
+}
+
+function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="grid grid-cols-[200px_1fr] items-start gap-4 py-3">
+      <label className="pt-2 text-sm font-medium text-right">{label}</label>
+      <div>{children}</div>
+    </div>
+  )
+}
+
+function ToggleField({ checked, onChange, children }: { checked: boolean; onChange: (v: boolean) => void; children?: React.ReactNode }) {
+  return (
+    <div>
+      <label className="flex cursor-pointer items-center gap-2">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          className="h-4 w-4 rounded border-border"
+        />
+        <span className="text-sm">{checked ? '已开启' : '已关闭'}</span>
+      </label>
+      {children}
+    </div>
+  )
+}
+
+function SettingLogsTab() {
+  const { data, loading } = useAsync(async () => {
+    const res = await adminApi.listSettingLogs()
+    return (res.logs ?? []) as AdminAuditLog[]
+  }, [] as AdminAuditLog[], [])
+
+  return (
+    <div className="mt-4">
+      <p className="mb-3 text-sm text-muted-foreground">系统设置每次变更都会自动记录，只读不可删除。</p>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-40">时间</TableHead>
+            <TableHead>操作人</TableHead>
+            <TableHead className="w-36">变更项</TableHead>
+            <TableHead>前值</TableHead>
+            <TableHead>后值</TableHead>
+          </TableRow>
+        </TableHeader>
+        {loading ? <TableSkeleton cols={5} /> : (
+          <TableBody>
+            {data.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">暂无操作日志</TableCell>
+              </TableRow>
+            ) : data.map((log, i) => (
+              <TableRow key={log.id ?? i}>
+                <TableCell className="text-sm text-muted-foreground">
+                  {log.created_at ? new Date(log.created_at).toLocaleString('zh-CN') : '-'}
+                </TableCell>
+                <TableCell className="text-sm">{log.admin_email || `#${log.admin_id}`}</TableCell>
+                <TableCell className="font-mono text-xs">{log.resource_type || log.action}</TableCell>
+                <TableCell className="max-w-xs truncate font-mono text-xs text-muted-foreground" title={log.summary}>
+                  {(log.detail as Record<string, unknown> | undefined)?.old_val as string ?? log.summary ?? '-'}
+                </TableCell>
+                <TableCell className="max-w-xs truncate font-mono text-xs" title={log.summary}>
+                  {(log.detail as Record<string, unknown> | undefined)?.new_val as string ?? '-'}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        )}
+      </Table>
+    </div>
+  )
+}
+
+export function AdminSettingsPage() {
+  const { updateThemeColor } = useSiteSettings()
+  const { data: rawSettings, loading, error: loadError } = useAsync(async () => {
+    const res = await adminApi.getSettings()
+    const s = (res as { settings?: SettingsMap }).settings ?? (res as SettingsMap)
+    return s as SettingsMap
+  }, {} as SettingsMap)
+
+  // Form state
+  const [form, setForm] = useState<SettingsMap>({})
+  const [formReady, setFormReady] = useState(false)
+  const [planRows, setPlanRows] = useState<PlanRow[]>([])
+  const [proxyRules, setProxyRules] = useState<ProxyRule[]>([])
+  const [allowCustom, setAllowCustom] = useState(true)
+  const [rebatePercent, setRebatePercent] = useState('')
+  const [vendorCommPercent, setVendorCommPercent] = useState('')
+
+  // Sync from loaded data once
+  if (!loading && !formReady && Object.keys(rawSettings).length > 0) {
+    setForm({ ...rawSettings })
+    setAllowCustom(rawSettings.recharge_allow_custom !== 'false')
+    setRebatePercent(String(parseFloat((parseFloat(rawSettings.default_rebate_ratio || '0') * 100).toFixed(2)) || ''))
+    setVendorCommPercent(String(parseFloat((parseFloat(rawSettings.default_vendor_commission || '0') * 100).toFixed(2)) || ''))
+    try { setPlanRows(JSON.parse(rawSettings.recharge_plans || '[]')) } catch { setPlanRows([]) }
+    // 加载多条代理规则；兼容旧单对
+    try {
+      const parsed: ProxyRule[] = JSON.parse(rawSettings.result_url_proxy_rules || '[]')
+      if (parsed.length > 0) {
+        setProxyRules(parsed)
+      } else if (rawSettings.result_url_proxy_from) {
+        setProxyRules([{ from: rawSettings.result_url_proxy_from, to: rawSettings.result_url_proxy_to ?? '' }])
+      }
+    } catch {
+      if (rawSettings.result_url_proxy_from) {
+        setProxyRules([{ from: rawSettings.result_url_proxy_from, to: rawSettings.result_url_proxy_to ?? '' }])
+      }
+    }
+    setFormReady(true)
+  }
+
+  const [mutError, setMutError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [uploadingLogo, setUploadingLogo] = useState(false)
+  const error = loadError || mutError
+
+  const logoRef = useRef<HTMLInputElement>(null)
+  const qrRef = useRef<HTMLInputElement>(null)
+  const qqRef = useRef<HTMLInputElement>(null)
+  const wechatRef = useRef<HTMLInputElement>(null)
+
+  function set(key: string, value: string) {
+    setForm((prev) => ({ ...prev, [key]: value }))
+  }
+
+  async function uploadSettingImage(key: 'logo_url' | 'qq_group_url' | 'wechat_cs_url' | 'qrcode_url', file: File | undefined) {
+    if (!file) {
+      return
+    }
+    setMutError('')
+    try {
+      const response = await adminApi.uploadImage(file, 'site-setting')
+      const url = response.url ?? ''
+      if (!url) {
+        throw new Error('上传失败，未返回图片地址')
+      }
+      set(key, url)
+      toast.success('图片上传成功')
+    } catch (err) {
+      const { getApiErrorMessage } = await import('@/lib/api/http')
+      const msg = getApiErrorMessage(err)
+      setMutError(msg)
+      toast.error(msg)
+    }
+  }
+
+  async function uploadLogoImage(file: File | undefined) {
+    if (!file) {
+      return
+    }
+    setUploadingLogo(true)
+    try {
+      await uploadSettingImage('logo_url', file)
+    } finally {
+      setUploadingLogo(false)
+    }
+  }
+
+  function addPlan() {
+    setPlanRows((p) => [...p, { credits: 100, bonus: 0, amount: 10, origin_amount: 0, desc: '' }])
+  }
+  function removePlan(i: number) {
+    setPlanRows((p) => p.filter((_, idx) => idx !== i))
+  }
+  function updatePlan<K extends keyof PlanRow>(i: number, key: K, value: PlanRow[K]) {
+    setPlanRows((p) => p.map((row, idx) => idx === i ? { ...row, [key]: value } : row))
+  }
+
+  const epayEnabled = form.epay_enabled === 'true'
+  const payApplyEnabled = form.pay_apply_enabled === 'true'
+  const shouqianbaEnabled = form.shouqianba_enabled === 'true'
+  const themeColorValid = isThemeColorValueValid(form.theme_color ?? '')
+  const payApplyNotifyUrl = `${window.location.origin.replace(':3001', '')}/pay/apply/notify`
+  const shouqianbaNotifyUrl = `${window.location.origin.replace(':3001', '')}/pay/shouqianba/notify`
+
+  async function save() {
+    if (!themeColorValid) return
+    setSaving(true)
+    setMutError('')
+    try {
+      const payload: SettingsMap = {
+        ...form,
+        recharge_allow_custom: allowCustom ? 'true' : 'false',
+        recharge_plans: JSON.stringify(planRows),
+        default_rebate_ratio: (parseFloat(rebatePercent || '0') / 100).toFixed(4),
+        default_vendor_commission: (parseFloat(vendorCommPercent || '0') / 100).toFixed(4),
+        result_url_proxy_rules: JSON.stringify(proxyRules.filter(r => r.from.trim() && r.to.trim())),
+      }
+      delete payload.pay_apply_notify_url
+      delete payload.result_url_proxy_from
+      delete payload.result_url_proxy_to
+      for (const key of Object.keys(payload)) {
+        if (key.startsWith('usd_cny_exchange_rate')) delete payload[key]
+      }
+      await adminApi.updateSettings(payload)
+      updateThemeColor(form.theme_color ?? '')
+      toast.success('系统设置已保存')
+    } catch (err) {
+      const { getApiErrorMessage } = await import('@/lib/api/http')
+      setMutError(getApiErrorMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <>
+      <PageHeader
+        eyebrow="Configuration"
+        title="系统设置"
+        description="配置平台基本信息、支付、公告及充值套餐等全局参数。"
+        actions={
+          <Button onClick={save} disabled={saving || loading || !themeColorValid}>
+            <SaveIcon data-icon="inline-start" />
+            {saving ? '保存中...' : '保存设置'}
+          </Button>
+        }
+      />
+      {error ? (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      <Card>
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="space-y-4 p-6">
+              <Skeleton className="h-10 w-full" />
+              <div className="grid gap-3">
+                <Skeleton className="h-9 w-1/3" />
+                <Skeleton className="h-24 w-full" />
+                <Skeleton className="h-9 w-1/2" />
+                <Skeleton className="h-24 w-full" />
+              </div>
+            </div>
+          ) : (
+            <Tabs defaultValue="basic">
+              <div className="w-full overflow-x-auto border-b">
+                <TabsList className="min-w-max rounded-none bg-transparent justify-start gap-0 p-0">
+                  {(['basic', 'appearance', 'payment', 'notice', 'plans', 'rebate', 'vendor', 'withdraw', 'alert', 'official-prices', 'logs'] as const).map((tab) => (
+                  <TabsTrigger
+                    key={tab}
+                    value={tab}
+                    className="shrink-0 rounded-none border-b-2 border-transparent px-4 py-3 text-sm data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+                  >
+                    {{ basic: '基本设置', appearance: '页眉&页脚', payment: '支付设置', notice: '公告&联系', plans: '充值套餐', rebate: '邀请返佣', vendor: '号商设置', withdraw: '提现限额', alert: '告警设置', 'official-prices': '官方价', logs: '操作日志' }[tab]}
+                  </TabsTrigger>
+                ))}
+                </TabsList>
+              </div>
+
+              {/* 基本设置 */}
+              <TabsContent value="basic" className="px-6 pb-6">
+                <div className="max-w-2xl divide-y">
+                  <FieldRow label="站点名称">
+                    <Input value={form.site_name ?? ''} onChange={(e) => set('site_name', e.target.value)} placeholder="例如：MidCode" />
+                    <Tip>显示在浏览器标题栏和页面 Logo 旁；如果 env.js 配置了 site_name，则前台展示会优先使用 env.js</Tip>
+                  </FieldRow>
+                  <FieldRow label="主题颜色">
+                    <ThemeColorField value={form.theme_color ?? ''} onChange={(value) => set('theme_color', value)} />
+                  </FieldRow>
+                  <FieldRow label="SEO 标题">
+                    <Input value={form.seo_title ?? ''} onChange={(e) => set('seo_title', e.target.value)} placeholder="留空则使用站点名称" />
+                    <Tip>用于浏览器标题和搜索引擎标题。</Tip>
+                  </FieldRow>
+                  <FieldRow label="SEO 描述">
+                    <Textarea value={form.seo_description ?? ''} onChange={(e) => set('seo_description', e.target.value)} rows={3} className={compactTextareaClass} placeholder="描述本站提供的模型与 API 服务" />
+                    <Tip>用于页面 description 元标签，按纯文本保存。</Tip>
+                  </FieldRow>
+                  <FieldRow label="Logo 图片">
+                    <div className="flex gap-2">
+                      <Input value={form.logo_url ?? ''} onChange={(e) => set('logo_url', e.target.value)} placeholder="https://example.com/logo.png（留空则显示文字）" className="flex-1" />
+                      <Button type="button" variant="outline" size="sm" onClick={() => logoRef.current?.click()} disabled={uploadingLogo}>
+                        <UploadIcon data-icon="inline-start" />
+                        {uploadingLogo ? '上传中...' : '上传'}
+                      </Button>
+                    </div>
+                    <input ref={logoRef} type="file" accept="image/*" className="hidden" onChange={(e) => { void uploadLogoImage(e.target.files?.[0]); e.target.value = '' }} />
+                    <Tip>支持手填 URL 或本地上传 PNG / SVG，建议尺寸 32×32 或 64×64；如果 env.js 配置了 logo_url，则前台展示会优先使用 env.js</Tip>
+                  </FieldRow>
+                  {form.logo_url ? (
+                    <FieldRow label="Logo 预览">
+                      <div className="flex h-20 w-20 items-center justify-center rounded-xl border bg-muted/30 overflow-hidden p-1">
+                        <img src={form.logo_url} alt="Logo" className="max-h-full max-w-full object-contain" />
+                      </div>
+                    </FieldRow>
+                  ) : null}
+                  <FieldRow label="任务结果 URL 反代规则">
+                    <div className="space-y-2">
+                      {proxyRules.length > 0 && (
+                        <div className="rounded-lg border overflow-hidden">
+                          <table className="w-full text-sm">
+                            <thead className="bg-muted/30">
+                              <tr className="border-b">
+                                <th className="px-3 py-2 text-left font-medium">上游前缀（from）</th>
+                                <th className="px-3 py-2 text-left font-medium">替换为（to）</th>
+                                <th className="px-3 py-2 w-10"></th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y">
+                              {proxyRules.map((rule, i) => (
+                                <tr key={i}>
+                                  <td className="px-2 py-1.5">
+                                    <Input
+                                      value={rule.from}
+                                      onChange={(e) => setProxyRules(p => p.map((r, idx) => idx === i ? { ...r, from: e.target.value } : r))}
+                                      placeholder="https://upload.apimart.ai"
+                                      className="h-8 font-mono text-xs"
+                                    />
+                                  </td>
+                                  <td className="px-2 py-1.5">
+                                    <Input
+                                      value={rule.to}
+                                      onChange={(e) => setProxyRules(p => p.map((r, idx) => idx === i ? { ...r, to: e.target.value } : r))}
+                                      placeholder="https://api.example.com/apimart"
+                                      className="h-8 font-mono text-xs"
+                                    />
+                                  </td>
+                                  <td className="px-2 py-1.5">
+                                    <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:text-red-600" onClick={() => setProxyRules(p => p.filter((_, idx) => idx !== i))}>
+                                      <Trash2Icon className="h-4 w-4" />
+                                    </Button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                      <Button type="button" variant="outline" size="sm" onClick={() => setProxyRules(p => [...p, { from: '', to: '' }])}>
+                        <PlusIcon className="mr-1 h-4 w-4" />
+                        添加规则
+                      </Button>
+                    </div>
+                    <Tip>配置多个上游资源域名→反代前缀的替换规则，用户端和管理端任务结果统一生效。留空则不替换。</Tip>
+                  </FieldRow>
+                  <FieldRow label="用户协议地址">
+                    <Input
+                      type="url"
+                      value={form.user_agreement_url ?? ''}
+                      onChange={(e) => set('user_agreement_url', e.target.value)}
+                      placeholder="https://example.com/terms"
+                    />
+                    <Tip>登录页的「用户协议」外链地址；若下方填写了本地协议内容，登录页将优先弹窗展示本地内容。</Tip>
+                  </FieldRow>
+                  <FieldRow label="本地用户协议内容">
+                    <Textarea
+                      value={form.user_agreement_content ?? ''}
+                      onChange={(e) => set('user_agreement_content', e.target.value)}
+                      rows={10}
+                      className={largeMarkdownTextareaClass}
+                      placeholder={`# 用户协议\n\n在这里编辑登录页展示的用户协议内容，支持 Markdown。`}
+                    />
+                    <Tip>支持 Markdown；留空时登录页使用上方协议地址，若两者都为空则仅显示确认文字。</Tip>
+                  </FieldRow>
+                  <FieldRow label="显示低价密钥类型">
+                    <ToggleField
+                      checked={form.show_low_price_key !== 'false'}
+                      onChange={(v) => set('show_low_price_key', v ? 'true' : 'false')}
+                    >
+                      <Tip>关闭后，用户创建 API 密钥时将不显示「低价密钥」选项</Tip>
+                    </ToggleField>
+                  </FieldRow>
+                </div>
+              </TabsContent>
+
+              {/* 页眉&页脚 */}
+              <TabsContent value="appearance" className="px-6 pb-6">
+                <Alert className="mb-4 mt-2 border-amber-200 bg-amber-50 text-amber-800">
+                  <AlertDescription>
+                    安全提示：页眉/页脚内容直接通过 <code>dangerouslySetInnerHTML</code> 渲染，请勿插入不可信的第三方脚本，避免 XSS 风险。
+                  </AlertDescription>
+                </Alert>
+                <div className="max-w-2xl divide-y">
+                  <FieldRow label="页眉 HTML">
+                    <Textarea
+                      value={form.header_html ?? ''}
+                      onChange={(e) => set('header_html', e.target.value)}
+                      rows={6}
+                      className={codeTextareaClass}
+                      placeholder='<div style="text-align:center;padding:8px;background:#1677ff;color:#fff">公告：系统维护中</div>'
+                    />
+                    <Tip>留空则不显示页眉；支持 HTML 和内联样式</Tip>
+                  </FieldRow>
+                  <FieldRow label="页脚 HTML">
+                    <Textarea
+                      value={form.footer_html ?? ''}
+                      onChange={(e) => set('footer_html', e.target.value)}
+                      rows={6}
+                      className={codeTextareaClass}
+                      placeholder='<div style="text-align:center;padding:16px;color:#888">© 2025 MidCode</div>'
+                    />
+                    <Tip>留空则不显示页脚；支持 HTML 和内联样式</Tip>
+                  </FieldRow>
+                  {(form.header_html || form.footer_html) ? (
+                    <FieldRow label="预览">
+                      <div className="rounded-lg border overflow-hidden">
+                        <div className="bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground">页眉预览</div>
+                        <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(form.header_html || '<span style="color:#aaa">（空）</span>') }} />
+                        <Separator />
+                        <div className="bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground">页脚预览</div>
+                        <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(form.footer_html || '<span style="color:#aaa">（空）</span>') }} />
+                      </div>
+                    </FieldRow>
+                  ) : null}
+                </div>
+              </TabsContent>
+
+              {/* 支付设置 */}
+              <TabsContent value="payment" className="px-6 pb-6">
+                <div className="max-w-2xl divide-y">
+                  <FieldRow label="发卡网地址">
+                    <Input value={form.card_purchase_url ?? ''} onChange={(e) => set('card_purchase_url', e.target.value)} placeholder="https://card.example.com" />
+                    <Tip>填写后用户端「积分充值」会显示购买卡密入口；留空则不显示。</Tip>
+                  </FieldRow>
+                  <FieldRow label="启用易支付">
+                    <ToggleField
+                      checked={epayEnabled}
+                      onChange={(v) => {
+                        set('epay_enabled', v ? 'true' : 'false')
+                        if (v) {
+                          set('pay_apply_enabled', 'false')
+                          set('shouqianba_enabled', 'false')
+                        }
+                      }}
+                    >
+                      <Tip>开启后用户可以通过易支付（支付宝/微信）充值余额</Tip>
+                    </ToggleField>
+                  </FieldRow>
+                  {epayEnabled ? (
+                    <>
+                      <FieldRow label="易支付地址">
+                        <Input value={form.epay_url ?? ''} onChange={(e) => set('epay_url', e.target.value)} placeholder="https://your-epay.com" />
+                        <Tip>易支付平台的域名（不含末尾斜杠）</Tip>
+                      </FieldRow>
+                      <FieldRow label="商户 PID">
+                        <Input value={form.epay_pid ?? ''} onChange={(e) => set('epay_pid', e.target.value)} placeholder="您的易支付商户 PID" />
+                      </FieldRow>
+                      <FieldRow label="商户密钥">
+                        <Input type="password" value={form.epay_key ?? ''} onChange={(e) => set('epay_key', e.target.value)} placeholder="您的易支付商户密钥" />
+                      </FieldRow>
+                      <FieldRow label="异步通知地址">
+                        <Input value={form.epay_notify_url ?? ''} onChange={(e) => set('epay_notify_url', e.target.value)} placeholder="https://api.yoursite.com/pay/epay/callback" />
+                        <Tip>易支付回调到本系统的地址，必须可从公网访问</Tip>
+                      </FieldRow>
+                      <FieldRow label="同步跳转地址">
+                        <Input value={form.epay_return_url ?? ''} onChange={(e) => set('epay_return_url', e.target.value)} placeholder="https://yoursite.com/billing" />
+                        <Tip>用户支付成功后跳回的前端页面地址</Tip>
+                      </FieldRow>
+                    </>
+                  ) : null}
+                  <FieldRow label="">
+                    <Separator className="my-2" />
+                  </FieldRow>
+                  <FieldRow label="启用中台支付">
+                    <ToggleField
+                      checked={payApplyEnabled}
+                      onChange={(v) => {
+                        set('pay_apply_enabled', v ? 'true' : 'false')
+                        if (v) {
+                          set('epay_enabled', 'false')
+                          set('shouqianba_enabled', 'false')
+                        }
+                      }}
+                    >
+                      <Tip>开启后用户可通过支付中台（微信/支付宝）充值余额</Tip>
+                    </ToggleField>
+                  </FieldRow>
+                  {payApplyEnabled ? (
+                    <>
+                      <FieldRow label="中台根地址">
+                        <Input value={form.pay_apply_urlroot ?? ''} onChange={(e) => set('pay_apply_urlroot', e.target.value)} placeholder="https://pay.example.com" />
+                        <Tip>支付中台的域名（不含末尾斜杠）</Tip>
+                      </FieldRow>
+                      <FieldRow label="中台商品 Key">
+                        <Input type="password" value={form.pay_apply_key ?? ''} onChange={(e) => set('pay_apply_key', e.target.value)} placeholder="支付中台分配的商品 key" />
+                        <Tip>中台回调时会携带此 key 用于验签，请妥善保管</Tip>
+                      </FieldRow>
+                      <FieldRow label="回调地址">
+                        <Input readOnly value={payApplyNotifyUrl} className="bg-muted/30 font-mono text-xs" />
+                        <Tip>将此地址填写到支付中台的回调配置中，必须可从公网访问</Tip>
+                      </FieldRow>
+                    </>
+                  ) : null}
+                  <FieldRow label="">
+                    <Separator className="my-2" />
+                  </FieldRow>
+                  <FieldRow label="启用收钱吧">
+                    <ToggleField
+                      checked={shouqianbaEnabled}
+                      onChange={(v) => {
+                        set('shouqianba_enabled', v ? 'true' : 'false')
+                        if (v) {
+                          set('epay_enabled', 'false')
+                          set('pay_apply_enabled', 'false')
+                        }
+                      }}
+                    >
+                      <Tip>开启后用户可通过收钱吧（微信/支付宝）充值余额</Tip>
+                    </ToggleField>
+                  </FieldRow>
+                  {shouqianbaEnabled ? (
+                    <>
+                      <FieldRow label="API 域名">
+                        <Input value={form.shouqianba_api_domain ?? ''} onChange={(e) => set('shouqianba_api_domain', e.target.value)} placeholder="https://vsi-api.shouqianba.com" />
+                        <Tip>收钱吧接入域名（不含末尾斜杠）</Tip>
+                      </FieldRow>
+                      <FieldRow label="终端号 terminal_sn">
+                        <Input value={form.shouqianba_terminal_sn ?? ''} onChange={(e) => set('shouqianba_terminal_sn', e.target.value)} placeholder="收钱吧终端号" />
+                      </FieldRow>
+                      <FieldRow label="终端密钥 terminal_key">
+                        <Input type="password" value={form.shouqianba_terminal_key ?? ''} onChange={(e) => set('shouqianba_terminal_key', e.target.value)} placeholder="收钱吧终端密钥" />
+                      </FieldRow>
+                      <FieldRow label="收钱吧公钥">
+                        <Textarea value={form.shouqianba_public_key ?? ''} onChange={(e) => set('shouqianba_public_key', e.target.value)} rows={4} placeholder="-----BEGIN PUBLIC KEY----- ... -----END PUBLIC KEY-----" className={codeTextareaClass} />
+                        <Tip>用于验证收钱吧回调签名（SHA256WithRSA）</Tip>
+                      </FieldRow>
+                      <FieldRow label="异步通知地址">
+                        <Input value={form.shouqianba_notify_url ?? shouqianbaNotifyUrl} onChange={(e) => set('shouqianba_notify_url', e.target.value)} placeholder={shouqianbaNotifyUrl} />
+                        <Tip>可留空使用默认地址，需在收钱吧后台配置可公网访问</Tip>
+                      </FieldRow>
+                      <FieldRow label="默认回调地址">
+                        <Input readOnly value={shouqianbaNotifyUrl} className="bg-muted/30 font-mono text-xs" />
+                      </FieldRow>
+                    </>
+                  ) : null}
+                  <FieldRow label="">
+                    <Separator className="my-2" />
+                  </FieldRow>
+                  <FieldRow label="开启微信支付">
+                    <ToggleField
+                      checked={form.wechat_pay_enabled !== 'false'}
+                      onChange={(v) => set('wechat_pay_enabled', v ? 'true' : 'false')}
+                    >
+                      <Tip>关闭后用户充值页将不显示微信支付按钮</Tip>
+                    </ToggleField>
+                  </FieldRow>
+                  <FieldRow label="开启支付宝">
+                    <ToggleField
+                      checked={form.alipay_enabled !== 'false'}
+                      onChange={(v) => set('alipay_enabled', v ? 'true' : 'false')}
+                    >
+                      <Tip>关闭后用户充值页将不显示支付宝按钮</Tip>
+                    </ToggleField>
+                  </FieldRow>
+                </div>
+              </TabsContent>
+
+              {/* 公告&联系方式 */}
+              <TabsContent value="notice" className="px-6 pb-6">
+                <div className="max-w-2xl divide-y">
+                  <FieldRow label="公告标题">
+                    <Input value={form.notice_title ?? ''} onChange={(e) => set('notice_title', e.target.value)} placeholder="例如：📢 最新公告" />
+                    <Tip>显示在用户数据看板右侧，留空则不显示公告模块</Tip>
+                  </FieldRow>
+                  <FieldRow label="公告内容">
+                    <Textarea value={form.notice_content ?? ''} onChange={(e) => set('notice_content', e.target.value)} rows={5} placeholder="支持换行，每行一条公告内容" className={compactTextareaClass} />
+                    <Tip>纯文本，每行作为一条，不支持 HTML</Tip>
+                  </FieldRow>
+                  <FieldRow label="联系方式">
+                    <Textarea
+                      value={form.contact_info ?? ''}
+                      onChange={(e) => set('contact_info', e.target.value)}
+                      rows={4}
+                      className={compactTextareaClass}
+                      placeholder={`微信：midcode\nQQ群：123456789\n邮箱：support@example.com`}
+                    />
+                    <Tip>纯文本，每行一条联系方式，显示在数据看板公告区域</Tip>
+                  </FieldRow>
+                  <FieldRow label="新手教程 Markdown">
+                    <Textarea
+                      value={form.tutorial_markdown ?? ''}
+                      onChange={(e) => set('tutorial_markdown', e.target.value)}
+                      rows={16}
+                      className={largeMarkdownTextareaClass}
+                      placeholder={`# 新手教程\n\n在这里粘贴完整的 Markdown 教程文档。`}
+                    />
+                    <Tip>用户端左侧「新手教程」页面会直接展示这里的 Markdown 内容。</Tip>
+                  </FieldRow>
+                  <FieldRow label="QQ 交流群二维码">
+                    <div className="flex gap-2">
+                      <Input value={form.qq_group_url ?? ''} onChange={(e) => set('qq_group_url', e.target.value)} placeholder="图片 URL" className="flex-1" />
+                      <Button type="button" variant="outline" size="sm" onClick={() => qqRef.current?.click()}>上传</Button>
+                    </div>
+                    <input ref={qqRef} type="file" accept="image/*" className="hidden" onChange={(e) => { void uploadSettingImage('qq_group_url', e.target.files?.[0]); e.target.value = '' }} />
+                    {form.qq_group_url ? <img src={form.qq_group_url} alt="QQ群二维码" className="mt-2 h-28 w-28 rounded-xl border object-contain p-1" /> : null}
+                    <Tip>填写后用户页面头部将显示「QQ交流群」按钮，留空不显示</Tip>
+                  </FieldRow>
+                  <FieldRow label="微信客服二维码">
+                    <div className="flex gap-2">
+                      <Input value={form.wechat_cs_url ?? ''} onChange={(e) => set('wechat_cs_url', e.target.value)} placeholder="图片 URL" className="flex-1" />
+                      <Button type="button" variant="outline" size="sm" onClick={() => wechatRef.current?.click()}>上传</Button>
+                    </div>
+                    <input ref={wechatRef} type="file" accept="image/*" className="hidden" onChange={(e) => { void uploadSettingImage('wechat_cs_url', e.target.files?.[0]); e.target.value = '' }} />
+                    {form.wechat_cs_url ? <img src={form.wechat_cs_url} alt="微信客服" className="mt-2 h-28 w-28 rounded-xl border object-contain p-1" /> : null}
+                    <Tip>填写后用户页面头部将显示「微信客服」按钮，留空不显示</Tip>
+                  </FieldRow>
+                  <FieldRow label="二维码图片">
+                    <div className="flex gap-2">
+                      <Input value={form.qrcode_url ?? ''} onChange={(e) => set('qrcode_url', e.target.value)} placeholder="图片 URL" className="flex-1" />
+                      <Button type="button" variant="outline" size="sm" onClick={() => qrRef.current?.click()}>上传</Button>
+                    </div>
+                    <input ref={qrRef} type="file" accept="image/*" className="hidden" onChange={(e) => { void uploadSettingImage('qrcode_url', e.target.files?.[0]); e.target.value = '' }} />
+                    {form.qrcode_url ? <img src={form.qrcode_url} alt="二维码" className="mt-2 h-28 w-28 rounded-xl border object-contain p-1" /> : null}
+                    <Tip>支持图片 URL 或本地上传后自动转线上 URL；留空则不显示</Tip>
+                  </FieldRow>
+                </div>
+              </TabsContent>
+
+              {/* 充值套餐 */}
+              <TabsContent value="plans" className="px-6 pb-6">
+                <div className="max-w-3xl">
+                  <FieldRow label="允许自定义金额">
+                    <ToggleField checked={allowCustom} onChange={setAllowCustom}>
+                      <Tip>开启后用户可在套餐之外自由输入充值金额；关闭则只能选套餐</Tip>
+                    </ToggleField>
+                  </FieldRow>
+                  <div className="mt-4">
+                    <div className="mb-2 text-sm font-medium">套餐列表</div>
+                    {planRows.length > 0 ? (
+                      <div className="rounded-lg border overflow-hidden mb-3">
+                        <table className="w-full text-sm">
+                          <thead className="bg-muted/30">
+                            <tr className="border-b">
+                              <th className="px-3 py-2 text-left font-medium">积分数</th>
+                              <th className="px-3 py-2 text-left font-medium">赠送积分</th>
+                              <th className="px-3 py-2 text-left font-medium">到账积分</th>
+                              <th className="px-3 py-2 text-left font-medium">金额（元）</th>
+                              <th className="px-3 py-2 text-left font-medium">原价（元）</th>
+                              <th className="px-3 py-2 text-left font-medium">折扣</th>
+                              <th className="px-3 py-2 text-left font-medium">描述</th>
+                              <th className="px-3 py-2 w-10"></th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y">
+                            {planRows.map((row, i) => (
+                              <tr key={i}>
+                                <td className="px-2 py-1.5">
+                                  <Input type="number" value={row.credits} min={1} onChange={(e) => updatePlan(i, 'credits', Number(e.target.value))} className="h-8" />
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <Input type="number" value={row.bonus} min={0} onChange={(e) => updatePlan(i, 'bonus', Number(e.target.value))} className="h-8" />
+                                </td>
+                                <td className="px-3 py-1.5 text-sm font-medium text-emerald-600">
+                                  {totalPlanCredits(row).toLocaleString()}
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <Input type="number" value={row.amount} min={0.01} step={0.01} onChange={(e) => updatePlan(i, 'amount', Number(e.target.value))} className="h-8" />
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <Input type="number" value={row.origin_amount} min={0} step={0.01} onChange={(e) => updatePlan(i, 'origin_amount', Number(e.target.value))} className="h-8" />
+                                </td>
+                                <td className="px-3 py-1.5 text-sm text-muted-foreground">
+                                  {planDiscountLabel(row)}
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <Input value={row.desc} onChange={(e) => updatePlan(i, 'desc', e.target.value)} placeholder="购买可获得xx积分" className="h-8" />
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:text-red-600" onClick={() => removePlan(i)}>
+                                    <Trash2Icon className="h-4 w-4" />
+                                  </Button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : null}
+                    <Button type="button" variant="outline" size="sm" onClick={addPlan}>
+                      <PlusIcon className="mr-1 h-4 w-4" />
+                      添加套餐
+                    </Button>
+                    <Tip>套餐顺序即展示顺序；不设置套餐则只显示自定义金额输入框</Tip>
+                    {planRows.length > 0 ? (
+                      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                        {planRows.map((row, i) => (
+                          <Card key={`plan-preview-${i}`}>
+                            <CardHeader className="pb-3">
+                              <CardTitle className="text-base">套餐 {i + 1}</CardTitle>
+                              <CardDescription>用户端将按当前顺序展示</CardDescription>
+                            </CardHeader>
+                            <CardContent className="flex flex-col gap-2 text-sm">
+                              <div className="font-semibold text-blue-600">￥{Number(row.amount || 0).toFixed(2)}</div>
+                              <div>到账积分：<span className="font-medium text-emerald-600">{totalPlanCredits(row).toLocaleString()}</span></div>
+                              <div>基础积分：{Number(row.credits || 0).toLocaleString()}</div>
+                              <div>赠送积分：{Number(row.bonus || 0).toLocaleString()}</div>
+                              <div>原价：{Number(row.origin_amount || 0) > 0 ? `￥${Number(row.origin_amount).toFixed(2)}` : '—'}</div>
+                              <div>折扣：{planDiscountLabel(row)}</div>
+                              <div className="text-muted-foreground">{row.desc || '未填写描述，前台将只展示金额与积分。'}</div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* 邀请返佣 */}
+              <TabsContent value="rebate" className="px-6 pb-6">
+                <Alert className="mb-4 mt-2">
+                  <AlertDescription>
+                    用户邀请新用户注册后，被邀请人每次消费将按比例给邀请人增加冻结积分，冻结积分可手动解冻为可用积分。
+                  </AlertDescription>
+                </Alert>
+                <div className="max-w-2xl divide-y">
+                  <FieldRow label="全局返佣比例（%）">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={rebatePercent}
+                        min={0}
+                        max={100}
+                        step={0.01}
+                        onChange={(e) => setRebatePercent(e.target.value)}
+                        className="w-32"
+                      />
+                      <span className="text-sm text-muted-foreground">%</span>
+                    </div>
+                    <Tip>被邀请人消费金额的该比例将冻结给邀请人（例：5 表示消费 100 积分返 5 冻结积分）。管理员可为单个用户单独设置比例以覆盖此全局值。</Tip>
+                  </FieldRow>
+                </div>
+              </TabsContent>
+
+              {/* 操作日志 */}
+              <TabsContent value="logs" className="px-6 pb-6">
+                <SettingLogsTab />
+              </TabsContent>
+
+              {/* 告警设置 */}
+              <TabsContent value="alert" className="px-6 pb-6">
+                <Alert className="mb-4 mt-2">
+                  <AlertDescription>
+                    配置任务失败告警阈值和推送渠道。阈值为 0 表示禁用该告警。
+                  </AlertDescription>
+                </Alert>
+                <div className="max-w-2xl divide-y">
+                  <FieldRow label="失败率告警阈值（%）">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={form.alert_task_failure_rate ?? ''}
+                        min={0}
+                        max={100}
+                        step={1}
+                        onChange={(e) => set('alert_task_failure_rate', e.target.value)}
+                        className="w-32"
+                        placeholder="如：30"
+                      />
+                      <span className="text-sm text-muted-foreground">%</span>
+                    </div>
+                    <Tip>统计时间窗口内失败率超过此值时触发告警（0 = 禁用）</Tip>
+                  </FieldRow>
+                  <FieldRow label="统计时间窗口（分钟）">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={form.alert_task_window_minutes ?? ''}
+                        min={1}
+                        step={1}
+                        onChange={(e) => set('alert_task_window_minutes', e.target.value)}
+                        className="w-32"
+                        placeholder="如：5"
+                      />
+                      <span className="text-sm text-muted-foreground">分钟</span>
+                    </div>
+                    <Tip>计算失败率所用的滑动时间窗口长度</Tip>
+                  </FieldRow>
+                  <FieldRow label="企业微信 Webhook URL">
+                    <Input
+                      value={form.alert_webhook_wecom ?? ''}
+                      onChange={(e) => set('alert_webhook_wecom', e.target.value)}
+                      placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=…"
+                    />
+                    <Tip>企业微信群机器人 Webhook 地址，留空不推送</Tip>
+                  </FieldRow>
+                  <FieldRow label="Lark Webhook URL">
+                    <Input
+                      value={form.alert_webhook_lark ?? ''}
+                      onChange={(e) => set('alert_webhook_lark', e.target.value)}
+                      placeholder="https://open.larksuite.com/open-apis/bot/v2/hook/..."
+                    />
+                    <Tip>Lark / 飞书群机器人 Webhook 地址；上游余额告警和渠道自动停用通知都会使用它，留空不推送。</Tip>
+                  </FieldRow>
+                  <FieldRow label="告警邮件地址">
+                    <Input
+                      type="email"
+                      value={form.alert_email ?? ''}
+                      onChange={(e) => set('alert_email', e.target.value)}
+                      placeholder="admin@example.com"
+                    />
+                    <Tip>接收告警邮件的地址，留空不推送</Tip>
+                  </FieldRow>
+                </div>
+              </TabsContent>
+
+              {/* 提现限额 */}
+              <TabsContent value="withdraw" className="px-6 pb-6">
+                <Alert className="mb-4 mt-2">
+                  <AlertDescription>
+                    配置号商提现的额度限制。留空或 0 表示不限制。所有金额单位为元（CNY）。
+                  </AlertDescription>
+                </Alert>
+                <div className="max-w-2xl divide-y">
+                  <FieldRow label="单笔提现上限（元）">
+                    <Input
+                      type="number"
+                      value={form.withdraw_single_limit ?? ''}
+                      min={0}
+                      step={1}
+                      onChange={(e) => set('withdraw_single_limit', e.target.value)}
+                      className="w-40"
+                      placeholder="留空不限"
+                    />
+                    <Tip>单次提现申请金额不得超过此值（例：5000 表示每笔最多 ¥5,000）</Tip>
+                  </FieldRow>
+                  <FieldRow label="单日提现上限（元）">
+                    <Input
+                      type="number"
+                      value={form.withdraw_daily_limit ?? ''}
+                      min={0}
+                      step={1}
+                      onChange={(e) => set('withdraw_daily_limit', e.target.value)}
+                      className="w-40"
+                      placeholder="留空不限"
+                    />
+                    <Tip>同一号商每自然日累计提现不超过此金额</Tip>
+                  </FieldRow>
+                  <FieldRow label="新号商首笔上限（元）">
+                    <Input
+                      type="number"
+                      value={form.withdraw_new_vendor_first_limit ?? ''}
+                      min={0}
+                      step={1}
+                      onChange={(e) => set('withdraw_new_vendor_first_limit', e.target.value)}
+                      className="w-40"
+                      placeholder="留空不限"
+                    />
+                    <Tip>号商注册后首笔提现不超过此金额（高风险控制）</Tip>
+                  </FieldRow>
+                  <FieldRow label="新号商保护期（天）">
+                    <Input
+                      type="number"
+                      value={form.withdraw_new_vendor_days ?? ''}
+                      min={0}
+                      step={1}
+                      onChange={(e) => set('withdraw_new_vendor_days', e.target.value)}
+                      className="w-40"
+                      placeholder="例：30"
+                    />
+                    <Tip>注册后多少天内视为"新号商"，适用首笔上限规则</Tip>
+                  </FieldRow>
+                </div>
+              </TabsContent>
+
+              {/* 号商设置 */}
+              <TabsContent value="vendor" className="px-6 pb-6">
+                <Alert className="mb-4 mt-2">
+                  <AlertDescription>
+                    号商向号池提供 API Key，每次 Key 被使用时，平台按比例抽成，剩余部分计入号商余额。
+                  </AlertDescription>
+                </Alert>
+                <div className="max-w-2xl divide-y">
+                  <FieldRow label="全局平台抽成比例（%）">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={vendorCommPercent}
+                        min={0}
+                        max={100}
+                        step={0.01}
+                        onChange={(e) => setVendorCommPercent(e.target.value)}
+                        className="w-32"
+                      />
+                      <span className="text-sm text-muted-foreground">%</span>
+                    </div>
+                    <Tip>平台从号商收益中抽取的比例（例：2 表示号商实得 98%）。可为单个号商单独设置以覆盖此全局值。</Tip>
+                  </FieldRow>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="official-prices" className="px-0 pb-0">
+                <Suspense fallback={<div className="space-y-3 p-4"><Skeleton className="h-16 w-full" /><Skeleton className="h-40 w-full" /></div>}>
+                  <AdminOfficialPricesTab />
+                </Suspense>
+              </TabsContent>
+            </Tabs>
+          )}
+        </CardContent>
+      </Card>
+    </>
+  )
+}
+

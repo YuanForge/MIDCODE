@@ -1,0 +1,505 @@
+import { useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
+
+import { PageHeader } from '@/components/shared/PageHeader'
+import { PageSection } from '@/components/shared/PageSection'
+import { TablePagination } from '@/components/shared/TablePagination'
+import { TableSkeleton } from '@/components/shared/TableSkeleton'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { NativeSelect } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { copyToClipboard } from '@/lib/clipboard'
+import { userApi, type InviteInfo, type WithdrawRecord, type InviteeRecord } from '@/lib/api/user'
+import { formatCredits } from '@/lib/formatters/credits'
+import { useAsync } from '@/hooks/use-async'
+
+type InviteData = {
+  info: InviteInfo
+  wechatQr: string
+  alipayQr: string
+  withdrawals: WithdrawRecord[]
+  withdrawalsTotal: number
+}
+
+const withdrawPageSize = 20
+
+function withdrawStatusBadge(status: string | undefined) {
+  if (status === 'pending') return <Badge variant="secondary">待审核</Badge>
+  if (status === 'approved') return <Badge>已通过</Badge>
+  if (status === 'rejected') return <Badge variant="destructive">已拒绝</Badge>
+  return <Badge variant="outline">{status ?? '-'}</Badge>
+}
+
+function paymentTypeLabel(type: string | undefined) {
+  if (type === 'wechat') return '微信'
+  if (type === 'alipay') return '支付宝'
+  return type ?? '-'
+}
+
+export function UserInvitePage() {
+  const [historyPage, setHistoryPage] = useState(1)
+
+  const { data, loading, error: loadError, reload } = useAsync(async () => {
+    const [inviteRes, qrRes, historyRes] = await Promise.all([
+      userApi.getInviteInfo(),
+      userApi.getPaymentQR(),
+      userApi.listWithdrawHistory(historyPage, withdrawPageSize),
+    ])
+    const withdrawals = Array.isArray(historyRes)
+      ? historyRes
+      : historyRes.records ?? historyRes.list ?? []
+    return {
+      info: inviteRes,
+      wechatQr: qrRes.wechat_qr ?? '',
+      alipayQr: qrRes.alipay_qr ?? '',
+      withdrawals,
+      withdrawalsTotal: Array.isArray(historyRes)
+        ? withdrawals.length
+        : historyRes.total ?? withdrawals.length,
+    } satisfies InviteData
+  }, { info: {}, wechatQr: '', alipayQr: '', withdrawals: [], withdrawalsTotal: 0 } as InviteData, [historyPage])
+
+  const { data: inviteesData, loading: inviteesLoading } = useAsync(async () => {
+    const res = await userApi.getInviteeList()
+    return res.invitees ?? []
+  }, [] as InviteeRecord[], [])
+
+  const [mutError, setMutError] = useState('')
+  const [convertOpen, setConvertOpen] = useState(false)
+  const [withdrawOpen, setWithdrawOpen] = useState(false)
+  const [convertAmount, setConvertAmount] = useState('0')
+  const [withdrawAmount, setWithdrawAmount] = useState('0')
+  const [paymentType, setPaymentType] = useState('wechat')
+  const [wechatQrEdit, setWechatQrEdit] = useState('')
+  const [alipayQrEdit, setAlipayQrEdit] = useState('')
+  const [qrInitialized, setQrInitialized] = useState(false)
+  const wechatUploadRef = useRef<HTMLInputElement>(null)
+  const alipayUploadRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (loading || qrInitialized) {
+      return
+    }
+    setWechatQrEdit(data.wechatQr)
+    setAlipayQrEdit(data.alipayQr)
+    setQrInitialized(true)
+  }, [data.alipayQr, data.wechatQr, loading, qrInitialized])
+
+  const error = loadError || mutError
+  const info = data.info
+  const inviteLink = info.invite_code ? `${window.location.origin}/register?ref=${info.invite_code}` : ''
+
+  async function withMut(fn: () => Promise<void>) {
+    setMutError('')
+    try {
+      await fn()
+      reload()
+    } catch (err) {
+      const { getApiErrorMessage } = await import('@/lib/api/http')
+      setMutError(getApiErrorMessage(err))
+    }
+  }
+
+  async function pickQr(kind: 'wechat' | 'alipay', file: File | undefined) {
+    if (!file) {
+      return
+    }
+
+    setMutError('')
+    try {
+      const response = await userApi.uploadImage(file, 'payment-qr')
+      const url = response.url ?? ''
+      if (!url) {
+        throw new Error('上传失败，未返回图片地址')
+      }
+      if (kind === 'wechat') {
+        setWechatQrEdit(url)
+      } else {
+        setAlipayQrEdit(url)
+      }
+      toast.success(`${kind === 'wechat' ? '微信' : '支付宝'}收款码上传成功`)
+    } catch (err) {
+      const { getApiErrorMessage } = await import('@/lib/api/http')
+      const msg = getApiErrorMessage(err)
+      setMutError(msg)
+      toast.error(msg)
+    }
+  }
+
+  async function convert() {
+    await withMut(async () => {
+      await userApi.convertFrozen(Number(convertAmount))
+      setConvertOpen(false)
+      setConvertAmount('0')
+    })
+  }
+
+  async function saveQr() {
+    await withMut(async () => {
+      await userApi.savePaymentQR({ wechat_qr: wechatQrEdit, alipay_qr: alipayQrEdit })
+      toast.success('收款码已保存')
+    })
+  }
+
+  async function submitWithdraw() {
+    const amountValue = Number(withdrawAmount)
+    const currentQr = paymentType === 'wechat' ? wechatQrEdit.trim() : alipayQrEdit.trim()
+    if (!amountValue || amountValue <= 0) {
+      setMutError('请输入有效的提现积分数量')
+      return
+    }
+    if (!currentQr) {
+      setMutError(`请先保存${paymentType === 'wechat' ? '微信' : '支付宝'}收款码`)
+      return
+    }
+    // 用户输入的是积分显示单位，后端存储单位为微积分（1积分 = 1,000,000微积分）
+    const microCredits = Math.round(amountValue * 1_000_000)
+    await withMut(async () => {
+      await userApi.submitWithdraw(microCredits, paymentType)
+      setWithdrawOpen(false)
+      setWithdrawAmount('0')
+      setHistoryPage(1)
+    })
+  }
+
+  return (
+    <>
+      <PageHeader
+        eyebrow="Invite"
+        title="邀请中心"
+        description="查看邀请码、冻结返佣、解冻积分和提现申请。"
+        actions={
+          error ? (
+            <Button size="sm" variant="outline" onClick={reload}>
+              重试
+            </Button>
+          ) : null
+        }
+      />
+      {error ? (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>邀请码</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2 text-sm">
+            <div className="font-mono">{loading ? '加载中...' : (info.invite_code ?? '-')}</div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                disabled={loading || !info.invite_code}
+                onClick={() => {
+                  void copyToClipboard(info.invite_code ?? '', { successMessage: '邀请码已复制' })
+                }}
+              >
+                复制邀请码
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={loading || !inviteLink}
+                onClick={() => {
+                  void copyToClipboard(inviteLink, { successMessage: '邀请链接已复制' })
+                }}
+              >
+                复制邀请链接
+              </Button>
+            </div>
+            <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+              {loading ? '邀请链接加载中...' : (inviteLink || '暂无邀请链接')}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>已邀请人数</CardTitle>
+          </CardHeader>
+          <CardContent className="text-2xl font-semibold">
+            {loading ? '-' : (info.invite_count ?? 0)}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>冻结返佣</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <div className="text-2xl font-semibold">
+              {loading ? '-' : formatCredits(info.frozen_balance ?? 0)}
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" disabled={loading} onClick={() => setConvertOpen(true)}>
+                解冻
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={loading}
+                onClick={() => setWithdrawOpen(true)}
+              >
+                提现
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+      <PageSection title="收款码" description="提现前请上传并保存对应支付方式的收款二维码。">
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-medium">微信收款码</span>
+              <div className="flex items-center gap-2">
+                <input
+                  ref={wechatUploadRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(event) => {
+                    void pickQr('wechat', event.target.files?.[0])
+                    event.target.value = ''
+                  }}
+                />
+                <Button size="sm" variant="outline" onClick={() => wechatUploadRef.current?.click()}>
+                  本地上传
+                </Button>
+                {wechatQrEdit ? (
+                  <Button size="sm" variant="ghost" onClick={() => setWechatQrEdit('')}>
+                    清空
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+            <Textarea
+              value={wechatQrEdit}
+              onChange={(event) => setWechatQrEdit(event.target.value)}
+              placeholder="微信收款码 URL"
+            />
+            <div className="flex min-h-48 items-center justify-center rounded-xl border border-dashed bg-muted/20 p-3">
+              {wechatQrEdit ? (
+                <img
+                  src={wechatQrEdit}
+                  alt="微信收款码预览"
+                  className="aspect-square h-auto w-full max-w-56 rounded-md border bg-background object-contain"
+                />
+              ) : (
+                <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+                  暂无微信收款码
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-medium">支付宝收款码</span>
+              <div className="flex items-center gap-2">
+                <input
+                  ref={alipayUploadRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(event) => {
+                    void pickQr('alipay', event.target.files?.[0])
+                    event.target.value = ''
+                  }}
+                />
+                <Button size="sm" variant="outline" onClick={() => alipayUploadRef.current?.click()}>
+                  本地上传
+                </Button>
+                {alipayQrEdit ? (
+                  <Button size="sm" variant="ghost" onClick={() => setAlipayQrEdit('')}>
+                    清空
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+            <Textarea
+              value={alipayQrEdit}
+              onChange={(event) => setAlipayQrEdit(event.target.value)}
+              placeholder="支付宝收款码 URL"
+            />
+            <div className="flex min-h-48 items-center justify-center rounded-xl border border-dashed bg-muted/20 p-3">
+              {alipayQrEdit ? (
+                <img
+                  src={alipayQrEdit}
+                  alt="支付宝收款码预览"
+                  className="aspect-square h-auto w-full max-w-56 rounded-md border bg-background object-contain"
+                />
+              ) : (
+                <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+                  暂无支付宝收款码
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="md:col-span-2">
+            <Button onClick={saveQr}>保存收款码</Button>
+          </div>
+        </div>
+      </PageSection>
+      <Alert>
+        <AlertDescription>
+          您邀请的用户每次消费后，返佣积分会先冻结到邀请账户；您可以解冻为可用积分，也可以在保存收款码后发起提现申请。
+        </AlertDescription>
+      </Alert>
+      <PageSection title="提现记录" description="展示提现积分、收款方式、审核状态与管理员备注。">
+        <div className="overflow-x-auto">
+        <Table className="min-w-[760px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>时间</TableHead>
+              <TableHead>积分数量</TableHead>
+              <TableHead>收款方式</TableHead>
+              <TableHead>状态</TableHead>
+              <TableHead>备注</TableHead>
+            </TableRow>
+          </TableHeader>
+          {loading ? (
+            <TableSkeleton cols={5} rows={3} />
+          ) : (
+            <TableBody>
+              {data.withdrawals.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                    暂无提现记录
+                  </TableCell>
+                </TableRow>
+              ) : (
+                data.withdrawals.map((row, index) => (
+                  <TableRow key={row.id ?? index}>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {row.created_at ? new Date(row.created_at).toLocaleString('zh-CN') : '-'}
+                    </TableCell>
+                    <TableCell>{formatCredits(row.amount ?? 0)}</TableCell>
+                    <TableCell>{paymentTypeLabel(row.payment_type)}</TableCell>
+                    <TableCell>{withdrawStatusBadge(row.status)}</TableCell>
+                    <TableCell>{row.admin_remark ?? '-'}</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          )}
+        </Table>
+        </div>
+        {!loading && data.withdrawalsTotal > withdrawPageSize ? (
+          <div className="border-t pt-4">
+            <TablePagination
+              current={historyPage}
+              total={data.withdrawalsTotal}
+              pageSize={withdrawPageSize}
+              onChange={setHistoryPage}
+              className="py-0"
+            />
+          </div>
+        ) : null}
+      </PageSection>
+
+      <PageSection title="被邀请用户列表" description="查看受邀用户的注册时间、累计充值和累计消费。">
+        <div className="overflow-x-auto">
+        <Table className="min-w-[680px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>用户名</TableHead>
+              <TableHead className="w-36 text-right">累计充值（¥）</TableHead>
+              <TableHead className="w-36 text-right">累计消费（¥）</TableHead>
+              <TableHead className="w-40">注册时间</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {inviteesLoading ? (
+              <TableRow><TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">加载中...</TableCell></TableRow>
+            ) : inviteesData.length === 0 ? (
+              <TableRow><TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">暂无邀请记录</TableCell></TableRow>
+            ) : inviteesData.map((row) => (
+              <TableRow key={row.id}>
+                <TableCell className="font-medium">{row.username ?? '-'}</TableCell>
+                <TableCell className="text-right font-mono">¥{(row.total_recharge ?? 0).toFixed(2)}</TableCell>
+                <TableCell className="text-right font-mono">¥{(row.total_spend ?? 0).toFixed(2)}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{row.created_at ? new Date(row.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '-'}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        </div>
+      </PageSection>
+
+      <Dialog open={convertOpen} onOpenChange={setConvertOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>解冻积分</DialogTitle>
+            <DialogDescription>
+              输入 0 将解冻全部冻结返佣；输入其他数值将按该积分数量转入可用余额。
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={convertAmount}
+            onChange={(event) => setConvertAmount(event.target.value)}
+            placeholder="0 表示全部"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConvertOpen(false)}>
+              取消
+            </Button>
+            <Button onClick={convert}>确认解冻</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={withdrawOpen} onOpenChange={setWithdrawOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>申请提现</DialogTitle>
+            <DialogDescription>
+              提交后将申请提现 {Number(withdrawAmount) > 0 ? `${Number(withdrawAmount).toFixed(2)} 积分` : '所填积分'}，并进入人工审核。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4">
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={withdrawAmount}
+              onChange={(event) => setWithdrawAmount(event.target.value)}
+              placeholder="提现积分数量（如 0.1）"
+            />
+            <NativeSelect
+              value={paymentType}
+              onChange={(event) => setPaymentType(event.target.value)}
+            >
+              <option value="wechat">微信</option>
+              <option value="alipay">支付宝</option>
+            </NativeSelect>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWithdrawOpen(false)}>
+              取消
+            </Button>
+            <Button onClick={submitWithdraw}>提交提现</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}

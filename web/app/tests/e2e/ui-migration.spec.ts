@@ -22,7 +22,11 @@ test('public and auth surfaces use MidCode branding', async ({ page }) => {
 
 test('user console exposes the shared shell', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.addInitScript(() => window.localStorage.setItem('token', 'mock-user-token'))
+  // This case is about the toggle and its persistence, so it starts from light explicitly (light is also the default now).
+  await page.addInitScript(() => {
+    window.localStorage.setItem('token', 'mock-user-token')
+    if (window.localStorage.getItem('dark_mode') === null) window.localStorage.setItem('dark_mode', 'false')
+  })
   await page.route('**/api/user/balance', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '{"balance_credits":0}' }),
   )

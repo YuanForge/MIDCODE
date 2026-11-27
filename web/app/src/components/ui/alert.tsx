@@ -3,18 +3,19 @@ import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
 
+// A leading icon sits in its own column so text never wraps underneath it.
 const alertVariants = cva(
-  "relative flex w-full flex-col gap-1 rounded-xl border px-4 py-3 text-sm",
+  "relative grid w-full grid-cols-[0_1fr] items-start gap-y-1 rounded-xl border px-4 py-3 text-sm animate-reveal has-[>svg]:grid-cols-[calc(var(--spacing)*4)_1fr] has-[>svg]:gap-x-3 [&>svg]:size-4 [&>svg]:translate-y-0.5 [&>svg]:text-current",
   {
     variants: {
       variant: {
-        default: "border-border bg-card text-card-foreground",
+        default: "border-glass-border bg-glass-strong text-foreground backdrop-blur-xl [&>svg]:text-muted-foreground",
         destructive:
-          "border-destructive/25 bg-destructive/5 text-destructive dark:border-destructive/50",
+          "border-destructive/25 bg-destructive/5 text-destructive dark:border-destructive/40",
         warning:
-          "border-amber-500/25 bg-amber-500/5 text-amber-700 dark:border-amber-500/50 dark:text-amber-400",
+          "border-warning/25 bg-warning/5 text-warning dark:border-warning/40",
         success:
-          "border-emerald-500/25 bg-emerald-500/5 text-emerald-700 dark:border-emerald-500/50 dark:text-emerald-400",
+          "border-success/25 bg-success/5 text-success dark:border-success/40",
       },
     },
     defaultVariants: {
@@ -42,7 +43,7 @@ function AlertTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="alert-title"
-      className={cn("font-medium leading-none tracking-tight", className)}
+      className={cn("col-start-2 font-medium leading-5 tracking-tight", className)}
       {...props}
     />
   )
@@ -52,7 +53,7 @@ function AlertDescription({ className, ...props }: React.ComponentProps<"div">) 
   return (
     <div
       data-slot="alert-description"
-      className={cn("text-sm [&_p]:leading-relaxed", className)}
+      className={cn("col-start-2 text-sm leading-relaxed [&_p]:leading-relaxed", className)}
       {...props}
     />
   )

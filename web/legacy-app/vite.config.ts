@@ -1,0 +1,45 @@
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import path from 'node:path'
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
+  server: {
+    host: '0.0.0.0',
+    port: 3000,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8080',
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+      '/v1': {
+        target: 'http://localhost:8080',
+      },
+      '/v1beta': {
+        target: 'http://localhost:8080',
+      },
+      '/auth': {
+        target: 'http://localhost:8080',
+      },
+      '/pay': {
+        target: 'http://localhost:8080',
+      },
+      '/uploads': {
+        target: 'http://localhost:8080',
+      },
+      '/openapi.json': {
+        target: 'http://localhost:8080',
+      },
+      '/openapi-user.json': {
+        target: 'http://localhost:8080',
+      },
+    },
+  },
+})
