@@ -154,8 +154,12 @@ func buildUsageResponse(records []usageRecord, start, end time.Time, bucket, fil
 // GetUserUsageStats serves the full selected range independently of table paging.
 func GetUserUsageStats(c *gin.Context) {
 	start, end, err := parseTokenStatsRange(c.Query("start_at"), c.Query("end_at"), time.Now())
-	if err != nil || end.Sub(start) > 90*24*time.Hour {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择有效的时间范围，最长 90 天"})
+	maxDays := 90
+	if c.Query("compare") == "false" && c.Query("bucket") == "day" {
+		maxDays = 365
+	}
+	if err != nil || end.Sub(start) > time.Duration(maxDays)*24*time.Hour {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择有效的统计时间范围"})
 		return
 	}
 	bucket := c.DefaultQuery("bucket", "day")
@@ -174,7 +178,7 @@ func GetUserUsageStats(c *gin.Context) {
 	if c.Query("compare") == "false" {
 		scanStart = start
 	}
-	rows, err := db.Engine.DB().QueryContext(ctx, usageStatsQuery, c.MustGet("user_id").(int64), wall(scanStart), wall(end), wall(start), bucket)
+	rows, err := db.Engine.DB().QueryContext(ctx, usageReportSQL, c.MustGet("user_id").(int64), wall(scanStart), wall(end), wall(start), bucket)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "统计暂时不可用，请稍后重试"})
 		return

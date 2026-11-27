@@ -66,7 +66,7 @@ function Calendar({ paused }: { paused: boolean }) {
         const known = (i:number) => completed.has(new Date(start+i*day+beijing).toISOString().slice(0,10))
         if (known(hi-1)) { hi--; continue }
         let lo=hi-1
-        const maxDays = hi > 351 ? 1 : 7
+        const maxDays = 365
         while(lo>0 && hi-lo<maxDays && !known(lo-1)) lo--
         await fetchBlock(lo,hi)
         hi=lo
