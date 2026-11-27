@@ -47,7 +47,7 @@ def consume_changes():
         SELECT user_id,at_time FROM changed WHERE at_time IS NOT NULL
         UNION ALL SELECT l.user_id,l.created_at FROM
         (SELECT DISTINCT user_id,corr FROM changed WHERE corr<>'') c
-        JOIN llm_logs l ON l.user_id=c.user_id AND l.corr_id=c.corr
+        JOIN llm_logs l ON l.user_id=c.user_id AND l.corr_id=c.corr AND l.corr_id<>''
         UNION ALL SELECT l.user_id,l.created_at FROM
         (SELECT DISTINCT channel FROM changed WHERE channel IS NOT NULL) c
         JOIN llm_logs l ON l.channel_id=c.channel
@@ -68,7 +68,7 @@ def rebuild(uid, start, end):
     # report boundaries. Read these days directly through the original query.
     q.execute("""SELECT EXISTS(SELECT 1 FROM llm_logs l WHERE l.user_id=%s AND
       l.created_at >= %s AND l.created_at < %s AND l.corr_id<>'' AND EXISTS
-      (SELECT 1 FROM llm_logs o WHERE o.user_id=l.user_id AND o.corr_id=l.corr_id
+      (SELECT 1 FROM llm_logs o WHERE o.user_id=l.user_id AND o.corr_id=l.corr_id AND o.corr_id<>''
       AND (o.created_at<date_trunc('hour',l.created_at) OR
            o.created_at>=date_trunc('hour',l.created_at)+interval '1 hour')))""",
               (uid,start,end))
