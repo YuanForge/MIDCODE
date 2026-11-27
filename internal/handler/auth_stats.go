@@ -18,21 +18,11 @@ func (h *AuthHandler) GetUserStats(c *gin.Context) {
 	// Aggregate request-attributed history once for total, today and seven-day trend.
 	var totalConsumed, todayConsumed int64
 	dailyCredits := []gin.H{}
-	rows, err := db.Engine.QueryString(`WITH grouped AS (
- SELECT COALESCE(corr_id, 'tx:' || id::text) AS request_key,
- COALESCE(MIN(created_at) FILTER (WHERE type IN (`+consumptionTransactionTypes+`)), MIN(created_at)) AS usage_at,
- COALESCE(SUM(CASE WHEN type IN (`+consumptionTransactionTypes+`) THEN credits WHEN type = 'refund' THEN -credits ELSE 0 END),0) AS credits
- FROM billing_transactions WHERE user_id = ? GROUP BY COALESCE(corr_id, 'tx:' || id::text)
- ) SELECT CASE WHEN GROUPING(TO_CHAR(usage_at AT TIME ZONE 'Asia/Shanghai', 'MM-DD')) = 1 THEN COALESCE(SUM(credits),0) ELSE COALESCE(SUM(credits) FILTER (WHERE usage_at >= ? AND usage_at < ?),0) END AS total,
- COALESCE(SUM(credits) FILTER (WHERE usage_at >= ? AND usage_at < ?),0) AS today,
- TO_CHAR(usage_at AT TIME ZONE 'Asia/Shanghai', 'MM-DD') AS day,
- DATE_TRUNC('day', usage_at AT TIME ZONE 'Asia/Shanghai') AS day_order,
- GROUPING(TO_CHAR(usage_at AT TIME ZONE 'Asia/Shanghai', 'MM-DD')) AS is_total
- FROM grouped
- GROUP BY GROUPING SETS ((), (TO_CHAR(usage_at AT TIME ZONE 'Asia/Shanghai', 'MM-DD'), DATE_TRUNC('day', usage_at AT TIME ZONE 'Asia/Shanghai')))
- HAVING GROUPING(TO_CHAR(usage_at AT TIME ZONE 'Asia/Shanghai', 'MM-DD')) = 1
- OR BOOL_OR(usage_at >= ? AND usage_at < ?)
- ORDER BY day_order`, userID, weekStart, todayEnd, todayStart, todayEnd, weekStart, todayEnd)
+	rows, err := db.Engine.QueryString(`SELECT to_char(day,'MM-DD') AS day, credits AS total,
+        CASE WHEN day=?::date THEN credits ELSE 0 END AS today, 0 AS is_total
+        FROM dashboard_credit_daily WHERE user_id=? AND day>=?::date AND day<?::date
+        UNION ALL SELECT '',coalesce(sum(credits),0),coalesce(sum(credits) FILTER(WHERE day=?::date),0),1
+        FROM dashboard_credit_daily WHERE user_id=?`, todayStart.Format("2006-01-02"), userID, weekStart.Format("2006-01-02"), todayEnd.Format("2006-01-02"), todayStart.Format("2006-01-02"), userID)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "统计暂时不可用，请稍后重试"})
 		return
@@ -49,12 +39,25 @@ func (h *AuthHandler) GetUserStats(c *gin.Context) {
 
 	// 最近7天每日请求次数（成功/失败）
 	dailyRequests := []gin.H{}
-	if rows, err := db.Engine.QueryString(`SELECT TO_CHAR(created_at::date, 'MM-DD') AS day,
-		COUNT(CASE WHEN status = 'ok' THEN 1 END) AS success,
-		COUNT(CASE WHEN status = 'error' THEN 1 END) AS failed
-		FROM llm_logs
-		WHERE user_id = ? AND created_at >= ? AND created_at < ?
-		GROUP BY created_at::date ORDER BY created_at::date`, userID, weekStart, todayEnd); err == nil {
+	rows, err = db.Engine.QueryString(`WITH dates AS (
+ SELECT d::date AS day FROM generate_series(?::date,?::date-1,interval '1 day') d
+), spans AS (
+ SELECT d.day,CASE WHEN NOT coalesce(s.dirty,true) AND NOT s.unsafe THEN s.covered_until END AS until
+ FROM dates d LEFT JOIN usage_rollup_state s ON s.day=d.day AND s.user_id=?
+)
+SELECT to_char(day,'MM-DD') AS day,sum(success) AS success,sum(failed) AS failed FROM (
+ SELECT s.day,u.success,u.failed FROM spans s JOIN usage_daily u ON u.user_id=? AND u.bucket=s.day WHERE s.until IS NOT NULL
+
+ UNION ALL
+ SELECT s.day,count(*) FILTER(WHERE l.status='ok'),count(*) FILTER(WHERE l.status='error')
+ FROM spans s JOIN llm_logs l ON l.user_id=? AND l.created_at>=coalesce(s.until,s.day::timestamp)
+ AND l.created_at<s.day+interval '1 day' GROUP BY s.day
+ ) counts GROUP BY day ORDER BY day`, weekStart.Format("2006-01-02"), todayEnd.Format("2006-01-02"), userID, userID, userID)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "调用统计暂时不可用，请稍后重试"})
+		return
+	}
+	{
 		for _, row := range rows {
 			s, _ := strconv.ParseInt(row["success"], 10, 64)
 			f, _ := strconv.ParseInt(row["failed"], 10, 64)

@@ -102,25 +102,30 @@ function Figure({ label, value, unit, loading, size = 'md' }: { label: string; v
  */
 export function UserDashboardPage() {
   const signedIn = Boolean(getRoleToken('user'))
-  const { data, loading, error, reload } = useAsync(async () => {
-    if (!signedIn) return EMPTY
-    // The balance and the statistics are the page; keys and recent calls only add to it, so they may fail quietly.
-    const [balance, stats, keys, logs] = await Promise.all([
-      userApi.getBalance(),
-      userApi.getStats(),
-      userApi.listApiKeys().catch(() => null),
-      userApi.listLogs({ page: 1, page_size: RECENT }).catch(() => null),
-    ])
-    const keyList = Array.isArray(keys) ? keys : (keys?.api_keys ?? keys?.keys ?? [])
-    return { balance: balance.balance_credits ?? 0, stats, keys: keyList, logs: logs?.logs ?? logs?.items ?? [] }
-  }, EMPTY)
-
+  const balance = useAsync(async () => signedIn ? (await userApi.getBalance()).balance_credits ?? 0 : 0, 0, [signedIn])
+  const stats = useAsync(async () => signedIn ? userApi.getStats() : EMPTY.stats, EMPTY.stats, [signedIn])
+  const keys = useAsync(async () => {
+    if (!signedIn) return EMPTY.keys
+    const result = await userApi.listApiKeys()
+    return Array.isArray(result) ? result : result.api_keys ?? result.keys ?? []
+  }, EMPTY.keys, [signedIn])
+  const logs = useAsync(async () => {
+    if (!signedIn) return EMPTY.logs
+    const result = await userApi.listLogs({page: 1, page_size: RECENT})
+    return result.logs ?? result.items ?? []
+  }, EMPTY.logs, [signedIn])
+  const data = { balance: balance.data, stats: stats.data, keys: keys.data, logs: logs.data }
+  const loading = stats.loading
+  const error = [balance, stats, keys, logs].map(section => section.error).filter(Boolean).join('；')
+  function reload() {
+    for (const section of [balance, stats, keys, logs]) if (section.error) section.reload()
+  }
   const { settings } = useSiteSettings()
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const base = `${origin}/v1`
   const code = samples(base)
   const hasContact = Boolean(settings.contactInfo || settings.qqGroupUrl || settings.wechatCsUrl)
-  const failed = Boolean(error)
+  const failed = Boolean(stats.error)
   const figure = (credits: number) => (failed ? '—' : formatCredits(credits))
 
   const week = buildWeek(data.stats)
@@ -140,7 +145,7 @@ export function UserDashboardPage() {
 
   const firstKey = data.keys.find((key) => key.is_active !== false)
   const todos: Todo[] = []
-  if (signedIn && !loading && !failed) {
+  if (signedIn) {
     for (const key of data.keys.filter((item) => item.needs_group_binding && item.is_active !== false).slice(0, 2)) {
       todos.push({ key: `key-${key.id}`, tone: 'warning', title: `密钥「${key.name || '未命名'}」还没有配置模型分组`, detail: '配置后才能用这把密钥调用模型。', to: '/keys', action: '去配置' })
     }
@@ -187,15 +192,15 @@ export function UserDashboardPage() {
           <div className='flex flex-col gap-6 p-6 sm:p-7'>
             <div className='flex flex-col gap-2'>
               <span className='text-[13px] text-muted-foreground'>剩余积分</span>
-              {loading ? (
+              {balance.loading ? (
                 <Skeleton className='h-14 w-56' />
               ) : (
                 <p className='flex flex-wrap items-baseline gap-x-2'>
-                  <span className='readout text-foreground'>{figure(data.balance)}</span>
+                  <span className='readout text-foreground'>{balance.error ? '—' : formatCredits(data.balance)}</span>
                   <span className='text-sm text-muted-foreground'>积分</span>
                 </p>
               )}
-              <span className='text-[13px] text-muted-foreground'>{loading ? ' ' : runwayText}</span>
+              <span className='text-[13px] text-muted-foreground'>{loading || balance.loading || balance.error || failed ? ' ' : runwayText}</span>
             </div>
             <div className='flex flex-wrap gap-2'>
               <Button asChild>
@@ -337,7 +342,7 @@ export function UserDashboardPage() {
           </div>
         </Panel>
 
-        {data.logs.length > 0 ? (
+        {signedIn && (logs.loading || logs.error) ? <Panel title='最近调用'><p className='p-4 text-muted-foreground'>{logs.loading ? '正在加载…' : '调用日志加载失败'}</p></Panel> : data.logs.length > 0 ? (
           <Panel
             title='最近调用'
             actions={
