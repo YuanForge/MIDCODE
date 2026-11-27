@@ -1,0 +1,66 @@
+(midcode_stream) {
+	flush_interval -1
+	transport http {
+		dial_timeout 3s
+		response_header_timeout 6000s
+		read_timeout 6000s
+		write_timeout 6000s
+	}
+}
+
+midcode.cc, www.midcode.cc, ai.midcode.cc, origin-hk.midcode.cc, ai.midaccs.com, www.midaccs.com {
+	tls /etc/caddy/midcode/fullchain.pem /etc/caddy/midcode/privkey.pem
+	header Strict-Transport-Security max-age=31536000
+	route {
+		@oversized expression `{http.request.header.Content-Length} != "" && int({http.request.header.Content-Length}) > 268435456`
+		respond @oversized 413
+		request_body {
+			max_size 268435456
+		}
+		vars client_ip {remote_host}
+		@cloudflare {
+			remote_ip 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+			header CF-Connecting-IP *
+		}
+		vars @cloudflare client_ip {http.request.header.CF-Connecting-IP}
+		@shared path /studio-preview /studio-preview/* /media/grok/* /_grok_lookup/* /_grok_content/* /.well-known/acme-challenge/*
+		handle @shared {
+			reverse_proxy https://{$MIDCODE_SHARED_ORIGIN} {
+				header_up Host midcode.cc
+				header_up -X-Midcode-Client-IP
+				header_up -CF-Connecting-IP
+				flush_interval -1
+				transport http {
+					tls_server_name midcode.cc
+					dial_timeout 3s
+					response_header_timeout 6000s
+					read_timeout 6000s
+					write_timeout 6000s
+				}
+			}
+		}
+		handle_path /api-mart/* {
+			reverse_proxy https://upload.apimart.ai {
+				header_up Host upload.apimart.ai
+				import midcode_stream
+			}
+		}
+		handle_path /pangyu/* {
+			reverse_proxy https://laowang.pangyu.asia {
+				header_up Host laowang.pangyu.asia
+				import midcode_stream
+			}
+		}
+		handle {
+			reverse_proxy 127.0.0.1:8191 {
+				header_up X-Real-IP {vars.client_ip}
+				header_up X-Forwarded-For {vars.client_ip}
+				header_up X-Midcode-Client-IP {vars.client_ip}
+				header_up CF-Connecting-IP {vars.client_ip}
+				header_up REMOTE-HOST {vars.client_ip}
+				header_up X-Forwarded-Port 443
+				import midcode_stream
+			}
+		}
+	}
+}
