@@ -61,6 +61,7 @@ func Init(cfg *config.DBConfig, migrate bool) error {
 	}
 
 	if err := Engine.Sync2(
+		new(model.MarketSkill),
 		new(model.SchemaMigration),
 		new(model.User),
 		new(model.EmailVerification),

@@ -19,6 +19,9 @@ func registerUserRoutes(authed *gin.RouterGroup, deps Dependencies) {
 
 	user := authed.Group("/user")
 	{
+		user.GET("/skills", handler.SkillsList("market"))
+		user.GET("/skills/mine", handler.SkillsList("mine"))
+		user.POST("/skills", handler.SubmitSkill)
 		user.GET("/qq-binding", handler.GetQQBinding)
 		user.PUT("/qq-binding", handler.SaveQQBinding)
 		user.DELETE("/qq-binding", handler.DeleteQQBinding)

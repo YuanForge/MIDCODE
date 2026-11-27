@@ -95,6 +95,8 @@ func adminRoutePermission(method, path string) string {
 		return "withdraw:approve"
 	case "audit":
 		return "audit:all"
+	case "skills":
+		return "settings:write"
 	case "notifications":
 		return "settings:announce"
 	case "vendors":

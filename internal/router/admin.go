@@ -11,6 +11,8 @@ func registerAdminRoutes(authed *gin.RouterGroup, deps Dependencies) {
 	admin := authed.Group("/admin")
 	admin.Use(middleware.Admin())
 	{
+		admin.GET("/skills", handler.SkillsList("review"))
+		admin.PATCH("/skills/:id", handler.ReviewSkill)
 		admin.POST("/bot-keys", handler.CreateBotKey)
 		admin.PUT("/lottery-admin-qq", handler.SetLotteryAdminQQ)
 		admin.PUT("/lottery-admins/:qq", handler.UpdateLotteryAdminMember)

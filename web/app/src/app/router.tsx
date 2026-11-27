@@ -21,6 +21,7 @@ const PublicHomePage = lazy(() => import('@/pages/public/PublicHomePage').then((
 const UserDashboardPage = lazy(() => import('@/pages/user/UserDashboardPage').then((m) => ({ default: m.UserDashboardPage })))
 const UserModelsPage = lazy(() => import('@/pages/user/UserModelsPage').then((m) => ({ default: m.UserModelsPage })))
 const UserKeysPage = lazy(() => import('@/pages/user/UserKeysPage').then((m) => ({ default: m.UserKeysPage })))
+const SkillsPage = lazy(() => import('@/pages/SkillsPage'))
 const UserPlaygroundPage = lazy(() => import('@/pages/user/UserPlaygroundPage').then((m) => ({ default: m.UserPlaygroundPage })))
 const UserCreationPage = lazy(() => import('@/pages/user/UserCreationPage').then((m) => ({ default: m.UserCreationPage })))
 const UserImageGenPage = lazy(() => import('@/pages/user/UserImageGenPage').then((m) => ({ default: m.UserImageGenPage })))
@@ -168,6 +169,7 @@ export const router = createBrowserRouter([
       {
         element: renderLazy(<UserLayout />),
         children: [
+          { path: '/skills', element: renderLazy(<SkillsPage />) },
           { path: '/playground', element: renderLazy(<UserPlaygroundPage />) },
           { path: '/video-studio', element: renderLazy(<VideoStudioLaunch />) },
           { path: '/creation', element: renderLazy(<UserCreationPage />) },
@@ -217,6 +219,7 @@ export const router = createBrowserRouter([
           { path: 'tasks', element: renderLazy(<AdminTasksPage />) },
           { path: 'llm-logs', element: renderLazy(<AdminLogsPage />) },
           { path: 'settings', element: renderLazy(<AdminSettingsPage />) },
+          { path: 'skills', element: renderLazy(<SkillsPage admin />) },
           { path: 'inspiration', element: renderLazy(<AdminInspirationPage />) },
           { path: 'vendors', element: renderLazy(<AdminVendorsPage />) },
           { path: 'resellers', element: renderLazy(<AdminResellersPage />) },

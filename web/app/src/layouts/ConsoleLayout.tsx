@@ -48,6 +48,7 @@ export const userNavGroups: NavGroup[] = [
     labelKey: 'layout.groupExperience',
     requiresAuth: true,
     items: [
+      { label: 'Skills 市场', href: '/skills', icon: BoxesIcon },
       { label: '文本对话', labelKey: 'layout.navPlayground', href: '/playground', icon: MessageSquareIcon },
       { label: '视频工作台', href: '/video-studio', icon: SparklesIcon },
       { label: '创作中心', labelKey: 'layout.navCreation', href: '/creation', icon: SparklesIcon },
@@ -91,6 +92,7 @@ export const adminNavItems: NavItem[] = [
   { label: '代理商管理', href: '/admin/resellers', icon: BriefcaseBusinessIcon },
   { label: '提现管理', href: '/admin/withdraw', icon: WalletIcon },
   { label: '通知中心', href: '/admin/notifications', icon: MessageCircleIcon },
+  { label: 'Skills 审核', href: '/admin/skills', icon: BoxesIcon },
   { label: '灵感库', href: '/admin/inspiration', icon: SparklesIcon },
   { label: '告警中心', href: '/admin/alerts', icon: BlocksIcon },
   { label: '数据导出', href: '/admin/exports', icon: ShareIcon },
