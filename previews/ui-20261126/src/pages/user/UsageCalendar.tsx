@@ -44,8 +44,19 @@ export function UsageCalendar({ revision }: { revision: number }) {
   return <section className="rounded-xl border bg-card p-5 sm:p-7" aria-label="使用热力图">
     <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-semibold">使用热力图</h2>
       {data.length > 0 && <small>{data[0].at.slice(0,10)} — {data[data.length-1].at.slice(0,10)} · 北京时间</small>}</div>
-    <div className="my-4 inline-flex rounded-lg bg-muted p-1">{(Object.keys(labels) as Metric[]).map(key =>
-      <Button key={key} size="sm" variant={metric === key ? 'outline' : 'ghost'} aria-pressed={metric === key} onClick={() => setMetric(key)}>{labels[key]}</Button>)}</div>
+    <div role="group" aria-label="热力图统计指标" className="my-4 flex flex-wrap gap-x-5">
+      {(Object.keys(labels) as Metric[]).map(key => (
+        <button
+          key={key}
+          type="button"
+          aria-pressed={metric === key}
+          onClick={() => setMetric(key)}
+          className="min-h-10 cursor-pointer border-b-2 border-transparent px-0.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-pressed:border-primary aria-pressed:text-primary"
+        >
+          {labels[key]}
+        </button>
+      ))}
+    </div>
     {error ? <p role="alert">{error} <Button onClick={reload}>重试</Button></p> : loading ? <p role="status">正在加载全年用量…</p> : <>
       <div className="mb-5 flex flex-wrap gap-x-10 gap-y-2">{[
         ['全年'+labels[metric], format(sum,metric),format(sum,metric,true)],
