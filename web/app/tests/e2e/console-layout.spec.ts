@@ -21,9 +21,10 @@ test('the user console is a floating bar of sections with a switcher inside a se
 
   const bar = page.locator('[data-slot="top-bar"]')
   await expect(bar).toBeVisible()
-  // No side rail on the user side: seven sections sit in the bar, and the open one is marked.
+  // No side rail on the user side: eight sections sit in the bar, and the open one is marked.
   await expect(page.locator('[data-slot="sidebar"]')).toHaveCount(0)
-  await expect(bar.locator('nav a')).toHaveCount(7)
+  await expect(bar.locator('nav a')).toHaveCount(8)
+  await expect(bar.locator('nav a[href="/skills"]')).toBeVisible()
   await expect(bar.locator('nav a[href="/dashboard"]')).toHaveAttribute('data-active', 'true')
   await expect(page.locator('[data-slot="nav-balance"]')).toContainText('128.45')
   await expect(page.locator('[data-slot="page-icon"]')).toBeVisible()
